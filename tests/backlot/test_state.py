@@ -502,3 +502,32 @@ class TestProjectSummary:
         assert summary["counts"]["media"] >= 2
         script_entry = next(a for a in summary["artifacts"] if a["name"] == "script")
         assert script_entry["path"] == "artifacts/script.json"
+
+    def test_stage_outputs_from_checkpoint_artifacts(self, projects_root):
+        p = _make_project(projects_root, "proj-out")
+        _write(p / "project.json", {
+            "project_id": "proj-out",
+            "title": "Outputs",
+            "pipeline_type": "cinematic",
+        })
+        _write(p / "artifacts" / "script.json", SCRIPT)
+        _write(p / "checkpoint_script.json", {
+            "version": "1.0",
+            "project_id": "proj-out",
+            "pipeline_type": "cinematic",
+            "stage": "script",
+            "status": "completed",
+            "timestamp": "2026-01-01T01:00:00Z",
+            "artifacts": {"script": SCRIPT},
+        })
+
+        s = load_board_state(p)
+        script_stage = next(st for st in s["stages"] if st["name"] == "script")
+        assert script_stage["outputs"] == ["script"]
+
+        summary = s["project_summary"]
+        script_group = next(g for g in summary["by_stage"] if g["stage"] == "script")
+        names = {a["name"] for a in script_group["artifacts"]}
+        assert names == {"script"}
+        script_entry = next(a for a in summary["artifacts"] if a["name"] == "script")
+        assert script_entry["stages"] == ["script"]

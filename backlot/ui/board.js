@@ -5,7 +5,7 @@ import {
   getJSON, mediaURL, subscribe, thumbURL, waveBars,
 } from "/ui/lib.js";
 import {
-  artifactLabel, stageLabel, statusLabel, t,
+  artifactLabel, decisionCategoryLabel, decisionSubjectLabel, stageLabel, statusLabel, t, toolLabel,
 } from "/ui/i18n.js";
 import { openProjectSettings } from "/ui/project-settings.js";
 import { renderSourceMediaSection } from "/ui/source-media-preview.js";
@@ -114,23 +114,39 @@ function renderSlate(s) {
 // stage rail
 // ---------------------------------------------------------------------------
 
+function stageOutputLine(st) {
+  const names = artifactNamesForStage(st).filter((n) => n !== "decision_log");
+  if (!names.length) return "";
+  return names.map((n) => artifactLabel(n)).join(" · ");
+}
+
 function stageSub(st) {
-  if (st.status === "awaiting_human") return t("awaitingApprovalHint");
-  if (st.status === "in_progress" && st.stalled) {
-    return t("stalledDetail", { n: st.stalled_minutes });
-  }
-  if (st.status === "in_progress" && st.partial_progress) {
+  const outputs = stageOutputLine(st);
+  // Completed stages: show outputs only — timestamp adds noise on the rail.
+  if (st.status === "completed" && outputs) return outputs;
+
+  let hint = "";
+  if (st.status === "awaiting_human") hint = t("awaitingApprovalHint");
+  else if (st.status === "in_progress" && st.stalled) {
+    hint = t("stalledDetail", { n: st.stalled_minutes });
+  } else if (st.status === "in_progress" && st.partial_progress) {
     const done = st.partial_progress.completed_scene_ids;
-    if (Array.isArray(done)) return t("scenesDone", { n: done.length });
-    return t("inProgress");
-  }
-  if (st.status === "in_progress") return t("inProgress");
-  if (st.status === "failed") return st.error ? String(st.error).slice(0, 60) : t("failed");
-  if (st.timestamp) {
+    hint = Array.isArray(done) ? t("scenesDone", { n: done.length }) : t("inProgress");
+  } else if (st.status === "in_progress") hint = t("inProgress");
+  else if (st.status === "failed") {
+    hint = st.error ? String(st.error).slice(0, 60) : t("failed");
+  } else if (st.timestamp) {
     const approved = st.gated && st.human_approved ? t("approvedSuffix") : "";
-    return fmtClock(st.timestamp) + approved;
+    hint = fmtClock(st.timestamp) + approved;
   }
-  return "";
+  if (hint && outputs) return `${hint}\n${outputs}`;
+  if (outputs) return outputs;
+  return hint;
+}
+
+function railStatusLabel(st) {
+  if (st.stalled) return t("stalledRail");
+  return statusLabel(st.status || "pending");
 }
 
 function renderRail(s) {
@@ -140,16 +156,24 @@ function renderRail(s) {
     const cls = st.status === "completed" ? "done"
       : st.status === "in_progress" ? (st.stalled ? "active stalled" : "active")
       : st.status === "awaiting_human" ? "await"
-      : st.status === "failed" ? "failed" : "";
+      : st.status === "failed" ? "failed" : "pending";
     const icon = STAGE_ICONS[st.status] || String(pendingIndex);
     if (!STAGE_ICONS[st.status]) pendingIndex += 1;
+    const statusCls = st.stalled ? "stalled"
+      : st.status === "completed" ? "done"
+      : st.status === "in_progress" ? "active"
+      : st.status === "awaiting_human" ? "await"
+      : st.status === "failed" ? "failed" : "pending";
     const node = el("div", {
       class: `stage ${cls}${selectedStage === st.name ? " selected" : ""}${st.undeclared ? " undeclared" : ""}`,
       title: st.undeclared ? t("undeclaredStage", { name: st.name }) : null,
       onclick: () => toggleDrawer(st.name),
     },
       el("span", { class: "line" }),
-      el("span", { class: "node" }, icon),
+      el("div", { class: "stage-marker" },
+        el("span", { class: `stage-status stage-status--${statusCls}` }, railStatusLabel(st)),
+        el("span", { class: "node" }, icon),
+      ),
       el("span", { class: "name" }, stageLabel(st.name)),
       el("span", { class: "sub", style: "white-space:pre-line" },
         st.undeclared ? `${stageSub(st)}\n${t("unlisted")}`.trim() : stageSub(st)),
@@ -225,6 +249,9 @@ const STAGE_ARTIFACTS = {
 };
 
 function artifactNamesForStage(st) {
+  if (Array.isArray(st.outputs) && st.outputs.length) {
+    return st.outputs.filter(Boolean);
+  }
   const declared = Array.isArray(st.produces) ? st.produces : [];
   const fallback = STAGE_ARTIFACTS[st.name] || [];
   return [...new Set([...declared, ...fallback].filter(Boolean))];
@@ -368,24 +395,29 @@ function renderSummaryViewButton(li, present) {
   return viewBtn;
 }
 
-function renderArtifactItem(s, entry) {
+function renderArtifactItem(s, entry, { showStage = true } = {}) {
   const present = Boolean(entry.present);
   const stages = entry.stages?.length
     ? entry.stages.map((stageName) => stageLabel(stageName)).join(" · ")
     : "";
   const path = entry.path || `artifacts/${entry.name}.json`;
   const li = el("li", { class: "asset-item" });
+  const rowChildren = [
+    el("span", { class: "asset-row-name" }, artifactLabel(entry.name)),
+    el("span", { class: "asset-row-path" }, path || "—"),
+  ];
+  if (showStage) {
+    rowChildren.push(el("span", { class: "asset-row-stage" }, stages || "—"));
+  }
+  rowChildren.push(
+    el("span", { class: `asset-row-status${present ? " ok" : ""}` },
+      present ? t("summaryArtifactPresent") : t("summaryArtifactPending")),
+    renderSummaryViewButton(li, present),
+  );
   li.append(
     el("div", {
-      class: `asset-row asset-row--artifact${present ? "" : " asset-row--pending"}`,
-    },
-      el("span", { class: "asset-row-name" }, artifactLabel(entry.name)),
-      el("span", { class: "asset-row-path" }, path || "—"),
-      el("span", { class: "asset-row-stage" }, stages || "—"),
-      el("span", { class: `asset-row-status${present ? " ok" : ""}` },
-        present ? t("summaryArtifactPresent") : t("summaryArtifactPending")),
-      renderSummaryViewButton(li, present),
-    ),
+      class: `asset-row asset-row--artifact${present ? "" : " asset-row--pending"}${showStage ? "" : " asset-row--no-stage"}`,
+    }, ...rowChildren),
     el("div", { class: "asset-preview", hidden: "" },
       present ? buildArtifactPreview(s, entry) : null,
     ),
@@ -415,7 +447,8 @@ function renderMediaItem(s, item, index) {
   return li;
 }
 
-function renderAssetSection({ title, desc, countLabel, headCols, rows, emptyHint, tableKind }) {
+function renderAssetSection({ title, desc, countLabel, headCols, rows, emptyHint, tableKind, tableExtraClass = "" }) {
+  const tableClass = `asset-table asset-table--${tableKind}${tableExtraClass ? ` ${tableExtraClass}` : ""}`;
   return el("section", { class: "asset-section" },
     el("header", { class: "asset-section-head" },
       el("div", { class: "asset-section-titles" },
@@ -425,7 +458,7 @@ function renderAssetSection({ title, desc, countLabel, headCols, rows, emptyHint
       countLabel ? el("span", { class: "asset-section-count" }, countLabel) : null,
     ),
     rows.length
-      ? el("div", { class: `asset-table asset-table--${tableKind}` },
+      ? el("div", { class: tableClass },
         renderAssetTableHead(headCols),
         el("ul", { class: "asset-list" }, ...rows),
       )
@@ -434,20 +467,57 @@ function renderAssetSection({ title, desc, countLabel, headCols, rows, emptyHint
 }
 
 function buildProjectSummaryContent(s) {
-  const summary = s.project_summary || { artifacts: [], media: [], counts: {} };
+  const summary = s.project_summary || { artifacts: [], by_stage: [], media: [], counts: {} };
   const counts = summary.counts || {};
-  const artifactEntries = (summary.artifacts || []).filter((entry) => entry.name !== "decision_log");
+  const byStage = summary.by_stage || [];
   const media = summary.media || [];
 
-  const artifactRows = artifactEntries.map((entry) => renderArtifactItem(s, entry));
-  const mediaRows = media.map((item, index) => renderMediaItem(s, item, index));
+  const artifactHeadWithStage = [
+    t("summaryColName"), t("summaryColPath"), t("summaryColStage"),
+    t("summaryColStatus"), t("summaryColAction"),
+  ];
+  const artifactHeadGrouped = [
+    t("summaryColName"), t("summaryColPath"), t("summaryColStatus"), t("summaryColAction"),
+  ];
 
-  const artifactCount = counts.artifacts_total != null
-    ? t("summaryArtifacts", {
-      present: counts.artifacts_present ?? 0,
-      total: counts.artifacts_total ?? 0,
+  const artifactSections = byStage.length
+    ? byStage.map((group) => {
+      const entries = (group.artifacts || []).filter((entry) => entry.name !== "decision_log");
+      const rows = entries.map((entry) => renderArtifactItem(s, entry, { showStage: false }));
+      const title = group.stage === "_orphan"
+        ? t("summaryOrphanSectionTitle")
+        : stageLabel(group.stage);
+      const desc = group.stage === "_orphan" ? t("summaryOrphanSectionDesc") : "";
+      const present = entries.filter((e) => e.present).length;
+      return renderAssetSection({
+        title,
+        desc,
+        countLabel: entries.length ? t("summaryStageArtifacts", { present, total: entries.length }) : null,
+        headCols: artifactHeadGrouped,
+        rows,
+        emptyHint: t("summaryNoArtifacts"),
+        tableKind: "artifact",
+        tableExtraClass: "asset-table--artifact-grouped",
+      });
     })
-    : null;
+    : [renderAssetSection({
+      title: t("summaryArtifactSectionTitle"),
+      desc: t("summaryArtifactSectionDesc"),
+      countLabel: counts.artifacts_total != null
+        ? t("summaryArtifacts", {
+          present: counts.artifacts_present ?? 0,
+          total: counts.artifacts_total ?? 0,
+        })
+        : null,
+      headCols: artifactHeadWithStage,
+      rows: (summary.artifacts || [])
+        .filter((entry) => entry.name !== "decision_log")
+        .map((entry) => renderArtifactItem(s, entry)),
+      emptyHint: t("summaryNoArtifacts"),
+      tableKind: "artifact",
+    })];
+
+  const mediaRows = media.map((item, index) => renderMediaItem(s, item, index));
   const mediaCount = counts.media != null
     ? t("summaryMedia", { n: counts.media ?? 0 })
     : null;
@@ -457,15 +527,7 @@ function buildProjectSummaryContent(s) {
       el("h2", { class: "project-summary-title" }, t("projectSummaryTitle")),
       el("p", { class: "hint project-summary-lead" }, t("projectSummaryLead")),
     ),
-    renderAssetSection({
-      title: t("summaryArtifactSectionTitle"),
-      desc: t("summaryArtifactSectionDesc"),
-      countLabel: artifactCount,
-      headCols: [t("summaryColName"), t("summaryColPath"), t("summaryColStage"), t("summaryColStatus"), t("summaryColAction")],
-      rows: artifactRows,
-      emptyHint: t("summaryNoArtifacts"),
-      tableKind: "artifact",
-    }),
+    ...artifactSections,
     renderAssetSection({
       title: t("summaryMediaSectionTitle"),
       desc: t("summaryMediaSectionDesc"),
@@ -508,6 +570,73 @@ function reviewSummaryText(review) {
   ].filter(Boolean).join(" · ");
 }
 
+function stageForArtifact(s, artifactName, fallbackStage) {
+  for (const st of s.stages) {
+    if (artifactNamesForStage(st).includes(artifactName)) return st;
+  }
+  if (fallbackStage) {
+    return s.stages.find((st) => st.name === fallbackStage) || { name: fallbackStage, status: "unknown" };
+  }
+  return null;
+}
+
+const ARTIFACT_PATHS = {
+  script: "artifacts/script.json",
+  scene_plan: "artifacts/scene_plan.json",
+  asset_manifest: "artifacts/asset_manifest.json",
+  render_report: "artifacts/render_report.json",
+  source_media_review: "artifacts/source_media_review.json",
+};
+
+function artifactBlockStatus(st) {
+  if (!st || !st.status) return null;
+  if (st.status === "completed") {
+    return el("span", { class: "artifact-block-status ok" }, t("approved"));
+  }
+  if (st.status === "awaiting_human") {
+    return el("span", { class: "artifact-block-status pending" }, t("pendingApproval"));
+  }
+  if (st.status === "in_progress") {
+    return el("span", { class: "artifact-block-status draft" }, t("drafting"));
+  }
+  if (st.status === "failed") {
+    return el("span", { class: "artifact-block-status failed" }, t("failed"));
+  }
+  return null;
+}
+
+function renderArtifactBlockHeader(s, artifactName, fallbackStage, meta) {
+  const st = stageForArtifact(s, artifactName, fallbackStage);
+  const stageName = st?.name || fallbackStage || "";
+  const path = ARTIFACT_PATHS[artifactName] || `artifacts/${artifactName}.json`;
+  return el("div", { class: "artifact-block-head" },
+    el("button", {
+      type: "button",
+      class: "artifact-block-kicker",
+      title: t("openStageDrawer"),
+      onclick: (e) => {
+        e.stopPropagation();
+        selectedStage = stageName;
+        render();
+      },
+    },
+      el("span", { class: "artifact-block-stage" }, stageLabel(stageName)),
+      el("span", { class: "artifact-block-sep" }, t("stageArtifactSep")),
+      el("span", { class: "artifact-block-artifact" }, artifactLabel(artifactName)),
+    ),
+    el("span", { class: "artifact-block-path" }, path),
+    meta ? el("span", { class: "artifact-block-meta" }, meta) : null,
+    artifactBlockStatus(st),
+  );
+}
+
+function wrapArtifactBlock(s, artifactName, fallbackStage, content, meta) {
+  return el("div", { class: `artifact-block artifact-block--${artifactName}` },
+    renderArtifactBlockHeader(s, artifactName, fallbackStage, meta),
+    content,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // script card
 // ---------------------------------------------------------------------------
@@ -537,18 +666,8 @@ function scriptSections(script, limit) {
 function renderScriptCard(s) {
   const script = s.artifacts.script;
   if (!script) return null;
-  const scriptStage = s.stages.find((x) => x.name === "script");
-  const status = scriptStage ? scriptStage.status : "unknown";
-  const stamp = status === "completed"
-    ? el("span", { class: "script-status script-approved" }, t("approved"))
-    : status === "awaiting_human"
-      ? el("span", { class: "script-status script-pending" }, t("pendingApproval"))
-      : status === "in_progress"
-        ? el("span", { class: "script-status script-draft" }, t("drafting"))
-        : null;
 
   const card = el("div", { class: "script-card script-preview", title: t("clickExpandScript"), onclick: openScriptModal },
-    stamp,
     el("div", { class: "sp-title" }, script.title || s.title),
     el("div", { class: "sp-meta" },
       t("scriptMeta", {
@@ -558,7 +677,7 @@ function renderScriptCard(s) {
     ...scriptSections(script, 4),
     el("span", { class: "sp-expand" }, t("expandScript")),
   );
-  return card;
+  return wrapArtifactBlock(s, "script", "script", card);
 }
 
 function humanize(value) {
@@ -846,6 +965,33 @@ function openNarrModal(card) {
   modal.classList.add("open");
 }
 
+function openSceneVideoModal(s, card, visual) {
+  modal.innerHTML = "";
+  const meta = [sceneLabel(card.id), card.section_label, fmtDuration(card.duration_seconds)]
+    .filter(Boolean).join(" · ");
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
+    el("div", { class: "modal-page modal-page-viewer" },
+      el("div", { class: "scene-video-modal" },
+        el("div", { class: "scene-video-meta" }, meta),
+        el("video", {
+          class: "scene-video-full",
+          src: mediaURL(s.project_id, visual.path),
+          controls: "",
+          autoplay: "",
+          preload: "auto",
+          playsinline: "",
+        }),
+        visual.path ? el("code", { class: "doc-viewer-path doc-viewer-path--head" }, visual.path) : null,
+      ),
+    ),
+  );
+  modal.classList.add("open");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
 function closeModal() {
   modal.classList.remove("open");
   modal.innerHTML = "";
@@ -894,16 +1040,30 @@ function renderDecisions(s) {
     const alts = (d.options_considered || [])
       .filter((o) => (o.option_id ?? o.label) !== d.selected && (o.option_id || o.label));
     body.append(el("div", { class: "decision" },
-      el("div", { class: "d-cat" }, `${d.category || t("decision")}${d.confidence ? ` · ${d.confidence}` : ""}`,
-        revised ? el("span", { class: "d-revised" }, t("revised")) : null),
-      el("div", { class: "d-pick" }, `${d.subject || ""} `, el("span", { class: "arrow" }, "→"), ` ${selLabel}`),
+      el("div", { class: "d-cat" },
+        el("span", { class: "d-cat-label" }, decisionCategoryLabel(d.category)),
+        d.stage ? el("span", { class: "d-stage" }, ` · ${stageLabel(d.stage)}`) : null,
+        d.confidence != null
+          ? el("span", { class: "d-confidence" }, ` · ${t("decisionConfidence", { n: Math.round(Number(d.confidence) * 100) })}`)
+          : null,
+        revised ? el("span", { class: "d-revised" }, t("revised")) : null,
+      ),
+      el("div", { class: "d-pick" },
+        `${decisionSubjectLabel(d.subject)} `,
+        el("span", { class: "arrow" }, "→"),
+        ` ${selLabel}`),
       d.reason ? el("div", { class: "d-why" }, d.reason) : null,
       alts.length ? el("div", { class: "d-alt" }, t("alsoConsidered"),
         alts.slice(0, 3).map((o, i) => [i ? " · " : "", el("s", {}, o.label || o.option_id)]).flat()) : null,
     ));
   }
   return el("div", { class: "panel" },
-    el("div", { class: "panel-head" }, el("h2", {}, t("decisions")), el("span", { class: "meta" }, "decision_log.json")),
+    el("div", { class: "panel-head" },
+      el("div", {},
+        el("h2", {}, t("decisions")),
+        el("p", { class: "panel-lead" }, t("decisionsLead")),
+      ),
+      el("span", { class: "meta" }, "decision_log.json")),
     body);
 }
 
@@ -947,13 +1107,18 @@ function renderActivity(s) {
     }
     body.append(el("div", { class: "act-row" },
       el("span", { class: "t" }, fmtClock(ev.ts)),
-      el("span", { class: "tool" }, ev.tool || ""),
-      el("span", { class: "target" }, ev.scene_id || ""),
+      el("span", { class: "tool" }, toolLabel(ev.tool)),
+      el("span", { class: "target" }, ev.scene_id ? t("activityScene", { id: ev.scene_id }) : ""),
       statusEl,
     ));
   }
   return el("div", { class: "panel" },
-    el("div", { class: "panel-head" }, el("h2", {}, t("activity")), el("span", { class: "meta" }, "events.jsonl")),
+    el("div", { class: "panel-head" },
+      el("div", {},
+        el("h2", {}, t("activity")),
+        el("p", { class: "panel-lead" }, t("activityLead")),
+      ),
+      el("span", { class: "meta" }, "events.jsonl")),
     body);
 }
 
@@ -962,7 +1127,24 @@ function renderActivity(s) {
 // ---------------------------------------------------------------------------
 
 function renderSourceMedia(s) {
-  return renderSourceMediaSection(s.project_id, s.source_media);
+  const src = s.source_media;
+  if (!src || !src.path) return null;
+  const metaParts = [
+    src.duration_seconds != null ? fmtDuration(src.duration_seconds) : null,
+    src.resolution || null,
+    src.format ? src.format.toUpperCase() : null,
+  ].filter(Boolean);
+  const meta = metaParts.length
+    ? t("sourceMediaMeta", {
+      dur: metaParts[0],
+      res: metaParts[1] || "—",
+      fmt: metaParts[2] || "—",
+    })
+    : src.path.split("/").pop();
+  const fallbackStage = src.kind === "reference" ? "reference_analysis" : "source_media_review";
+  const inner = renderSourceMediaSection(s.project_id, src, { hideTitle: true });
+  if (!inner) return null;
+  return wrapArtifactBlock(s, "source_media_review", fallbackStage, inner, meta);
 }
 
 // ---------------------------------------------------------------------------
@@ -1002,14 +1184,11 @@ function sceneCard(s, card) {
     const badge = [v.model || v.source_tool, v.cost_usd != null ? fmtMoney(v.cost_usd) : null,
       v.quality_score != null ? `q ${v.quality_score}` : null].filter(Boolean).join(" · ");
     if (v.type === "video") {
-      thumb = el("div", { class: "thumb approved" },
+      thumb = el("div", { class: "thumb approved thumb-video", title: t("playSceneVideo") },
         el("video", { src: mediaURL(s.project_id, v.path), muted: "", preload: "metadata", playsinline: "" }),
         el("span", { class: "play" }, "▶"),
         badge ? el("span", { class: "badge" }, badge) : null);
-      thumb.onclick = () => {
-        const vid = thumb.querySelector("video");
-        if (vid.paused) vid.play(); else vid.pause();
-      };
+      thumb.onclick = () => openSceneVideoModal(s, card, v);
     } else {
       const img = el("img", { src: thumbURL(s.project_id, v.path, 640), loading: "lazy", alt: "" });
       // A thumbnail that fails to load must never show a broken-image icon —
@@ -1113,16 +1292,13 @@ function renderStoryboard(s) {
   if (!board) return null;
   const strip = el("div", { class: "filmstrip" });
   for (const card of board.scenes) strip.append(sceneCard(s, card));
-  return el("div", {},
-    el("div", { class: "section-title" }, t("storyboard"),
-      el("span", { class: "meta" },
-        board.total_duration_seconds
-          ? t("storyboardMeta", {
-            n: board.scenes.length,
-            dur: fmtDuration(board.total_duration_seconds),
-          })
-          : t("scenes", { n: board.scenes.length }))),
-    el("div", { class: "strip-outer" }, strip));
+  const meta = board.total_duration_seconds
+    ? t("storyboardMeta", { n: board.scenes.length, dur: fmtDuration(board.total_duration_seconds) })
+    : t("scenes", { n: board.scenes.length });
+  return wrapArtifactBlock(s, "scene_plan", "scene_plan",
+    el("div", { class: "strip-outer" }, strip),
+    meta,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1159,11 +1335,13 @@ function renderRenders(s) {
     }, `${r.path.split("/").pop()}${r.at_root ? t("root") : ""}`)),
     el("span", { style: "margin-left:auto" }, `${(current.size / 1048576).toFixed(1)} MB`),
   );
-  return el("div", {},
-    el("div", { class: "section-title" }, t("rendersTitle"),
-      el("span", { class: "meta" }, t("renderVersions", { n: renders.length }))),
-    el("div", { class: "render-hero" }, video),
-    versions);
+  return wrapArtifactBlock(s, "render_report", "compose",
+    el("div", {},
+      el("div", { class: "render-hero" }, video),
+      versions,
+    ),
+    t("renderVersions", { n: renders.length }),
+  );
 }
 
 function renderFoundMedia(s) {
@@ -1371,45 +1549,59 @@ function render() {
   firstPaint = false;
   app.innerHTML = "";
   app.append(renderSlate(s));
-  app.append(renderRail(s));
-  const drawer = renderDrawer(s);
-  if (drawer) app.append(drawer);
+
+  // Zone 1 — pipeline: stage rail + replay scrubber (one visual unit)
+  const pipeline = el("section", { class: "board-pipeline", "aria-label": t("boardPipelineAria") });
+  pipeline.append(renderRail(s));
   const replayBar = renderReplayBar(state);
-  if (replayBar) app.append(replayBar);
+  if (replayBar) pipeline.append(replayBar);
+  app.append(pipeline);
+
+  // Zone 2 — workspace: alerts, stage drawer, main content
+  const workspace = el("section", { class: "board-workspace" });
+  const alerts = el("div", { class: "board-alerts" });
   const awaitingNotice = renderAwaitingNotice(s);
-  if (awaitingNotice) app.append(awaitingNotice);
+  if (awaitingNotice) alerts.append(awaitingNotice);
   const noState = renderNoState(s);
-  if (noState) app.append(noState);
+  if (noState) alerts.append(noState);
+  if (alerts.childNodes.length) workspace.append(alerts);
+
+  const drawer = renderDrawer(s);
+  if (drawer) workspace.append(drawer);
 
   const main = el("div", { class: "main-col" });
+  const sourceMedia = renderSourceMedia(s);
+  if (sourceMedia) main.append(sourceMedia);
+
   const approvalReview = renderApprovalReview(s);
   if (approvalReview) main.append(approvalReview);
   const script = renderScriptCard(s);
   if (script) main.append(script);
+
+  const mediaBlock = el("div", { class: "board-media-block" });
+  const storyboard = renderStoryboard(s);
+  const found = renderFoundMedia(s);
+  const renders = renderRenders(s);
+  for (const section of [storyboard, found, renders]) {
+    if (section) mediaBlock.append(section);
+  }
+  if (mediaBlock.childNodes.length) main.append(mediaBlock);
+
   const aside = el("aside", {});
   const decisions = renderDecisions(s);
   const activity = renderActivity(s);
   if (decisions) aside.append(decisions);
   if (activity) aside.append(activity);
+  const hasAside = aside.childNodes.length > 0;
 
-  // Media sections live INSIDE the main column so a tall decisions rail
-  // never pushes them below the fold — the column flows beside the rail.
-  const storyboard = renderStoryboard(s);
-  const sourceMedia = renderSourceMedia(s);
-  const found = renderFoundMedia(s);
-  const renders = renderRenders(s);
-
-  if (approvalReview || script || decisions || activity) {
-    for (const section of [sourceMedia, storyboard, found, renders]) {
-      if (section) main.append(section);
-    }
-    const hasAside = Boolean(decisions || activity);
-    app.append(el("div", { class: `board${hasAside ? "" : " solo"}` }, main, hasAside ? aside : null));
-  } else {
-    for (const section of [sourceMedia, storyboard, found, renders]) {
-      if (section) app.append(section);
-    }
+  if (main.childNodes.length || hasAside) {
+    workspace.append(
+      el("div", { class: "board-workspace-head" }, t("boardWorkspaceLabel")),
+      el("div", { class: `board${hasAside ? "" : " solo"}` }, main, hasAside ? aside : null),
+    );
   }
+
+  if (workspace.childNodes.length) app.append(workspace);
 }
 
 // Defensive normalization (F-02): the server contract guarantees these

@@ -14,6 +14,7 @@ const STAGE_NAMES = {
   rig_plan: "绑骨方案",
   reference: "参考分析",
   reference_analysis: "参考分析",
+  source_media_review: "源素材审阅",
   sample: "样片预览",
   scene: "分镜",
 };
@@ -30,7 +31,7 @@ const ARTIFACT_NAMES = {
   final_review: "终检",
   publish_log: "发布计划",
   video_analysis_brief: "视频分析简报",
-  source_media_review: "源媒体审阅",
+  source_media_review: "源素材审阅",
   character_design: "角色设计",
   rig_plan: "绑骨方案",
   pose_library: "姿势库",
@@ -50,6 +51,73 @@ const CAPABILITY_NAMES = {
   clip_acquisition: "片段获取",
   graphics: "图形",
   publish: "发布",
+};
+
+const DECISION_CATEGORY_NAMES = {
+  pipeline_selection: "流水线选择",
+  provider_selection: "提供商选择",
+  renderer_family_selection: "渲染器族选择",
+  render_runtime_selection: "渲染引擎选择",
+  composition_mode: "合成模式",
+  playbook_selection: "风格手册选择",
+  fallback_decision: "降级决策",
+  budget_tradeoff: "预算权衡",
+  downgrade_approval: "降级批准",
+  music_source: "音乐来源",
+  motion_commitment: "动效承诺",
+  concept_selection: "概念选择",
+  voice_selection: "配音选择",
+  capability_extension: "能力扩展",
+  playbook_override: "风格手册覆盖",
+  visual_accuracy_check: "画面准确性检查",
+};
+
+const DECISION_SUBJECT_NAMES = {
+  "final composition runtime": "最终合成引擎",
+  "composition runtime": "合成引擎",
+  "deliverable length": "成片时长",
+  "image generation": "图像生成",
+  compose: "合成",
+  "tts provider for narration": "旁白配音提供商",
+  "render runtime": "渲染引擎",
+  "pipeline type": "流水线类型",
+  "music source": "音乐来源",
+  "voice selection": "配音选择",
+};
+
+const TOOL_NAMES = {
+  subtitle_gen: "字幕生成",
+  remotion_caption_burn: "Remotion 字幕烧录",
+  video_compose: "视频合成",
+  hyperframes_compose: "HyperFrames 合成",
+  transcriber: "语音转写",
+  video_trimmer: "视频裁剪",
+  frame_sampler: "帧采样",
+  audio_mixer: "音频混音",
+  audio_enhance: "音频增强",
+  audio_probe: "音频探测",
+  image_gen: "图像生成",
+  image_selector: "图像筛选",
+  video_selector: "视频筛选",
+  openai_image: "OpenAI 图像",
+  google_imagen: "Google Imagen",
+  pixabay_image: "Pixabay 图像",
+  diagram_gen: "图表生成",
+  music_gen: "音乐生成",
+  pixabay_music: "Pixabay 音乐",
+  freesound_music: "Freesound 音乐",
+  suno_music: "Suno 音乐",
+  piper_tts: "Piper 配音",
+  doubao_tts: "豆包配音",
+  tts_selector: "配音选择器",
+  lip_sync: "口型同步",
+  upscale: "超分辨率",
+  screen_recorder: "屏幕录制",
+  video_analyzer: "视频分析",
+  video_downloader: "视频下载",
+  showcase_card: "展示卡片",
+  character_rig_renderer: "角色渲染",
+  character_animation_reviewer: "角色动画审阅",
 };
 
 const STATUS_LABELS = {
@@ -89,12 +157,15 @@ const STRINGS = {
   scenesDone: "已完成 {n} 个场景",
   inProgress: "进行中",
   failed: "失败",
+  stalledRail: "可能卡住",
   undeclaredStage: "「{name}」已运行，但未在本流水线清单中声明",
 
   // 脚本
   approved: "已通过",
   pendingApproval: "待审批",
   drafting: "撰写中",
+  stageArtifactSep: "产出",
+  openStageDrawer: "点击查看该阶段详情",
   clickExpandScript: "点击展开完整脚本",
   scriptMeta: "脚本 · {dur} · {n} 个段落",
   expandScript: "⤢ 展开脚本",
@@ -181,6 +252,9 @@ const STRINGS = {
   summaryMediaMissing: "缺失",
   summaryMediaFileHint: "此文件类型暂不支持内联预览，请通过路径在项目目录中打开。",
   summaryArtifacts: "工件 {present}/{total}",
+  summaryStageArtifacts: "本阶段 {present}/{total}",
+  summaryOrphanSectionTitle: "未归属工件",
+  summaryOrphanSectionDesc: "无法明确归属到单一阶段的工件。",
   summaryMedia: "媒体 {n} 个",
   summaryStages: "阶段 {done}/{total}",
   summaryArtifactsSection: "全部工件",
@@ -193,6 +267,7 @@ const STRINGS = {
   noStageMedia: "此阶段暂无媒体文件。",
   viewJson: "查看 JSON",
   playMedia: "播放",
+  playSceneVideo: "点击放大播放完整视频",
   mediaUrlExternal: "外部链接",
   gateSkipped: "⚑ 已跳过关卡",
   close: "关闭",
@@ -202,7 +277,11 @@ const STRINGS = {
 
   // 面板
   decisions: "决策",
+  decisionsLead: "Agent 制作过程中的关键选择记录",
+  decisionConfidence: "置信度 {n}%",
   activity: "活动",
+  activityLead: "工具调用与耗时记录（最近 10 条）",
+  activityScene: "场景 {id}",
   alsoConsidered: "也曾考虑：",
   revised: " · 已修订",
   decision: "决策",
@@ -252,6 +331,8 @@ const STRINGS = {
   scrubRun: "回放整条制作",
   replayRun: "▶ 回放制作",
   exitReplay: "✕ 实时",
+  boardPipelineAria: "制作流水线",
+  boardWorkspaceLabel: "项目内容",
 
   // 错误
   projectNotFound: "未找到项目",
@@ -641,6 +722,24 @@ export function stageLabel(name) {
 
 export function artifactLabel(name) {
   return ARTIFACT_NAMES[name] || String(name || "artifact").replaceAll("_", " ");
+}
+
+export function decisionCategoryLabel(category) {
+  if (!category) return t("decision");
+  const key = String(category).toLowerCase().replace(/-/g, "_");
+  return DECISION_CATEGORY_NAMES[key] || String(category).replaceAll("_", " ");
+}
+
+export function decisionSubjectLabel(subject) {
+  if (!subject) return "";
+  const key = String(subject).trim().toLowerCase();
+  return DECISION_SUBJECT_NAMES[key] || subject;
+}
+
+export function toolLabel(name) {
+  if (!name) return "";
+  const key = String(name).trim();
+  return TOOL_NAMES[key] || key.replaceAll("_", " ");
 }
 
 export function statusLabel(status) {

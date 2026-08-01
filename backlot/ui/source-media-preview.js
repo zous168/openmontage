@@ -23,10 +23,11 @@ export function renderSourceMediaSection(projectId, src, opts = {}) {
     : src.path.split("/").pop();
 
   const sectionClass = compact ? "source-media source-media--compact" : "source-media";
-  const section = el("section", { class: sectionClass },
-    el("div", { class: "section-title" }, title,
-      el("span", { class: "meta" }, meta)),
-  );
+  const section = el("section", { class: sectionClass });
+  if (!opts.hideTitle) {
+    section.append(el("div", { class: "section-title" }, title,
+      el("span", { class: "meta" }, meta)));
+  }
 
   if (!src.exists) {
     section.append(el("div", { class: "notice warn" }, t("sourceMissing"),

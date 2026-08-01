@@ -277,6 +277,85 @@ _FALLBACK_STAGE_PRODUCES: dict[str, list[str]] = {
     "reference_analysis": ["video_analysis_brief"],
 }
 
+# Written before/at intake — not always declared in stage `produces`.
+_BOOTSTRAP_ARTIFACTS: dict[str, list[str]] = {
+    "source_media_review": ["idea", "proposal", "script"],
+    "video_analysis_brief": ["reference_analysis"],
+}
+
+
+def _checkpoint_artifact_names(cp: Optional[dict[str, Any]]) -> list[str]:
+    if not cp:
+        return []
+    arts = cp.get("artifacts") or {}
+    return [str(k) for k in arts if isinstance(k, str) and k]
+
+
+def _manifest_input_stages(pipeline_meta: dict[str, Any], art_name: str) -> list[str]:
+    refs: list[str] = []
+    for stage_def in pipeline_meta.get("stages") or []:
+        if not isinstance(stage_def, dict):
+            continue
+        for key in ("optional_artifacts_in", "required_artifacts_in"):
+            for name in (stage_def.get(key) or []):
+                if name == art_name and stage_def.get("name"):
+                    refs.append(str(stage_def["name"]))
+                    break
+    return refs
+
+
+def _build_artifact_provenance(
+    stages: list[dict[str, Any]],
+    checkpoints: dict[str, dict[str, Any]],
+    pipeline_meta: dict[str, Any],
+) -> dict[str, list[str]]:
+    """Map artifact -> stage(s) that actually emitted it (checkpoint-first)."""
+    provenance: dict[str, list[str]] = {}
+    for stage in stages:
+        stage_name = stage.get("name") or ""
+        if not stage_name:
+            continue
+        cp = checkpoints.get(stage_name)
+        for art_name in _checkpoint_artifact_names(cp):
+            if art_name == "decision_log":
+                continue
+            provenance.setdefault(art_name, [])
+            if stage_name not in provenance[art_name]:
+                provenance[art_name].append(stage_name)
+    for stage in stages:
+        stage_name = stage.get("name") or ""
+        for art_name in _stage_produces(stage):
+            if art_name == "decision_log":
+                continue
+            if art_name not in provenance:
+                provenance[art_name] = [stage_name]
+    for art_name, hints in _BOOTSTRAP_ARTIFACTS.items():
+        if art_name in provenance:
+            continue
+        manifest_refs = _manifest_input_stages(pipeline_meta, art_name)
+        if manifest_refs:
+            provenance[art_name] = [manifest_refs[0]]
+        elif hints:
+            provenance[art_name] = [hints[0]]
+    return provenance
+
+
+def _resolve_stage_outputs(
+    stage: dict[str, Any],
+    cp: Optional[dict[str, Any]],
+    artifact_keys: set[str],
+) -> list[str]:
+    from_cp = [a for a in _checkpoint_artifact_names(cp) if a != "decision_log"]
+    if from_cp:
+        return from_cp
+    declared = [a for a in _stage_produces(stage) if a != "decision_log"]
+    status = (cp or {}).get("status")
+    if status and status != "pending":
+        present = [a for a in declared if a in artifact_keys]
+        if present:
+            return present
+    return declared
+
 
 def _collect_artifacts(project_dir: Path, checkpoints: dict[str, dict]) -> dict[str, dict]:
     """Artifacts from artifacts/*.json, backfilled from checkpoint payloads."""
@@ -923,25 +1002,21 @@ def _build_project_summary(
     stages: list[dict[str, Any]],
     artifacts: dict[str, dict],
     media: dict[str, list],
+    checkpoints: dict[str, dict[str, Any]],
+    pipeline_meta: dict[str, Any],
 ) -> dict[str, Any]:
     """Project-level artifact + media rollup for the board summary panel."""
-    artifact_stages: dict[str, list[str]] = {}
+    provenance = _build_artifact_provenance(stages, checkpoints, pipeline_meta)
+    artifact_stages: dict[str, list[str]] = dict(provenance)
     ordered_names: list[str] = []
     seen_names: set[str] = set()
 
     for stage in stages:
-        stage_name = stage.get("name") or ""
-        if not stage_name:
-            continue
-        for art_name in _stage_produces(stage):
-            if art_name == "decision_log":
+        for art_name in stage.get("outputs") or _stage_produces(stage):
+            if art_name == "decision_log" or art_name in seen_names:
                 continue
-            artifact_stages.setdefault(art_name, [])
-            if stage_name not in artifact_stages[art_name]:
-                artifact_stages[art_name].append(stage_name)
-            if art_name not in seen_names:
-                seen_names.add(art_name)
-                ordered_names.append(art_name)
+            seen_names.add(art_name)
+            ordered_names.append(art_name)
 
     for art_name in sorted(artifacts.keys()):
         if art_name == "decision_log" or art_name in seen_names:
@@ -958,6 +1033,30 @@ def _build_project_summary(
         }
         for name in ordered_names
     ]
+
+    by_stage: list[dict[str, Any]] = []
+    claimed: set[str] = set()
+    for stage in stages:
+        stage_name = stage.get("name") or ""
+        if not stage_name:
+            continue
+        stage_items = [
+            entry for entry in artifact_list
+            if entry["name"] in (stage.get("outputs") or [])
+            or (
+                entry["name"] not in claimed
+                and stage_name in (entry.get("stages") or [])
+                and len(entry.get("stages") or []) == 1
+            )
+        ]
+        for entry in stage_items:
+            claimed.add(entry["name"])
+        if stage_items:
+            by_stage.append({"stage": stage_name, "artifacts": stage_items})
+
+    orphan_items = [entry for entry in artifact_list if entry["name"] not in claimed]
+    if orphan_items:
+        by_stage.append({"stage": "_orphan", "artifacts": orphan_items})
 
     media_items: list[dict[str, Any]] = []
     seen_paths: set[str] = set()
@@ -1045,6 +1144,7 @@ def _build_project_summary(
 
     return {
         "artifacts": artifact_list,
+        "by_stage": by_stage,
         "media": media_items,
         "counts": {
             "artifacts_present": present,
@@ -1105,6 +1205,10 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
     media = _scan_media(project_dir)
 
     stages = _build_stage_rail(pipeline_meta, checkpoints, history)
+    artifact_keys = set(artifacts.keys())
+    for stage_entry in stages:
+        cp = checkpoints.get(stage_entry["name"])
+        stage_entry["outputs"] = _resolve_stage_outputs(stage_entry, cp, artifact_keys)
 
     # Cost: latest checkpoint snapshot wins; fall back to manifest total.
     cost = None
@@ -1132,7 +1236,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
             stage_entry["stalled_minutes"] = int((now - last_activity) / 60)
 
     project_summary = _build_project_summary(
-        project_dir, stages, artifacts, media,
+        project_dir, stages, artifacts, media, checkpoints, pipeline_meta,
     )
 
     state: dict[str, Any] = {
