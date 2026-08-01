@@ -260,6 +260,21 @@ ARTIFACT_FILES = {
     "publish_log": "publish_log.json",
     "decision_log": "decision_log.json",
     "source_media_review": "source_media_review.json",
+    "video_analysis_brief": "video_analysis_brief.json",
+}
+
+# Fallback when manifest `produces` is empty (legacy checkpoints).
+_FALLBACK_STAGE_PRODUCES: dict[str, list[str]] = {
+    "research": ["research_brief"],
+    "proposal": ["proposal_packet", "decision_log"],
+    "idea": ["brief"],
+    "script": ["script"],
+    "scene_plan": ["scene_plan"],
+    "assets": ["asset_manifest"],
+    "edit": ["edit_decisions"],
+    "compose": ["render_report", "final_review"],
+    "publish": ["publish_log"],
+    "reference_analysis": ["video_analysis_brief"],
 }
 
 
@@ -732,6 +747,315 @@ def _find_poster(project_dir: Path, state: dict) -> Optional[str]:
     return None
 
 
+def _media_kind_from_path(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext in MEDIA_IMAGE_EXT:
+        return "image"
+    if ext in MEDIA_VIDEO_EXT:
+        return "video"
+    if ext in MEDIA_AUDIO_EXT:
+        return "audio"
+    return "file"
+
+
+def _normalize_media_entry(
+    project_dir: Path,
+    raw_path: str,
+    *,
+    label: Optional[str] = None,
+    source_artifact: Optional[str] = None,
+    media_type: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    """Resolve a project-relative media path for stage output panels."""
+    if not raw_path or not isinstance(raw_path, str):
+        return None
+    stripped = raw_path.strip()
+    if not stripped:
+        return None
+    if stripped.startswith(("http://", "https://")):
+        return {
+            "path": stripped,
+            "type": "url",
+            "exists": True,
+            "renderable": False,
+            "label": label or stripped,
+            "source_artifact": source_artifact,
+        }
+
+    resolved = _resolve_asset_path(project_dir, stripped)
+    in_project = False
+    if resolved is not None:
+        try:
+            resolved.resolve().relative_to(Path(project_dir).resolve())
+            in_project = True
+        except (ValueError, OSError):
+            resolved = None
+    file_path = resolved if resolved is not None else (project_dir / stripped)
+    exists = resolved is not None
+    kind = media_type or _media_kind_from_path(file_path)
+    ext = file_path.suffix.lower()
+    renderable = exists and ext in (MEDIA_IMAGE_EXT | MEDIA_VIDEO_EXT)
+    return {
+        "path": _rel(project_dir, file_path) if exists else stripped.replace("\\", "/"),
+        "type": kind,
+        "exists": exists,
+        "renderable": renderable,
+        "label": label or file_path.name,
+        "source_artifact": source_artifact,
+    }
+
+
+def _media_from_artifact(
+    project_dir: Path,
+    artifact_name: str,
+    artifact: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Extract servable media paths declared inside one artifact."""
+    items: list[dict[str, Any]] = []
+
+    if artifact_name == "asset_manifest":
+        for asset in artifact.get("assets") or []:
+            if not isinstance(asset, dict):
+                continue
+            entry = _asset_entry(project_dir, asset)
+            entry["label"] = (
+                asset.get("id")
+                or asset.get("scene_id")
+                or (entry.get("path") or "").split("/")[-1]
+            )
+            entry["source_artifact"] = artifact_name
+            items.append(entry)
+        return items
+
+    if artifact_name == "render_report":
+        for idx, output in enumerate(artifact.get("outputs") or []):
+            if not isinstance(output, dict):
+                continue
+            entry = _normalize_media_entry(
+                project_dir,
+                str(output.get("path") or ""),
+                label=(output.get("path") or "").split("/")[-1] or f"output {idx + 1}",
+                source_artifact=artifact_name,
+                media_type="video",
+            )
+            if entry:
+                items.append(entry)
+        return items
+
+    if artifact_name == "video_analysis_brief":
+        source = artifact.get("source") or {}
+        if isinstance(source, dict):
+            entry = _normalize_media_entry(
+                project_dir,
+                str(source.get("local_path") or ""),
+                label=source.get("title") or "reference",
+                source_artifact=artifact_name,
+            )
+            if entry:
+                items.append(entry)
+        return items
+
+    if artifact_name == "source_media_review":
+        for idx, file_entry in enumerate(artifact.get("files") or []):
+            if not isinstance(file_entry, dict):
+                continue
+            entry = _normalize_media_entry(
+                project_dir,
+                str(file_entry.get("path") or ""),
+                label=file_entry.get("label") or file_entry.get("role") or f"file {idx + 1}",
+                source_artifact=artifact_name,
+            )
+            if entry:
+                items.append(entry)
+        return items
+
+    if artifact_name == "edit_decisions":
+        for key in ("subtitles_path", "subtitle_path", "srt_path"):
+            entry = _normalize_media_entry(
+                project_dir,
+                str(artifact.get(key) or ""),
+                label="subtitles",
+                source_artifact=artifact_name,
+            )
+            if entry:
+                items.append(entry)
+        return items
+
+    # Generic walk for path-like fields on uncommon artifacts.
+    path_key = re.compile(r"(^path$|_path$|^local_path$|^output_path$)", re.I)
+
+    def walk(value: Any, label: str = "") -> None:
+        if isinstance(value, dict):
+            for k, v in value.items():
+                if isinstance(v, str) and path_key.search(k):
+                    entry = _normalize_media_entry(
+                        project_dir,
+                        v,
+                        label=label or v.split("/")[-1],
+                        source_artifact=artifact_name,
+                    )
+                    if entry:
+                        items.append(entry)
+                elif isinstance(v, (dict, list)):
+                    walk(v, label)
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                walk(item, label or f"item {i + 1}")
+
+    walk(artifact)
+    return items
+
+
+def _stage_produces(stage: dict[str, Any]) -> list[str]:
+    declared = [
+        str(name)
+        for name in (stage.get("produces") or [])
+        if isinstance(name, str) and name
+    ]
+    if declared:
+        return declared
+    fallback = _FALLBACK_STAGE_PRODUCES.get(stage.get("name") or "")
+    return list(fallback or [])
+
+
+def _build_project_summary(
+    project_dir: Path,
+    stages: list[dict[str, Any]],
+    artifacts: dict[str, dict],
+    media: dict[str, list],
+) -> dict[str, Any]:
+    """Project-level artifact + media rollup for the board summary panel."""
+    artifact_stages: dict[str, list[str]] = {}
+    ordered_names: list[str] = []
+    seen_names: set[str] = set()
+
+    for stage in stages:
+        stage_name = stage.get("name") or ""
+        if not stage_name:
+            continue
+        for art_name in _stage_produces(stage):
+            if art_name == "decision_log":
+                continue
+            artifact_stages.setdefault(art_name, [])
+            if stage_name not in artifact_stages[art_name]:
+                artifact_stages[art_name].append(stage_name)
+            if art_name not in seen_names:
+                seen_names.add(art_name)
+                ordered_names.append(art_name)
+
+    for art_name in sorted(artifacts.keys()):
+        if art_name == "decision_log" or art_name in seen_names:
+            continue
+        seen_names.add(art_name)
+        ordered_names.append(art_name)
+
+    artifact_list = [
+        {
+            "name": name,
+            "path": f"artifacts/{ARTIFACT_FILES.get(name, f'{name}.json')}",
+            "present": name in artifacts and isinstance(artifacts.get(name), dict),
+            "stages": artifact_stages.get(name, []),
+        }
+        for name in ordered_names
+    ]
+
+    media_items: list[dict[str, Any]] = []
+    seen_paths: set[str] = set()
+
+    def add_media(entry: Optional[dict[str, Any]]) -> None:
+        if not entry:
+            return
+        path = entry.get("path")
+        if not path or path in seen_paths:
+            return
+        seen_paths.add(path)
+        media_items.append(entry)
+
+    for art_name, data in artifacts.items():
+        if isinstance(data, dict):
+            for entry in _media_from_artifact(project_dir, art_name, data):
+                add_media(entry)
+
+    for render in media.get("renders") or []:
+        path = render.get("path")
+        if not path:
+            continue
+        add_media({
+            "path": path,
+            "type": "video",
+            "exists": True,
+            "renderable": True,
+            "label": str(path).split("/")[-1],
+            "source_artifact": "render_report",
+        })
+
+    for snap in media.get("snapshots") or []:
+        path = snap.get("path")
+        if not path:
+            continue
+        add_media({
+            "path": path,
+            "type": "image",
+            "exists": True,
+            "renderable": True,
+            "label": str(path).split("/")[-1],
+            "snapshot": True,
+        })
+
+    for track in media.get("music") or []:
+        path = track.get("path")
+        if not path:
+            continue
+        add_media({
+            "path": path,
+            "type": "audio",
+            "exists": True,
+            "renderable": False,
+            "label": str(path).split("/")[-1],
+        })
+
+    for rel_dir, kind in (
+        ("assets/images", "image"),
+        ("assets/video", "video"),
+        ("assets/audio", "audio"),
+        ("assets/music", "audio"),
+    ):
+        d = project_dir / rel_dir
+        if not d.is_dir():
+            continue
+        try:
+            for f in sorted(d.iterdir()):
+                if not f.is_file():
+                    continue
+                add_media(_normalize_media_entry(
+                    project_dir,
+                    _rel(project_dir, f),
+                    label=f.name,
+                    media_type=kind,
+                ))
+        except OSError:
+            continue
+
+    present = sum(1 for item in artifact_list if item["present"])
+    completed = sum(
+        1 for stage in stages
+        if stage.get("status") == "completed" and not stage.get("undeclared")
+    )
+    total_stages = sum(1 for stage in stages if not stage.get("undeclared"))
+
+    return {
+        "artifacts": artifact_list,
+        "media": media_items,
+        "counts": {
+            "artifacts_present": present,
+            "artifacts_total": len(artifact_list),
+            "media": len(media_items),
+            "stages_completed": completed,
+            "stages_total": total_stages,
+        },
+    }
+
+
 def _last_activity(project_dir: Path) -> float:
     """Most recent mtime among state-bearing files (bounded scan)."""
     latest = 0.0
@@ -807,6 +1131,10 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
             stage_entry["stalled"] = True
             stage_entry["stalled_minutes"] = int((now - last_activity) / 60)
 
+    project_summary = _build_project_summary(
+        project_dir, stages, artifacts, media,
+    )
+
     state: dict[str, Any] = {
         "project_id": project_id,
         "title": marker.get("title") or meta_json.get("name") or project_id.replace("-", " ").title(),
@@ -817,6 +1145,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "has_pipeline_state": bool(checkpoints),
         "stages": stages,
         "artifacts": artifacts,
+        "project_summary": project_summary,
         "storyboard": storyboard,
         "media": media,
         "source_media": _build_source_media(project_dir, meta_json, artifacts),

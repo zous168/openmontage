@@ -1,7 +1,7 @@
 // Backlot project board — renders BoardState and stays live via SSE.
 
 import {
-  STAGE_ICONS, el, fmtAgo, fmtClock, fmtDuration, fmtMoney,
+  STAGE_ICONS, brandMark, el, fmtAgo, fmtClock, fmtDuration, fmtMoney,
   getJSON, mediaURL, subscribe, thumbURL, waveBars,
 } from "/ui/lib.js";
 import {
@@ -22,10 +22,11 @@ readLocalPreferences();
 getJSON("/api/settings").then(applyPreferences).catch(() => {});
 
 let state = null;
-let selectedStage = null;   // stage drawer open for this stage name
+let selectedStage = null;   // stage drawer — separate from project summary
 let activeRender = 0;
 let replay = null;          // {t0, t1, t, playing} — replay mode when non-null
 let firstPaint = true;
+let summaryOpenItem = null;
 
 function renderThemeToggleInBoard() {
   return renderThemeToggle(() => render());
@@ -78,7 +79,7 @@ function renderSlate(s) {
 
   return el("header", { class: "slate slate-board" },
     el("div", { class: "slate-brand" },
-      el("div", { class: "clapper" }),
+      brandMark(),
       el("div", { class: "board-intro" },
         el("a", { class: "wordmark backlink", href: "/" }, t("backlot")),
         el("h1", {}, s.title),
@@ -86,6 +87,12 @@ function renderSlate(s) {
       ),
     ),
     el("div", { class: "slate-actions" },
+      el("button", {
+        class: "board-settings-btn board-summary-btn",
+        type: "button",
+        onclick: openProjectSummaryModal,
+        title: t("projectSummaryLead"),
+      }, t("projectSummaryTitle")),
       el("button", {
         class: "board-settings-btn",
         type: "button",
@@ -157,48 +164,7 @@ function toggleDrawer(stageName) {
   render();
 }
 
-const STAGE_ARTIFACTS = {
-  research: ["research_brief"],
-  proposal: ["proposal_packet"],
-  idea: ["brief"],
-  script: ["script"],
-  scene_plan: ["scene_plan"],
-  assets: ["asset_manifest"],
-  edit: ["edit_decisions"],
-  compose: ["render_report", "final_review"],
-  publish: ["publish_log"],
-};
-
-function artifactNamesForStage(st) {
-  const declared = Array.isArray(st.produces) ? st.produces : [];
-  const fallback = STAGE_ARTIFACTS[st.name] || [];
-  return [...new Set([...declared, ...fallback].filter(Boolean))];
-}
-
-function reviewMetrics(review) {
-  const nested = review && review.summary && typeof review.summary === "object"
-    ? review.summary : {};
-  return {
-    critical: Number((review && review.critical) ?? nested.critical ?? 0),
-    suggestions: Number((review && review.suggestions) ?? nested.suggestions ?? 0),
-    nitpicks: Number((review && review.nitpicks) ?? nested.nitpicks ?? 0),
-  };
-}
-
-function reviewSummaryText(review) {
-  if (!review) return "";
-  if (typeof review.summary === "string") return review.summary;
-  const nested = review.summary && typeof review.summary === "object" ? review.summary : {};
-  const counts = reviewMetrics(review);
-  return [
-    review.decision,
-    `${counts.critical} critical`,
-    `${counts.suggestions} suggestion${counts.suggestions === 1 ? "" : "s"}`,
-    nested.review_focus_met ? `review focus ${nested.review_focus_met}` : null,
-    nested.schema_validation,
-  ].filter(Boolean).join(" · ");
-}
-
+/** Stage drawer — per-stage review + artifacts only (not project summary). */
 function renderDrawer(s) {
   if (!selectedStage) return null;
   const st = s.stages.find((x) => x.name === selectedStage);
@@ -217,7 +183,7 @@ function renderDrawer(s) {
     ));
   }
 
-  const names = artifactNamesForStage(st);
+  const names = artifactNamesForStage(st).filter((n) => n !== "decision_log");
   let shown = false;
   for (const name of names) {
     const artifact = s.artifacts[name];
@@ -243,6 +209,303 @@ function renderDrawer(s) {
     ),
     body,
   );
+}
+
+const STAGE_ARTIFACTS = {
+  research: ["research_brief"],
+  proposal: ["proposal_packet"],
+  idea: ["brief"],
+  script: ["script"],
+  scene_plan: ["scene_plan"],
+  assets: ["asset_manifest"],
+  edit: ["edit_decisions"],
+  compose: ["render_report", "final_review"],
+  publish: ["publish_log"],
+  reference_analysis: ["video_analysis_brief"],
+};
+
+function artifactNamesForStage(st) {
+  const declared = Array.isArray(st.produces) ? st.produces : [];
+  const fallback = STAGE_ARTIFACTS[st.name] || [];
+  return [...new Set([...declared, ...fallback].filter(Boolean))];
+}
+
+function mountSummaryModal(bodyContent, wide = false) {
+  modal.innerHTML = "";
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
+    el("div", { class: `modal-page modal-page-summary${wide ? " modal-page-viewer" : ""}` }, bodyContent),
+  );
+  modal.classList.add("open");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function mediaTypeLabel(type, path = "") {
+  if (type && type !== "file") {
+    const map = {
+      video: t("summaryDocTypeVideo"),
+      image: t("summaryDocTypeImage"),
+      audio: t("summaryDocTypeAudio"),
+      url: t("summaryDocTypeUrl"),
+    };
+    if (map[type]) return map[type];
+  }
+  const p = String(path || "");
+  if (/\.(mp4|webm|mov|mkv|m4v)$/i.test(p)) return t("summaryDocTypeVideo");
+  if (/\.(mp3|wav|aac|m4a|ogg|flac)$/i.test(p)) return t("summaryDocTypeAudio");
+  if (/\.(png|jpe?g|gif|webp|svg)$/i.test(p)) return t("summaryDocTypeImage");
+  return t("summaryDocTypeFile");
+}
+
+function renderAssetTableHead(cols) {
+  return el("div", { class: "asset-table-head", "aria-hidden": "true" },
+    ...cols.map((col) => el("span", { class: "asset-table-col" }, col)),
+  );
+}
+
+function isVideoMedia(item) {
+  const path = String(item?.path || "");
+  return item?.type === "video" || /\.(mp4|webm|mov|mkv|m4v)$/i.test(path);
+}
+
+function isAudioMedia(item) {
+  const path = String(item?.path || "");
+  return item?.type === "audio" || /\.(mp3|wav|aac|m4a|ogg|flac)$/i.test(path);
+}
+
+function isImageMedia(item) {
+  const path = String(item?.path || "");
+  return item?.type === "image" || (item?.renderable && /\.(png|jpe?g|gif|webp|svg)$/i.test(path));
+}
+
+function buildArtifactPreview(s, entry) {
+  const artifact = s.artifacts[entry.name];
+  if (!artifact) return el("p", { class: "hint" }, t("artifactMissing"));
+  return el("pre", { class: "asset-preview-pre" }, JSON.stringify(artifact, null, 2));
+}
+
+function buildMediaPreview(s, item) {
+  if (item.type === "url" && item.path) {
+    return el("div", { class: "asset-preview-body" },
+      el("a", {
+        class: "asset-preview-link",
+        href: item.path,
+        target: "_blank",
+        rel: "noopener noreferrer",
+      }, item.path),
+    );
+  }
+  if (!item.exists) return el("p", { class: "hint" }, t("assetMissing"));
+  if (isVideoMedia(item)) {
+    return el("div", { class: "asset-preview-body" },
+      el("video", {
+        class: "asset-preview-media",
+        src: mediaURL(s.project_id, item.path),
+        controls: "",
+        preload: "metadata",
+      }),
+    );
+  }
+  if (isAudioMedia(item)) {
+    return el("div", { class: "asset-preview-body" },
+      el("audio", {
+        class: "asset-preview-media asset-preview-audio",
+        src: mediaURL(s.project_id, item.path),
+        controls: "",
+        preload: "metadata",
+      }),
+    );
+  }
+  if (isImageMedia(item)) {
+    return el("div", { class: "asset-preview-body" },
+      el("img", {
+        class: "asset-preview-media asset-preview-image",
+        src: mediaURL(s.project_id, item.path),
+        alt: "",
+      }),
+    );
+  }
+  return el("p", { class: "hint" }, t("summaryMediaFileHint"));
+}
+
+function closeSummaryPreview() {
+  if (!summaryOpenItem) return;
+  const { li, viewBtn } = summaryOpenItem;
+  li.classList.remove("asset-item--open");
+  const panel = li.querySelector(".asset-preview");
+  if (panel) panel.setAttribute("hidden", "");
+  if (viewBtn) viewBtn.textContent = t("summaryViewDoc");
+  summaryOpenItem = null;
+}
+
+function toggleSummaryPreview(li, viewBtn) {
+  const panel = li.querySelector(".asset-preview");
+  if (!panel) return;
+  const isOpen = li.classList.contains("asset-item--open");
+  closeSummaryPreview();
+  if (!isOpen) {
+    li.classList.add("asset-item--open");
+    panel.removeAttribute("hidden");
+    if (viewBtn) viewBtn.textContent = t("summaryHideDoc");
+    summaryOpenItem = { li, viewBtn };
+    panel.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+function renderSummaryViewButton(li, present) {
+  if (!present) return el("span", { class: "asset-row-action" }, "");
+  const viewBtn = el("button", {
+    type: "button",
+    class: "asset-row-view",
+  }, t("summaryViewDoc"));
+  viewBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleSummaryPreview(li, viewBtn);
+  });
+  return viewBtn;
+}
+
+function renderArtifactItem(s, entry) {
+  const present = Boolean(entry.present);
+  const stages = entry.stages?.length
+    ? entry.stages.map((stageName) => stageLabel(stageName)).join(" · ")
+    : "";
+  const path = entry.path || `artifacts/${entry.name}.json`;
+  const li = el("li", { class: "asset-item" });
+  li.append(
+    el("div", {
+      class: `asset-row asset-row--artifact${present ? "" : " asset-row--pending"}`,
+    },
+      el("span", { class: "asset-row-name" }, artifactLabel(entry.name)),
+      el("span", { class: "asset-row-path" }, path || "—"),
+      el("span", { class: "asset-row-stage" }, stages || "—"),
+      el("span", { class: `asset-row-status${present ? " ok" : ""}` },
+        present ? t("summaryArtifactPresent") : t("summaryArtifactPending")),
+      renderSummaryViewButton(li, present),
+    ),
+    el("div", { class: "asset-preview", hidden: "" },
+      present ? buildArtifactPreview(s, entry) : null,
+    ),
+  );
+  return li;
+}
+
+function renderMediaItem(s, item, index) {
+  const label = item.label || (item.path || "").split("/").pop() || t("item", { n: 1 });
+  const present = item.type === "url" ? Boolean(item.path) : Boolean(item.exists);
+  const li = el("li", { class: "asset-item" });
+  li.append(
+    el("div", {
+      class: `asset-row asset-row--media${present ? "" : " asset-row--pending"}`,
+    },
+      el("span", { class: "asset-row-name" }, label),
+      el("span", { class: "asset-row-type" }, mediaTypeLabel(item.type, item.path)),
+      el("span", { class: "asset-row-path" }, item.path || "—"),
+      el("span", { class: `asset-row-status${present ? " ok" : ""}` },
+        present ? t("summaryMediaPresent") : t("summaryMediaMissing")),
+      renderSummaryViewButton(li, present),
+    ),
+    el("div", { class: "asset-preview", hidden: "" },
+      present ? buildMediaPreview(s, item) : null,
+    ),
+  );
+  return li;
+}
+
+function renderAssetSection({ title, desc, countLabel, headCols, rows, emptyHint, tableKind }) {
+  return el("section", { class: "asset-section" },
+    el("header", { class: "asset-section-head" },
+      el("div", { class: "asset-section-titles" },
+        el("h3", { class: "asset-section-title" }, title),
+        el("p", { class: "asset-section-desc" }, desc),
+      ),
+      countLabel ? el("span", { class: "asset-section-count" }, countLabel) : null,
+    ),
+    rows.length
+      ? el("div", { class: `asset-table asset-table--${tableKind}` },
+        renderAssetTableHead(headCols),
+        el("ul", { class: "asset-list" }, ...rows),
+      )
+      : el("p", { class: "hint asset-section-empty" }, emptyHint),
+  );
+}
+
+function buildProjectSummaryContent(s) {
+  const summary = s.project_summary || { artifacts: [], media: [], counts: {} };
+  const counts = summary.counts || {};
+  const artifactEntries = (summary.artifacts || []).filter((entry) => entry.name !== "decision_log");
+  const media = summary.media || [];
+
+  const artifactRows = artifactEntries.map((entry) => renderArtifactItem(s, entry));
+  const mediaRows = media.map((item, index) => renderMediaItem(s, item, index));
+
+  const artifactCount = counts.artifacts_total != null
+    ? t("summaryArtifacts", {
+      present: counts.artifacts_present ?? 0,
+      total: counts.artifacts_total ?? 0,
+    })
+    : null;
+  const mediaCount = counts.media != null
+    ? t("summaryMedia", { n: counts.media ?? 0 })
+    : null;
+
+  return el("div", { class: "project-summary-body" },
+    el("header", { class: "project-summary-head" },
+      el("h2", { class: "project-summary-title" }, t("projectSummaryTitle")),
+      el("p", { class: "hint project-summary-lead" }, t("projectSummaryLead")),
+    ),
+    renderAssetSection({
+      title: t("summaryArtifactSectionTitle"),
+      desc: t("summaryArtifactSectionDesc"),
+      countLabel: artifactCount,
+      headCols: [t("summaryColName"), t("summaryColPath"), t("summaryColStage"), t("summaryColStatus"), t("summaryColAction")],
+      rows: artifactRows,
+      emptyHint: t("summaryNoArtifacts"),
+      tableKind: "artifact",
+    }),
+    renderAssetSection({
+      title: t("summaryMediaSectionTitle"),
+      desc: t("summaryMediaSectionDesc"),
+      countLabel: mediaCount,
+      headCols: [t("summaryColName"), t("summaryColType"), t("summaryColPath"), t("summaryColStatus"), t("summaryColAction")],
+      rows: mediaRows,
+      emptyHint: t("summaryNoMedia"),
+      tableKind: "media",
+    }),
+  );
+}
+
+function openProjectSummaryModal() {
+  if (!state) return;
+  summaryOpenItem = null;
+  mountSummaryModal(buildProjectSummaryContent(state));
+}
+
+function reviewMetrics(review) {
+  const nested = review && review.summary && typeof review.summary === "object"
+    ? review.summary : {};
+  return {
+    critical: Number((review && review.critical) ?? nested.critical ?? 0),
+    suggestions: Number((review && review.suggestions) ?? nested.suggestions ?? 0),
+    nitpicks: Number((review && review.nitpicks) ?? nested.nitpicks ?? 0),
+  };
+}
+
+function reviewSummaryText(review) {
+  if (!review) return "";
+  if (typeof review.summary === "string") return review.summary;
+  const nested = review.summary && typeof review.summary === "object" ? review.summary : {};
+  const counts = reviewMetrics(review);
+  return [
+    review.decision,
+    `${counts.critical} critical`,
+    `${counts.suggestions} suggestion${counts.suggestions === 1 ? "" : "s"}`,
+    nested.review_focus_met ? `review focus ${nested.review_focus_met}` : null,
+    nested.schema_validation,
+  ].filter(Boolean).join(" · ");
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +722,18 @@ function artifactReviewContent(name, artifact) {
       }))),
     ].filter(Boolean);
   }
+  if (name === "video_analysis_brief") {
+    const source = artifact.source || {};
+    const content = artifact.content_analysis || {};
+    return [
+      content.summary ? el("p", { class: "approval-lead" }, shortText(content.summary, 220)) : null,
+      reviewFacts([
+        reviewFact(t("duration"), source.duration_seconds != null ? fmtDuration(source.duration_seconds) : null),
+        reviewFact(t("scenesField"), (artifact.structure_analysis || {}).total_scenes),
+        reviewFact("来源", source.title || source.url || source.local_path),
+      ]),
+    ].filter(Boolean);
+  }
   return genericArtifactSummary(artifact);
 }
 
@@ -577,6 +852,7 @@ function closeModal() {
   modal.removeAttribute("role");
   modal.setAttribute("aria-hidden", "true");
   document.body.style.overflow = "";
+  summaryOpenItem = null;
 }
 function openBoardSettings() {
   openProjectSettings(projectId, {
@@ -1096,10 +1372,10 @@ function render() {
   app.innerHTML = "";
   app.append(renderSlate(s));
   app.append(renderRail(s));
-  const replayBar = renderReplayBar(state);
-  if (replayBar) app.append(replayBar);
   const drawer = renderDrawer(s);
   if (drawer) app.append(drawer);
+  const replayBar = renderReplayBar(state);
+  if (replayBar) app.append(replayBar);
   const awaitingNotice = renderAwaitingNotice(s);
   if (awaitingNotice) app.append(awaitingNotice);
   const noState = renderNoState(s);
@@ -1145,6 +1421,7 @@ function normalize(s) {
     stage.produces = Array.isArray(stage.produces) ? stage.produces : [];
   }
   s.artifacts = s.artifacts || {};
+  s.project_summary = s.project_summary || { artifacts: [], media: [], counts: {} };
   s.media = s.media || {};
   s.media.renders = Array.isArray(s.media.renders) ? s.media.renders : [];
   s.media.snapshots = Array.isArray(s.media.snapshots) ? s.media.snapshots : [];

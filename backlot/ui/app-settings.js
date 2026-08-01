@@ -1,6 +1,6 @@
 /** Global settings — preferences, system dependencies, and skill/tool catalog. */
 
-import { el, getJSON, patchJSON } from "/ui/lib.js";
+import { brandMark, el, getJSON, patchJSON } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
 import { renderLoading } from "/ui/loading.js";
 import { renderStylePlaybookField } from "/ui/project-form.js";
@@ -11,7 +11,7 @@ import { loadEnvConfigInto, saveEnvConfigForm } from "/ui/env-config.js";
 function buildModalHeader(title, lead) {
   return el("header", { class: "lib-create-header" },
     el("div", { class: "lib-create-brand" },
-      el("div", { class: "clapper", "aria-hidden": "true" }),
+      brandMark({ hidden: true }),
       el("div", { class: "lib-create-heading" },
         el("h2", { class: "lib-create-title", id: "libAppSettingsTitle" }, title),
         lead ? el("p", { class: "lib-create-lead" }, lead) : null,

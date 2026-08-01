@@ -23,6 +23,7 @@ _STAGE_NAME_ZH: dict[str, str] = {
     "character_design": "角色设计",
     "rig_plan": "绑骨方案",
     "reference": "参考分析",
+    "reference_analysis": "参考分析",
     "sample": "样片预览",
 }
 

@@ -189,6 +189,26 @@ export function waveBars(container, seedStr, count = 26, maxH = 14) {
   }
 }
 
+export function brandMark({ size = 40, hidden = false } = {}) {
+  const wrap = el("div", {
+    class: "brand-mark-wrap",
+    "aria-hidden": hidden ? "true" : null,
+    style: `--brand-mark-size: ${size}px`,
+  });
+  const imgAttrs = {
+    class: "brand-mark",
+    width: String(size),
+    height: String(size),
+    alt: "Monty the Clapper",
+    decoding: "async",
+  };
+  wrap.append(
+    el("img", { ...imgAttrs, class: "brand-mark brand-mark-dark", src: "/assets/monty-dark.svg" }),
+    el("img", { ...imgAttrs, class: "brand-mark brand-mark-light", src: "/assets/monty-light.svg" }),
+  );
+  return wrap;
+}
+
 export const STAGE_ICONS = {
   completed: "✓",
   in_progress: "◉",

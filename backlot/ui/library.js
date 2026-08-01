@@ -1,4 +1,4 @@
-import { deleteJSON, el, fmtAgo, getJSON, patchJSON, postJSON, subscribe, thumbURL } from "/ui/lib.js";
+import { brandMark, deleteJSON, el, fmtAgo, getJSON, patchJSON, postJSON, subscribe, thumbURL } from "/ui/lib.js";
 import { artifactLabel, stageLabel, statusLabel, t } from "/ui/i18n.js";
 import { renderLoading } from "/ui/loading.js";
 import {
@@ -156,7 +156,7 @@ function closeCreateModal() {
 function buildModalHeader(title, lead) {
   return el("header", { class: "lib-create-header" },
     el("div", { class: "lib-create-brand" },
-      el("div", { class: "clapper", "aria-hidden": "true" }),
+      brandMark({ hidden: true }),
       el("div", { class: "lib-create-heading" },
         el("h2", { class: "lib-create-title", id: "libModalTitle" }, title),
         lead ? el("p", { class: "lib-create-lead" }, lead) : null,

@@ -457,3 +457,48 @@ class TestSourceMedia:
         assert sm["preview_path"] == "assets/video/trim_work.mp4"
         assert sm["playback_path"] == "assets/video/trim_work.mp4"
         assert sm["codec"] == "hevc"
+
+
+class TestProjectSummary:
+    def test_project_summary_aggregates_artifacts_and_media(self, projects_root):
+        p = _make_project(projects_root, "proj-sum")
+        _write(p / "project.json", {
+            "project_id": "proj-sum",
+            "title": "Proj Sum",
+            "pipeline_type": "cinematic",
+        })
+        _write(p / "artifacts" / "scene_plan.json", SCENE_PLAN)
+        _write(p / "artifacts" / "script.json", SCRIPT)
+        img = p / "assets" / "images" / "sc1.png"
+        img.write_bytes(b"fake")
+        _write(p / "artifacts" / "asset_manifest.json", {
+            "version": "1.0",
+            "assets": [
+                {"id": "a1", "type": "image", "path": "assets/images/sc1.png", "scene_id": "sc1"},
+            ],
+        })
+        render = p / "renders" / "final.mp4"
+        render.write_bytes(b"mp4")
+        _write(p / "artifacts" / "render_report.json", {
+            "version": "1.0",
+            "outputs": [{
+                "path": "renders/final.mp4",
+                "format": "mp4",
+                "resolution": "1920x1080",
+                "duration_seconds": 10,
+            }],
+        })
+
+        s = load_board_state(p)
+        summary = s["project_summary"]
+        names = {a["name"] for a in summary["artifacts"]}
+        assert "script" in names
+        assert "asset_manifest" in names
+        assert "render_report" in names
+        media_paths = {m["path"] for m in summary["media"]}
+        assert "assets/images/sc1.png" in media_paths
+        assert "renders/final.mp4" in media_paths
+        assert summary["counts"]["artifacts_present"] >= 3
+        assert summary["counts"]["media"] >= 2
+        script_entry = next(a for a in summary["artifacts"] if a["name"] == "script")
+        assert script_entry["path"] == "artifacts/script.json"

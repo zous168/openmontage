@@ -647,6 +647,9 @@ def create_app() -> FastAPI:
 
     if UI_DIR.is_dir():
         app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
+    assets_dir = REPO_ROOT / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     # The board is a long-lived SPA: a tab keeps running whatever board.js it
     # loaded, and browsers heuristically cache /ui assets. no-cache forces a
