@@ -12,5 +12,7 @@ Design contract (see internal/design/LIVING_STORYBOARD.md):
 """
 
 __version__ = "0.1.0"
+# Bump when the UI requires new API routes (``backlot open`` restarts stale servers).
+API_VERSION = 25
 
 DEFAULT_PORT = 4750

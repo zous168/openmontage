@@ -18,6 +18,14 @@ from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-ove
 MEDIA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 MEDIA_VIDEO_EXT = {".mp4", ".webm", ".mov"}
 MEDIA_AUDIO_EXT = {".mp3", ".wav", ".m4a", ".ogg"}
+# HTML5 <video> reliably plays these; MKV/HEVC need a poster + H.264 preview.
+BROWSER_VIDEO_EXT = {".mp4", ".webm"}
+_BROWSER_VIDEO_CODECS = frozenset({"h264", "avc1", "vp8", "vp9", "av1"})
+_NON_BROWSER_VIDEO_CODECS = frozenset({"hevc", "h265", "mpeg4", "msmpeg4v3", "wmv3", "vc1"})
+_PREVIEW_VIDEO_PRIORITY = (
+    "assets/video/source_preview.mp4",
+    "assets/video/trim_work.mp4",
+)
 
 # Directories inside a project we never scan for media (build noise).
 SCAN_EXCLUDE = {"node_modules", ".git", "__pycache__", "history", ".cache"}
@@ -27,6 +35,10 @@ FALLBACK_STAGES = [
     "research", "proposal", "idea", "script", "scene_plan",
     "assets", "edit", "compose", "publish",
 ]
+
+# Simulated / screenshot demo workspaces — hidden from the library grid.
+# Direct URLs (/p/<id>) still work for README walkthroughs.
+_DEMO_PROJECT_IDS = frozenset({"backlot-demo-run", "the-last-lighthouse"})
 
 # How long (seconds) without filesystem activity before a board reads "idle".
 LIVE_WINDOW_SECONDS = 5 * 60
@@ -47,6 +59,14 @@ def _read_json(path: Path) -> Optional[dict]:
         return None
 
 
+def _is_demo_project(project_dir: Path) -> bool:
+    """True for simulate-run / screenshot fixtures — not real productions."""
+    if project_dir.name in _DEMO_PROJECT_IDS:
+        return True
+    marker = _read_json(project_dir / "project.json") or {}
+    return marker.get("demo") is True
+
+
 def _rel(project_dir: Path, path: Path) -> str:
     """Project-relative POSIX path for media URLs."""
     try:
@@ -55,9 +75,7 @@ def _rel(project_dir: Path, path: Path) -> str:
         return path.name
 
 
-# ---------------------------------------------------------------------------
-# Pipeline / stages
-# ---------------------------------------------------------------------------
+from backlot.bootstrap import pipeline_label_zh
 
 def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
     """Stage order + gate flags from the manifest; graceful fallback."""
@@ -80,13 +98,16 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
             if stages:
                 return {
                     "pipeline_type": pipeline_type,
+                    "label_zh": pipeline_label_zh(pipeline_type),
                     "stages": stages,
                     "known": True,
                 }
         except Exception:
             pass
+    ptype = pipeline_type or "unknown"
     return {
-        "pipeline_type": pipeline_type or "unknown",
+        "pipeline_type": ptype,
+        "label_zh": pipeline_label_zh(ptype),
         "stages": [{"name": s, "gated": False, "produces": []} for s in FALLBACK_STAGES],
         "known": False,
     }
@@ -238,6 +259,7 @@ ARTIFACT_FILES = {
     "final_review": "final_review.json",
     "publish_log": "publish_log.json",
     "decision_log": "decision_log.json",
+    "source_media_review": "source_media_review.json",
 }
 
 
@@ -494,6 +516,156 @@ def _build_storyboard(
 
 
 # ---------------------------------------------------------------------------
+# Source / reference media (bootstrap intake)
+# ---------------------------------------------------------------------------
+
+def _first_image_under(project_dir: Path, *rel_dirs: str) -> Optional[str]:
+    for rel_dir in rel_dirs:
+        d = project_dir / rel_dir
+        if not d.is_dir():
+            continue
+        try:
+            for f in sorted(d.iterdir()):
+                if f.is_file() and f.suffix.lower() in MEDIA_IMAGE_EXT:
+                    return _rel(project_dir, f)
+        except OSError:
+            continue
+    return None
+
+
+def _first_browser_video(project_dir: Path, *, skip: Optional[str] = None) -> Optional[str]:
+    """Best project-local MP4/WebM for in-browser preview (skips raw source)."""
+    skip_norm = (skip or "").replace("\\", "/")
+    for rel in _PREVIEW_VIDEO_PRIORITY:
+        if skip_norm and rel.replace("\\", "/") == skip_norm:
+            continue
+        candidate = project_dir / Path(rel)
+        if candidate.is_file():
+            return rel.replace("\\", "/")
+
+    vid_dir = project_dir / "assets" / "video"
+    if not vid_dir.is_dir():
+        return None
+    trim_candidates: list[str] = []
+    other: list[str] = []
+    try:
+        for f in sorted(vid_dir.iterdir()):
+            if not f.is_file() or f.suffix.lower() not in BROWSER_VIDEO_EXT:
+                continue
+            rel = _rel(project_dir, f)
+            rel_norm = rel.replace("\\", "/")
+            if skip_norm and rel_norm == skip_norm:
+                continue
+            name = f.name.lower()
+            if name.startswith("trim") or name.endswith("_preview.mp4"):
+                trim_candidates.append(rel_norm)
+            else:
+                other.append(rel_norm)
+    except OSError:
+        return None
+    if trim_candidates:
+        return trim_candidates[0]
+    return other[0] if other else None
+
+
+def _codec_browser_playable(codec: Any) -> bool:
+    if codec is None or codec == "":
+        return True
+    name = str(codec).lower().strip()
+    if name in _NON_BROWSER_VIDEO_CODECS:
+        return False
+    if name in _BROWSER_VIDEO_CODECS or name.startswith("h264") or name.startswith("avc"):
+        return True
+    return name not in _NON_BROWSER_VIDEO_CODECS
+
+
+def _is_browser_playable_video(ext: str, codec: Any) -> bool:
+    if ext not in BROWSER_VIDEO_EXT:
+        return False
+    return _codec_browser_playable(codec)
+
+
+def _build_source_media(
+    project_dir: Path,
+    meta_json: dict[str, Any],
+    artifacts: dict[str, Any],
+) -> Optional[dict[str, Any]]:
+    """Resolve bootstrap source/reference footage for the board media panel."""
+    pi = meta_json.get("production_inputs") or {}
+    kind = "source"
+    rel = str(pi.get("source_media_path") or "").strip()
+
+    if not rel:
+        ref = str(pi.get("reference_media_path") or "").strip()
+        if ref:
+            rel = ref
+            kind = "reference"
+
+    review = artifacts.get("source_media_review") or {}
+    if not rel:
+        files = review.get("files") or []
+        if files:
+            raw = str(files[0].get("path") or "")
+            resolved = _resolve_asset_path(project_dir, raw)
+            if resolved is not None:
+                rel = _rel(project_dir, resolved)
+
+    if not rel:
+        return None
+
+    resolved = _resolve_asset_path(project_dir, rel)
+    exists = resolved is not None
+    ext = Path(rel).suffix.lower()
+
+    probe: dict[str, Any] = {}
+    rel_name = Path(rel).name
+    rel_norm = rel.replace("\\", "/")
+    for entry in review.get("files") or []:
+        raw = str(entry.get("path") or "").replace("\\", "/")
+        if raw.endswith(rel_name) or rel_norm in raw or raw.endswith(rel_norm):
+            probe = entry.get("technical_probe") or {}
+            break
+
+    codec = probe.get("codec")
+    playable = exists and _is_browser_playable_video(ext, codec)
+
+    poster = _first_image_under(project_dir, "assets/images", "assets/frames")
+    preview_path = None if playable else _first_browser_video(project_dir, skip=rel_norm)
+    playback_path = rel_norm if playable else preview_path
+
+    summary = str(review.get("summary") or "").strip()
+    if not summary:
+        files = review.get("files") or []
+        if files:
+            summary = str(files[0].get("content_summary") or "").strip()
+
+    return {
+        "kind": kind,
+        "path": rel_norm,
+        "exists": exists,
+        "playable": playable,
+        "playback_path": playback_path,
+        "poster": poster,
+        "preview_path": preview_path,
+        "summary": summary[:500],
+        "duration_seconds": probe.get("duration_seconds"),
+        "resolution": probe.get("resolution"),
+        "format": ext.lstrip(".") or None,
+        "codec": codec,
+    }
+
+
+def source_media_summary(project_dir: Path) -> Optional[dict[str, Any]]:
+    """Public helper — source/reference media for settings API and board."""
+    meta_json = _read_json(project_dir / "meta.json") or {}
+    artifacts: dict[str, Any] = {}
+    review = _read_json(project_dir / "artifacts" / "source_media_review.json")
+    if review:
+        artifacts["source_media_review"] = review
+    return _build_source_media(project_dir, meta_json, artifacts)
+
+
+# ---------------------------------------------------------------------------
 # Media discovery
 # ---------------------------------------------------------------------------
 
@@ -647,6 +819,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "artifacts": artifacts,
         "storyboard": storyboard,
         "media": media,
+        "source_media": _build_source_media(project_dir, meta_json, artifacts),
         "events": events,
         "cost": cost,
         "last_activity": last_activity,
@@ -659,12 +832,22 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
 def summarize_project(project_dir: Path) -> dict[str, Any]:
     """Cheap library-card summary (no full artifact parse of big files)."""
     state = load_board_state(project_dir)
+    meta_json = _read_json(project_dir / "meta.json") or {}
+    pi = meta_json.get("production_inputs") or {}
+    has_reference = bool(
+        str(pi.get("reference_url") or "").strip()
+        or str(pi.get("reference_media_path") or "").strip()
+    ) or meta_json.get("intake_mode") == "reference"
     active = next((s for s in state["stages"] if s["status"] in ("in_progress", "awaiting_human")), None)
     done = [s for s in state["stages"] if s["status"] == "completed"]
     return {
         "project_id": state["project_id"],
         "title": state["title"],
         "pipeline_type": state["pipeline"]["pipeline_type"],
+        "pipeline_label_zh": state["pipeline"].get("label_zh") or pipeline_label_zh(
+            state["pipeline"]["pipeline_type"]
+        ),
+        "has_reference": has_reference,
         "has_pipeline_state": state["has_pipeline_state"],
         "poster": state["poster"],
         "live": state["live"],
@@ -690,6 +873,8 @@ def list_projects(projects_dir: Optional[Path] = None) -> list[dict[str, Any]]:
     for entry in sorted(root.iterdir()):
         if not entry.is_dir() or entry.name.startswith(("_", ".")):
             continue
+        if _is_demo_project(entry):
+            continue
         try:
             summaries.append(summarize_project(entry))
         except Exception:
@@ -697,6 +882,7 @@ def list_projects(projects_dir: Optional[Path] = None) -> list[dict[str, Any]]:
                 "project_id": entry.name,
                 "title": entry.name.replace("-", " ").title(),
                 "pipeline_type": "unknown",
+                "pipeline_label_zh": "未知",
                 "has_pipeline_state": False,
                 "poster": None,
                 "live": False,

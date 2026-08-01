@@ -76,6 +76,11 @@ def list_pipelines(defs_dir: Optional[Path] = None) -> list[str]:
     return [p.stem for p in defs_dir.glob("*.yaml")]
 
 
+def clear_pipeline_cache() -> None:
+    """Drop cached manifests after admin edits to pipeline_defs/."""
+    _load_pipeline_cached.cache_clear()
+
+
 def _condition_is_active(condition: Optional[str], context: Optional[dict[str, Any]]) -> bool:
     """Evaluate a simple manifest condition against runtime context."""
     if not condition:

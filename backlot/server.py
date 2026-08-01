@@ -1,8 +1,12 @@
 """Backlot server — FastAPI app: board state API, SSE change feed, media.
 
-The watcher observes ``projects/`` with watchfiles; on any change it bumps a
-per-project version and wakes SSE subscribers, who tell the browser to
-refetch state. The server never writes to project directories.
+The project **board** is a read-only observer: it derives all stage/script/
+storyboard state from files the pipeline already writes under ``projects/``.
+
+The **library** may bootstrap empty workspaces via ``POST /api/projects``
+(``init_project`` only — no checkpoints, no agent orchestration). That write
+path lives in ``backlot.bootstrap`` and does not change how the board renders
+or validates production state.
 """
 
 from __future__ import annotations
@@ -11,13 +15,37 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
 
-from backlot.state import PROJECTS_DIR, REPO_ROOT, list_projects, load_board_state, summarize_project
+from backlot.env_config import build_env_catalog, update_env_vars
+from backlot.app_settings import app_settings_response, update_app_settings
+from backlot.pipeline_admin import (
+    build_pipeline_admin_catalog,
+    get_pipeline_config,
+    read_skill_markdown,
+    update_pipeline_stage,
+    update_pipeline_ui,
+    write_skill_markdown,
+)
+from backlot.skill_tool_catalog import build_skill_tool_catalog
+from backlot.system_check import build_dependency_manifest, run_system_check
+from backlot.bootstrap import (
+    BootstrapError,
+    create_project_workspace,
+    delete_project_workspace,
+    list_pipeline_catalog,
+    list_style_playbook_options,
+    load_project_settings,
+    stage_uploaded_media,
+    update_project_settings,
+)
+from backlot import API_VERSION
+from backlot.state import PROJECTS_DIR, REPO_ROOT, _is_demo_project, list_projects, load_board_state, summarize_project
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
 THUMB_CACHE_DIR = REPO_ROOT / ".backlot" / "thumbs"
@@ -27,6 +55,50 @@ THUMB_WIDTHS = (320, 640, 960)
 _IGNORE_PARTS = {"node_modules", ".git", "__pycache__", ".cache"}
 
 SSE_HEARTBEAT_SECONDS = 15
+
+
+class CreateProjectBody(BaseModel):
+    project_id: str = Field(min_length=1, max_length=64)
+    title: str = Field(min_length=1, max_length=120)
+    pipeline_type: str = Field(min_length=1, max_length=64)
+    style_playbook: Optional[str] = Field(default=None, max_length=64)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    inputs: Optional[dict[str, Any]] = None
+
+
+class UpdateProjectSettingsBody(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    style_playbook: Optional[str] = Field(default=None, max_length=64)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+    inputs: Optional[dict[str, Any]] = None
+    replace_media: bool = False
+
+
+class UpdateEnvVarsBody(BaseModel):
+    values: dict[str, str] = Field(default_factory=dict)
+
+
+class UpdateAppSettingsBody(BaseModel):
+    default_style_playbook: Optional[str] = Field(default=None, max_length=64)
+    default_bootstrap_notes: Optional[str] = Field(default=None, max_length=2000)
+    theme: Optional[str] = Field(default=None, max_length=16)
+    font_scale: Optional[float] = None
+
+
+class UpdatePipelineUiBody(BaseModel):
+    hidden: Optional[bool] = None
+    label_zh: Optional[str] = Field(default=None, max_length=80)
+    summary_zh: Optional[str] = Field(default=None, max_length=200)
+
+
+class UpdatePipelineStageBody(BaseModel):
+    review_focus: Optional[list[str]] = None
+    success_criteria: Optional[list[str]] = None
+    human_approval_default: Optional[bool] = None
+
+
+class UpdateSkillBody(BaseModel):
+    content: str = Field(max_length=500_000)
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -88,6 +160,9 @@ def _cached_summaries() -> list[dict]:
     for entry in sorted(PROJECTS_DIR.iterdir()):
         if not entry.is_dir() or entry.name.startswith(("_", ".")):
             continue
+        if _is_demo_project(entry):
+            _summary_cache.pop(entry.name, None)
+            continue
         cached = _summary_cache.get(entry.name)
         if cached is None:
             try:
@@ -95,7 +170,8 @@ def _cached_summaries() -> list[dict]:
             except Exception:
                 cached = {
                     "project_id": entry.name, "title": entry.name,
-                    "pipeline_type": "unknown", "has_pipeline_state": False,
+                    "pipeline_type": "unknown", "pipeline_label_zh": "未知",
+                    "has_pipeline_state": False,
                     "poster": None, "live": False, "last_activity": 0,
                     "active_stage": None, "awaiting_human": False,
                     "stage_states": [], "completed_count": 0,
@@ -152,6 +228,8 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _startup() -> None:
+        from lib.env_loader import load_env
+        load_env(REPO_ROOT)
         app.state.watch_task = asyncio.create_task(_watch_projects())
 
     @app.on_event("shutdown")
@@ -164,11 +242,186 @@ def create_app() -> FastAPI:
 
     @app.get("/api/health")
     async def health() -> dict:
-        return {"ok": True, "app": "backlot"}
+        return {"ok": True, "app": "backlot", "api_version": API_VERSION}
 
     @app.get("/api/projects")
     async def projects() -> list:
         return await asyncio.to_thread(_cached_summaries)
+
+    @app.get("/api/pipelines")
+    async def pipelines() -> list:
+        return await asyncio.to_thread(list_pipeline_catalog)
+
+    @app.get("/api/style-playbooks")
+    async def style_playbooks() -> list:
+        return await asyncio.to_thread(list_style_playbook_options)
+
+    @app.get("/api/settings")
+    async def app_settings() -> dict:
+        return await asyncio.to_thread(app_settings_response)
+
+    @app.patch("/api/settings")
+    async def patch_app_settings(payload: UpdateAppSettingsBody) -> dict:
+        try:
+            return await asyncio.to_thread(
+                update_app_settings,
+                default_style_playbook=payload.default_style_playbook,
+                default_bootstrap_notes=payload.default_bootstrap_notes,
+                theme=payload.theme,
+                font_scale=payload.font_scale,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/env-vars")
+    async def system_env_vars() -> dict:
+        return await asyncio.to_thread(build_env_catalog)
+
+    @app.patch("/api/system/env-vars")
+    async def patch_system_env_vars(payload: UpdateEnvVarsBody) -> dict:
+        try:
+            return await asyncio.to_thread(update_env_vars, payload.values)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/dependencies")
+    async def system_dependencies(check: bool = False, verify: bool = False) -> dict:
+        if check or verify:
+            return await asyncio.to_thread(run_system_check, verify=verify)
+        return await asyncio.to_thread(build_dependency_manifest)
+
+    @app.get("/api/system/catalog")
+    async def system_catalog() -> dict:
+        return await asyncio.to_thread(build_skill_tool_catalog)
+
+    @app.get("/api/system/pipelines")
+    async def system_pipelines() -> dict:
+        return await asyncio.to_thread(build_pipeline_admin_catalog)
+
+    @app.patch("/api/system/pipelines/{pipeline_id}")
+    async def patch_system_pipeline(pipeline_id: str, payload: UpdatePipelineUiBody) -> dict:
+        try:
+            return await asyncio.to_thread(
+                update_pipeline_ui,
+                pipeline_id,
+                hidden=payload.hidden,
+                label_zh=payload.label_zh,
+                summary_zh=payload.summary_zh,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/pipelines/{pipeline_id}/config")
+    async def system_pipeline_config(pipeline_id: str) -> dict:
+        try:
+            return await asyncio.to_thread(get_pipeline_config, pipeline_id)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/system/pipelines/{pipeline_id}/stages/{stage_name}")
+    async def patch_system_pipeline_stage(
+        pipeline_id: str,
+        stage_name: str,
+        payload: UpdatePipelineStageBody,
+    ) -> dict:
+        try:
+            return await asyncio.to_thread(
+                update_pipeline_stage,
+                pipeline_id,
+                stage_name,
+                review_focus=payload.review_focus,
+                success_criteria=payload.success_criteria,
+                human_approval_default=payload.human_approval_default,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/skills/{skill_path:path}")
+    async def system_skill_content(skill_path: str) -> dict:
+        try:
+            return await asyncio.to_thread(read_skill_markdown, skill_path)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/system/skills/{skill_path:path}")
+    async def patch_system_skill_content(skill_path: str, payload: UpdateSkillBody) -> dict:
+        try:
+            return await asyncio.to_thread(write_skill_markdown, skill_path, payload.content)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/stage-media")
+    async def stage_media(file: UploadFile = File(...)) -> dict:
+        """Upload local media for bootstrap; returns server path for create_project ingest."""
+        try:
+            return await asyncio.to_thread(
+                stage_uploaded_media,
+                filename=file.filename or "upload.bin",
+                stream=file.file,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/projects")
+    async def create_project(payload: CreateProjectBody) -> dict:
+        try:
+            result = await asyncio.to_thread(
+                create_project_workspace,
+                project_id=payload.project_id,
+                title=payload.title,
+                pipeline_type=payload.pipeline_type,
+                style_playbook=payload.style_playbook,
+                notes=payload.notes,
+                inputs=payload.inputs,
+                projects_dir=PROJECTS_DIR,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _invalidate_summary(result["project_id"])
+        hub.publish(result["project_id"])
+        return result
+
+    @app.delete("/api/projects/{project_id}")
+    async def delete_project(project_id: str) -> dict:
+        try:
+            result = await asyncio.to_thread(
+                delete_project_workspace,
+                project_id=project_id,
+                projects_dir=PROJECTS_DIR,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _invalidate_summary(result["project_id"])
+        hub.publish(result["project_id"])
+        return result
+
+    @app.get("/api/project/{project_id}/settings")
+    async def project_settings(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            return await asyncio.to_thread(load_project_settings, project_dir)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.patch("/api/project/{project_id}/settings")
+    async def patch_project_settings(project_id: str, payload: UpdateProjectSettingsBody) -> dict:
+        _safe_project_dir(project_id)
+        try:
+            result = await asyncio.to_thread(
+                update_project_settings,
+                project_id=project_id,
+                title=payload.title,
+                style_playbook=payload.style_playbook,
+                notes=payload.notes,
+                inputs=payload.inputs,
+                replace_media=payload.replace_media,
+                projects_dir=PROJECTS_DIR,
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
 
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
@@ -280,9 +533,17 @@ def create_app() -> FastAPI:
     async def board_page_path(project_path: str) -> HTMLResponse:
         return _ui_html("board.html", ("board.css", "board.js"))
 
+    @app.get("/pipelines")
+    async def pipelines_list_page() -> HTMLResponse:
+        return _ui_html("pipelines.html", ("board.css", "pipelines.js", "i18n.js"))
+
+    @app.get("/pipelines/{pipeline_id}")
+    async def pipelines_config_page(pipeline_id: str) -> HTMLResponse:
+        return _ui_html("pipelines.html", ("board.css", "pipelines.js", "i18n.js"))
+
     @app.get("/")
     async def library_page() -> HTMLResponse:
-        return _ui_html("index.html", ("board.css", "library.js"))
+        return _ui_html("index.html", ("board.css", "library.js", "i18n.js"))
 
     if UI_DIR.is_dir():
         app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
@@ -295,7 +556,7 @@ def create_app() -> FastAPI:
     async def ui_no_cache(request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith("/ui") or path.startswith("/p/"):
+        if path == "/" or path.startswith("/ui") or path.startswith("/p/") or path.startswith("/pipelines"):
             response.headers["Cache-Control"] = "no-cache"
         return response
 

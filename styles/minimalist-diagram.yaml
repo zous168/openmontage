@@ -1,5 +1,7 @@
 identity:
   name: "Minimalist Diagram"
+  name_zh: "极简图解"
+  summary_zh: "流程图、概念拆解；细线、大留白"
   category: whiteboard
   mood: focused, technical, precise
   pace: deliberate

@@ -79,6 +79,7 @@ class TestBoardState:
         s = load_board_state(p)
         assert s["title"] == "My Film"
         assert s["pipeline"]["pipeline_type"] == "cinematic"
+        assert s["pipeline"]["label_zh"] == "电影级短片"
         assert s["pipeline"]["known"] is True
         board = s["storyboard"]
         assert len(board["scenes"]) == 2
@@ -181,6 +182,33 @@ class TestLibrary:
         ids = [p["project_id"] for p in list_projects(projects_root)]
         assert ids == ["real"]
 
+    def test_demo_projects_hidden_from_library(self, projects_root):
+        demo = _make_project(projects_root, "backlot-demo-run")
+        _write(demo / "project.json", {
+            "title": "The Last Lighthouse",
+            "pipeline_type": "cinematic",
+        })
+        real = _make_project(projects_root, "real-film")
+        _write(real / "project.json", {"title": "Real", "pipeline_type": "cinematic"})
+        ids = [p["project_id"] for p in list_projects(projects_root)]
+        assert ids == ["real-film"]
+        assert summarize_project(demo)["title"] == "The Last Lighthouse"
+
+    def test_demo_flag_hides_from_library(self, projects_root):
+        demo = _make_project(projects_root, "my-demo")
+        _write(demo / "project.json", {
+            "title": "Demo",
+            "pipeline_type": "cinematic",
+            "demo": True,
+        })
+        _make_project(projects_root, "real")
+        _write((projects_root / "real" / "project.json"), {
+            "title": "Real",
+            "pipeline_type": "cinematic",
+        })
+        ids = [p["project_id"] for p in list_projects(projects_root)]
+        assert ids == ["real"]
+
     def test_summary_shape(self, projects_root):
         p = _make_project(projects_root, "sum")
         _write(p / "project.json", {"title": "Sum", "pipeline_type": "cinematic"})
@@ -191,6 +219,14 @@ class TestLibrary:
         summary = summarize_project(p)
         assert summary["awaiting_human"] is True
         assert summary["active_stage"] == "script"
+        assert summary["pipeline_label_zh"] == "电影级短片"
+
+    def test_pipeline_label_zh_talking_head(self, projects_root):
+        p = _make_project(projects_root, "talk-show")
+        _write(p / "project.json", {"title": "Talk", "pipeline_type": "talking-head"})
+        s = load_board_state(p)
+        assert s["pipeline"]["label_zh"] == "真人口播剪辑"
+        assert summarize_project(p)["pipeline_label_zh"] == "真人口播剪辑"
 
 
 class TestFindingsFixes:
@@ -354,3 +390,70 @@ class TestStoryboardVisualSelection:
         assert card["visual"]["exists"] is True
         assert card["visual"]["path"].endswith("real.png")
         assert [t["path"].split("/")[-1] for t in card["takes"]] == ["real.png"]
+
+
+class TestSourceMedia:
+    def test_source_mkv_with_mp4_preview(self, projects_root):
+        p = _make_project(projects_root, "koubo")
+        _write(p / "project.json", {
+            "project_id": "koubo", "title": "口播", "pipeline_type": "talking-head",
+        })
+        _write(p / "meta.json", {
+            "production_inputs": {"source_media_path": "assets/video/source.mkv"},
+        })
+        (p / "assets" / "video").mkdir(parents=True, exist_ok=True)
+        (p / "assets" / "video" / "source.mkv").write_bytes(b"mkv")
+        (p / "assets" / "video" / "trim_30s.mp4").write_bytes(b"mp4")
+        (p / "assets" / "images" / "frame_01.jpg").write_bytes(b"jpeg")
+        _write(p / "artifacts" / "source_media_review.json", {
+            "version": "1.0",
+            "files": [{
+                "path": str(p / "assets" / "video" / "source.mkv"),
+                "media_type": "video",
+                "technical_probe": {"duration_seconds": 121.5, "resolution": "720x1280"},
+                "content_summary": "Vertical talking-head.",
+            }],
+            "summary": "Single vertical MKV talking-head.",
+        })
+
+        s = load_board_state(p)
+        sm = s["source_media"]
+        assert sm is not None
+        assert sm["path"] == "assets/video/source.mkv"
+        assert sm["exists"] is True
+        assert sm["playable"] is False
+        assert sm["poster"] == "assets/images/frame_01.jpg"
+        assert sm["preview_path"] == "assets/video/trim_30s.mp4"
+        assert sm["playback_path"] == "assets/video/trim_30s.mp4"
+        assert sm["duration_seconds"] == 121.5
+
+    def test_source_hevc_mp4_uses_h264_preview(self, projects_root):
+        p = _make_project(projects_root, "koubo2")
+        _write(p / "project.json", {
+            "project_id": "koubo2", "title": "口播2", "pipeline_type": "talking-head",
+        })
+        _write(p / "meta.json", {
+            "production_inputs": {"source_media_path": "assets/video/source.mp4"},
+        })
+        (p / "assets" / "video").mkdir(parents=True, exist_ok=True)
+        (p / "assets" / "video" / "source.mp4").write_bytes(b"mp4")
+        (p / "assets" / "video" / "trim_work.mp4").write_bytes(b"h264")
+        _write(p / "artifacts" / "source_media_review.json", {
+            "version": "1.0",
+            "files": [{
+                "path": str(p / "assets" / "video" / "source.mp4"),
+                "media_type": "video",
+                "technical_probe": {
+                    "duration_seconds": 28.12,
+                    "resolution": "1080x1920",
+                    "codec": "hevc",
+                },
+            }],
+        })
+
+        s = load_board_state(p)
+        sm = s["source_media"]
+        assert sm["playable"] is False
+        assert sm["preview_path"] == "assets/video/trim_work.mp4"
+        assert sm["playback_path"] == "assets/video/trim_work.mp4"
+        assert sm["codec"] == "hevc"

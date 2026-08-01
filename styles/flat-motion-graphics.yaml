@@ -1,5 +1,7 @@
 identity:
   name: "Flat Motion Graphics"
+  name_zh: "扁平动效"
+  summary_zh: "MG 动画、信息图表；高饱和、几何图形"
   category: motion-graphics
   mood: energetic, modern, bold
   pace: fast

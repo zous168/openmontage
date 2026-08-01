@@ -32,11 +32,13 @@ found" view — media, snapshots, renders.
 **Replay**: a completed run can be scrubbed end-to-end (▶ REPLAY RUN on the
 board) — reconstructed from checkpoint history and event timestamps.
 
-Try it without a real production:
+Try it without a real production (demo projects are **hidden from the library**;
+open them by ID or run simulate with `--cleanup` when done):
 
 ```bash
 python scripts/backlot_simulate_run.py          # live demo run (~1 min)
-python -m backlot open backlot-demo-run
+python -m backlot open backlot-demo-run         # board only — not in library grid
+python scripts/backlot_simulate_run.py --cleanup  # remove demo dir after
 ```
 
 Design doc: `internal/design/LIVING_STORYBOARD.md`.

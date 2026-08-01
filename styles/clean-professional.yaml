@@ -1,5 +1,7 @@
 identity:
   name: "Clean Professional"
+  name_zh: "干净专业"
+  summary_zh: "企业解说、教程、SaaS 演示；蓝白商务、节奏适中"
   category: motion-graphics
   mood: polished, trustworthy, clear
   pace: moderate

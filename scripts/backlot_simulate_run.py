@@ -74,7 +74,7 @@ def main() -> int:
 
     print(f"[sim] init_project {pid}")
     init_project(pid, title="The Last Lighthouse", pipeline_type="cinematic",
-                 style_playbook="clean-professional")
+                 style_playbook="clean-professional", demo=True)
     art = artifacts_for(pid)
 
     def save_artifact(name: str, data: dict) -> None:

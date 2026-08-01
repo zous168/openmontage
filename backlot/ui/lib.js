@@ -1,9 +1,92 @@
 // Shared helpers for the Backlot UI.
 
+export { fmtAgo } from "/ui/i18n.js";
+
 export async function getJSON(url) {
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`${res.status} ${url}`);
-  return res.json();
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    throw new Error(typeof detail === "string" && detail ? detail : `${res.status} ${url}`);
+  }
+  return data;
+}
+
+export async function deleteJSON(url) {
+  const res = await fetch(url, { method: "DELETE" });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+export async function postForm(url, formData) {
+  const res = await fetch(url, { method: "POST", body: formData });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+export async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
+export async function patchJSON(url, body) {
+  const res = await fetch(url, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    throw new Error(msg);
+  }
+  return data;
 }
 
 export function el(tag, attrs = {}, ...children) {
@@ -15,7 +98,7 @@ export function el(tag, attrs = {}, ...children) {
     else node.setAttribute(k, v);
   }
   for (const child of children.flat()) {
-    if (child == null) continue;
+    if (child == null || child === undefined) continue;
     node.append(child.nodeType ? child : document.createTextNode(String(child)));
   }
   return node;
@@ -35,19 +118,10 @@ export function fmtMoney(v) {
   return `$${n.toFixed(2)}`;
 }
 
-export function fmtAgo(epochSeconds) {
-  if (!epochSeconds) return "";
-  const diff = Date.now() / 1000 - epochSeconds;
-  if (diff < 90) return "just now";
-  if (diff < 3600) return `${Math.round(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.round(diff / 3600)}h ago`;
-  return `${Math.round(diff / 86400)}d ago`;
-}
-
 export function fmtClock(iso) {
   if (!iso) return "";
   try {
-    return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return new Date(iso).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   } catch {
     return "";
   }

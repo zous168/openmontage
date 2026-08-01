@@ -182,6 +182,7 @@ def init_project(
     pipeline_type: str,
     pipeline_dir: Optional[Path] = None,
     style_playbook: Optional[str] = None,
+    demo: bool = False,
 ) -> Path:
     """Initialize a project workspace with the canonical layout + marker file.
 
@@ -208,7 +209,7 @@ def init_project(
     marker: dict[str, Any] = {}
     if marker_path.exists():
         try:
-            with open(marker_path) as f:
+            with open(marker_path, encoding="utf-8") as f:
                 marker = json.load(f)
         except (json.JSONDecodeError, OSError):
             marker = {}
@@ -220,9 +221,12 @@ def init_project(
     marker["pipeline_type"] = pipeline_type
     if style_playbook is not None:
         marker["style_playbook"] = style_playbook
+    if demo:
+        marker["demo"] = True
 
-    with open(marker_path, "w") as f:
-        json.dump(marker, f, indent=2)
+    with open(marker_path, "w", encoding="utf-8") as f:
+        json.dump(marker, f, indent=2, ensure_ascii=False)
+        f.write("\n")
 
     return project_dir
 

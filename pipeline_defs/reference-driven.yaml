@@ -1,0 +1,210 @@
+name: reference-driven
+version: "1.0"
+description: >
+  Reference-first production: analyze an inspiration video (URL or local file),
+  produce a VideoAnalysisBrief, propose differentiated concepts, then continue
+  through standard generated-video stages. Agent may recommend switching to
+  cinematic, animation, or character-animation after proposal if the reference
+  demands a different render path.
+category: generated
+stability: production
+default_checkpoint_policy: guided
+
+reference_input:
+  supported: true
+  analysis_depth: standard
+  analysis_tools:
+    - video_analyzer
+    - transcript_fetcher
+    - video_downloader
+    - scene_detect
+    - frame_sampler
+
+extensions:
+  custom_scripts: true
+  custom_playbooks: true
+  custom_skills: true
+  custom_tools: false
+
+required_skills:
+  - meta/video-reference-analyst
+  - meta/creative-intake
+  - pipelines/reference-driven/reference-director
+  - pipelines/explainer/executive-producer
+  - pipelines/explainer/research-director
+  - pipelines/explainer/proposal-director
+  - pipelines/explainer/script-director
+  - pipelines/explainer/scene-director
+  - pipelines/explainer/asset-director
+  - pipelines/explainer/edit-director
+  - pipelines/explainer/compose-director
+  - pipelines/explainer/publish-director
+  - meta/reviewer
+  - meta/checkpoint-protocol
+  - meta/animation-runtime-selector
+  - meta/voice-performance-director
+
+orchestration:
+  mode: executive-producer
+  skill: pipelines/explainer/executive-producer
+  budget_default_usd: 2.00
+  max_revisions_per_stage: 3
+  max_send_backs: 3
+  max_wall_time_minutes: 25
+
+compatible_playbooks:
+  recommended:
+    - clean-professional
+    - flat-motion-graphics
+  also_works:
+    - minimalist-diagram
+  custom_allowed: true
+
+stages:
+  - name: reference_analysis
+    skill: pipelines/reference-driven/reference-director
+    produces:
+      - video_analysis_brief
+    tools_available:
+      - video_analyzer
+      - transcript_fetcher
+      - video_downloader
+      - scene_detect
+      - frame_sampler
+    checkpoint_required: true
+    human_approval_default: false
+    review_focus:
+      - Reference analyzed with VideoAnalyzer before any creative work
+      - Five-aspect breakdown present per shot or shot-group
+      - motion_type classified honestly for each scene
+      - replication_guidance includes suggested_pipeline when clear
+    success_criteria:
+      - Schema-valid video_analysis_brief artifact
+      - User saw a conversational summary before proceeding
+
+  - name: research
+    skill: pipelines/explainer/research-director
+    required_artifacts_in:
+      - video_analysis_brief
+    produces:
+      - research_brief
+    tools_available: []
+    checkpoint_required: false
+    human_approval_default: false
+    review_focus:
+      - reference_context section positions against the inspiration video
+      - At least 3 genuinely different angles discovered
+    success_criteria:
+      - Schema-valid research_brief with reference_context when reference-driven
+
+  - name: proposal
+    skill: pipelines/explainer/proposal-director
+    required_artifacts_in:
+      - research_brief
+      - video_analysis_brief
+    produces:
+      - proposal_packet
+      - decision_log
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    review_focus:
+      - Concepts differentiated from reference — not a carbon copy
+      - Concept differentiation from reference explicitly documented
+    success_criteria:
+      - Schema-valid proposal_packet with at least 3 concept_options
+      - approval.status is approved before production stages
+
+  - name: script
+    skill: pipelines/explainer/script-director
+    required_artifacts_in:
+      - proposal_packet
+    optional_artifacts_in:
+      - research_brief
+      - video_analysis_brief
+    produces:
+      - script
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    success_criteria:
+      - Schema-valid script
+
+  - name: scene_plan
+    skill: pipelines/explainer/scene-director
+    required_artifacts_in:
+      - script
+    produces:
+      - scene_plan
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: true
+    success_criteria:
+      - Schema-valid scene_plan
+
+  - name: assets
+    skill: pipelines/explainer/asset-director
+    required_artifacts_in:
+      - scene_plan
+      - script
+    produces:
+      - asset_manifest
+    required_tools:
+      - tts_selector
+      - image_selector
+    tools_available:
+      - tts_selector
+      - image_selector
+      - video_selector
+      - diagram_gen
+      - music_gen
+    checkpoint_required: true
+    human_approval_default: true
+    success_criteria:
+      - Schema-valid asset_manifest
+
+  - name: edit
+    skill: pipelines/explainer/edit-director
+    required_artifacts_in:
+      - scene_plan
+      - asset_manifest
+    produces:
+      - edit_decisions
+    tools_available: []
+    checkpoint_required: true
+    human_approval_default: false
+    success_criteria:
+      - Schema-valid edit_decisions
+
+  - name: compose
+    skill: pipelines/explainer/compose-director
+    required_artifacts_in:
+      - edit_decisions
+      - asset_manifest
+    produces:
+      - render_report
+      - final_review
+    required_tools:
+      - video_compose
+      - audio_mixer
+    tools_available:
+      - video_compose
+      - hyperframes_compose
+      - audio_mixer
+    checkpoint_required: true
+    human_approval_default: false
+    success_criteria:
+      - Schema-valid render_report
+
+  - name: publish
+    skill: pipelines/explainer/publish-director
+    required_artifacts_in:
+      - render_report
+      - final_review
+    produces:
+      - publish_log
+    tools_available: [export_bundle]
+    checkpoint_required: true
+    human_approval_default: true
+    success_criteria:
+      - Schema-valid publish_log

@@ -1,5 +1,7 @@
 identity:
   name: "Premium Minimalist"
+  name_zh: "高级极简"
+  summary_zh: "投资人简报、产品叙事；留白大、编辑感强"
   category: minimalist
   mood: calm, editorial, precise
   pace: deliberate

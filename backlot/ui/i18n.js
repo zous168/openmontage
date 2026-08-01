@@ -1,0 +1,480 @@
+// Backlot UI — 简体中文文案
+
+const STAGE_NAMES = {
+  research: "调研",
+  proposal: "方案",
+  idea: "创意",
+  script: "脚本",
+  scene_plan: "分镜",
+  assets: "资产",
+  edit: "剪辑",
+  compose: "合成",
+  publish: "发布",
+  character_design: "角色设计",
+  rig_plan: "绑骨方案",
+};
+
+const ARTIFACT_NAMES = {
+  research_brief: "调研简报",
+  proposal_packet: "制作方案",
+  brief: "创意简报",
+  script: "脚本",
+  scene_plan: "分镜计划",
+  asset_manifest: "资产清单",
+  edit_decisions: "剪辑决策",
+  render_report: "渲染报告",
+  final_review: "终检",
+  publish_log: "发布计划",
+  decision_log: "决策日志",
+  character_design: "角色设计",
+  rig_plan: "绑骨方案",
+  pose_library: "姿势库",
+};
+
+const CAPABILITY_NAMES = {
+  video_generation: "视频生成",
+  video_post: "视频后期",
+  image_generation: "图像生成",
+  tts: "语音合成",
+  music_search: "音乐搜索",
+  audio_processing: "音频处理",
+  subtitle: "字幕",
+  analysis: "分析",
+  avatar: "数字人",
+  screen_capture: "屏幕录制",
+  clip_acquisition: "片段获取",
+  graphics: "图形",
+  publish: "发布",
+};
+
+const STATUS_LABELS = {
+  completed: "已完成",
+  in_progress: "进行中",
+  awaiting_human: "待审批",
+  failed: "失败",
+  pending: "待开始",
+  unknown: "未知",
+};
+
+const STRINGS = {
+  // 通用
+  backlot: "Backlot",
+  library: "项目库",
+  idle: "空闲",
+  live: "进行中",
+  awaitingYou: "◈ 待你确认",
+  stalled: "⚠ 可能卡住？",
+  projects: "{n} 个项目",
+  liveCount: "{n} 个进行中",
+  noProjectsLead: "还没有项目。先新建一个，或在 Cursor 聊天里启动制作。",
+  noMediaYet: "暂无媒体",
+  unknown: "未知",
+  pipeline: "{type} 流水线",
+  scenes: "{n} 个场景",
+  scenesDuration: "{n} 个场景 · {dur}",
+  renders: "{n} 个成片",
+  generationSpend: "生成花费",
+  switchTheme: "切换到{theme}主题",
+  themeDark: "深色",
+  themeLight: "浅色",
+
+  // 阶段副标题
+  awaitingApprovalHint: "等待你的审批\n在聊天中回复以继续",
+  stalledHint: "无活动 {ago}\n可能卡住？",
+  scenesDone: "已完成 {n} 个场景",
+  inProgress: "进行中",
+  failed: "失败",
+  undeclaredStage: "「{name}」已运行，但未在本流水线清单中声明",
+
+  // 脚本
+  approved: "已通过",
+  pendingApproval: "待审批",
+  drafting: "撰写中",
+  clickExpandScript: "点击展开完整脚本",
+  scriptMeta: "脚本 · {dur} · {n} 个段落",
+  expandScript: "⤢ 展开脚本",
+  section: "段落",
+  moreSections: "… 还有 {n} 个段落",
+  end: "结束",
+  escClose: "ESC · 关闭",
+
+  // 审批
+  reviewGate: "审批关卡",
+  stageReadyReview: "{stage} 已就绪，等待审阅",
+  reviewInChat: "在此审阅产物，然后在聊天中回复以批准或要求修改。",
+  selfReview: "自检  ",
+  approvalUnlocks: "批准后解锁 {stage}。",
+  finalApprovalGate: "这是最后一个审批关卡。",
+  openFullArtifact: "查看完整产物",
+  nothingReviewable: "未找到可审阅内容。",
+  checkpointDeclaresMissing: "{stage} 检查点声明了 {artifacts}，但 Backlot 无法加载。",
+  checkpointNoArtifact: "{stage} 检查点未声明产物。",
+  whyThisConcept: "为何选此方案  ",
+  scriptPreviewBelow: "完整脚本预览见下方。",
+  reviewStoryboard: "请在下方分镜中核对时长与镜头覆盖。",
+  inspectFilmstrip: "批准合成前，请在下方胶片条中检查每个生成镜头。",
+  productionProposal: "制作方案",
+  researchBrief: "调研简报",
+  scenePlanTitle: "分镜计划",
+  generatedAssets: "已生成资产",
+  editDecisions: "剪辑决策",
+  renderReport: "渲染报告",
+  publishPlan: "发布计划",
+  publishDestination: "发布目标",
+  selected: "已选",
+  item: "条目 {n}",
+
+  // 字段标签
+  platform: "平台",
+  duration: "时长",
+  tone: "基调",
+  style: "风格",
+  runtime: "渲染引擎",
+  pipelineField: "流水线",
+  estimatedCost: "预估成本",
+  concepts: "方案数",
+  sources: "来源",
+  dataPoints: "数据点",
+  angles: "角度",
+  sections: "段落",
+  scenesField: "场景",
+  assets: "资产",
+  types: "类型",
+  generationCost: "生成成本",
+  cuts: "剪切",
+  outputs: "输出",
+  destinations: "发布目标",
+
+  // 抽屉
+  stageNotRun: "此阶段尚未运行。",
+  noArtifactOnDisk: "磁盘上未找到此阶段的标准产物。",
+  gateSkipped: "⚑ 已跳过关卡",
+  close: "关闭",
+  critical: "{n} 个严重",
+  suggestions: "{n} 条建议",
+  nitpicks: "{n} 条细节",
+
+  // 面板
+  decisions: "决策",
+  activity: "活动",
+  alsoConsidered: "也曾考虑：",
+  revised: " · 已修订",
+  decision: "决策",
+  running: "● 运行中",
+
+  // 分镜
+  storyboard: "分镜",
+  storyboardMeta: "{n} 个场景 · {dur} · 卡片宽度 ∝ 时长",
+  generating: "◉ 生成中",
+  hero: "★ 重点",
+  bespoke: "◆ 定制",
+  handAuthored: "手工编写合成",
+  assetUnavailable: "资产不可用",
+  assetMissing: "清单中有记录，文件缺失",
+  noAssetYet: "尚无资产",
+  takes: "{n} 个镜头",
+  clickReadNarration: "点击阅读完整旁白",
+  playNarration: "播放旁白",
+  intent: "意图 — {text}",
+
+  // 成片
+  rendersTitle: "成片",
+  renderVersions: "{n} 个版本",
+  root: " · 根目录",
+
+  // 源素材
+  sourceMediaTitle: "源素材",
+  referenceMediaTitle: "参考视频",
+  sourceMediaMeta: "{dur} · {res} · {fmt}",
+  sourceNotPlayable: "浏览器无法直接播放 {fmt}，且暂无 H.264 预览；请等待 Agent 生成 trim 或重新导入。",
+  sourceBrowserPreview: "源文件为 {fmt}，浏览器无法直接解码；当前播放 H.264 预览版。",
+  sourcePreviewLabel: "可播放预览",
+  sourceMissing: "源素材文件未找到",
+  sourcePath: "路径",
+
+  // 降级视图
+  watcherFound: "监视器发现的内容",
+  snapshotsMeta: "快照 / 验证帧",
+  noPipelineState: "无流水线状态。",
+  noPipelineStateDetail: "此项目没有检查点 — Backlot 仅显示磁盘上找到的内容。遵循检查点协议的运行会获得完整看板。",
+  stageWaiting: "{stage} 阶段等待你的审阅。",
+  agentPaused: "Agent 已在此关卡暂停 — 在 ",
+  inChat: "聊天中",
+  approveOrChange: " 回复以批准或要求修改。",
+
+  // 回放
+  scrubRun: "回放整条制作",
+  replayRun: "▶ 回放制作",
+  exitReplay: "✕ 实时",
+
+  // 错误
+  projectNotFound: "未找到项目",
+  unlisted: "未在清单中",
+  stalledDetail: "无活动 {n} 分钟\n可向 Agent 询问状态",
+  approvedSuffix: " · 已批准",
+
+  // 时间
+  justNow: "刚刚",
+  minutesAgo: "{n} 分钟前",
+  hoursAgo: "{n} 小时前",
+  daysAgo: "{n} 天前",
+
+  // 项目库 — 新建
+  createProject: "新建项目",
+  createProjectTitle: "新建项目",
+  createProjectLead: "选择产出类型并填写参数；实际制作在 Cursor 聊天中启动。",
+  createProjectMore: "流程说明",
+  createProjectHint: "可选填参考视频链接或路径，Agent 会先分析参考片。源素材会在创建时复制进项目目录。Backlot 看板仅作只读观察，不执行流水线。",
+  fieldProductionInputs: "制作参数",
+  fieldProjectId: "项目 ID",
+  fieldProjectIdHint: "小写字母、数字、连字符，如 promo-video-01",
+  fieldProjectIdReadonlyHint: "项目的文件夹名称，创建后不可修改",
+  fieldProjectCreatedAt: "创建于 {date}",
+  fieldTitle: "项目标题",
+  fieldPipeline: "流水线",
+  fieldNotes: "备注（可选）",
+  fieldPathPlaceholder: "选择文件后自动填入，或粘贴本地完整路径",
+  browseFile: "选择文件",
+  uploading: "上传中…",
+  uploadFailed: "上传失败",
+  fileSelected: "已选择：{name}",
+  selectPipeline: "请选择流水线…",
+  selectOption: "请选择…",
+  cancel: "取消",
+  submitCreate: "创建并打开看板",
+  creating: "创建中…",
+  createFailed: "创建失败",
+  pipelineSummary: "{label} — {summary}",
+
+  // 项目库 — 删除
+  deleteProject: "删除项目",
+  deleteProjectTitle: "删除项目",
+  deleteProjectHint: "将永久删除项目目录及全部素材、检查点与渲染结果，且无法恢复。",
+  deleteProjectConfirm: "确认删除「{title}」",
+  deleting: "删除中…",
+  deleteFailed: "删除失败",
+
+  // 项目库 — 设置
+  projectSettings: "项目设置",
+  projectSettingsTitle: "项目设置",
+  projectSettingsLead: "修改标题、风格与制作参数；流水线进行中时源素材默认锁定。",
+  fieldStylePlaybook: "视觉风格",
+  fieldStylePlaybookHint: "统一整片配色、字体与动效；真人口播可不选",
+  stylePlaybookDefault: "默认（不指定）",
+  fieldReadOnly: "只读",
+  fieldPipelineLocked: "流水线类型创建后不可更改",
+  fieldPipelineLegacyHint: "旧项目未记录流水线；保存设置后会补全配置，也可在 Agent 中指定类型",
+  pipelineUnknown: "未能识别（旧项目）",
+  settingsLegacyNotice: "这是较早创建的项目，缺少 project.json；下方标题等内容来自现有素材，保存后会写入正式配置。",
+  fieldMediaLocked: "当前素材（只读）",
+  replaceMedia: "允许更换素材",
+  replaceMediaHint: "勾选后可上传或粘贴新路径；已开始制作的流水线请谨慎更换。",
+  savingSettings: "保存中…",
+  saveSettings: "保存设置",
+  settingsSaved: "设置已保存",
+  settingsFailed: "保存失败",
+  settingsLoadFailed: "无法打开项目设置",
+  settingsLoadFailedHint: "请刷新页面后重试；若仍失败，请重启 Backlot 服务。",
+
+  // 全局设置
+  globalSettings: "全局设置",
+  globalSettingsTitle: "全局设置",
+  globalSettingsLead: "界面偏好、环境变量、依赖检测与技能目录。",
+  globalPrefsTab: "偏好",
+  envTab: "环境变量",
+  globalDefaultsSection: "新建项目默认",
+  globalDefaultNotes: "默认 Agent 备注",
+  globalDefaultNotesHint: "新建项目时自动填入，可在项目设置中再改",
+  globalUiSection: "界面",
+  globalTheme: "主题",
+  globalFontScale: "字号",
+  globalFontScaleHint: "调整全局文字大小",
+  globalFontScaleValue: "当前 {value}",
+  globalPathsSection: "路径",
+  globalProjectsDir: "项目目录",
+  globalProjectsDirHint: "由环境变量 OPENMONTAGE_PROJECTS_DIR 或仓库 projects/ 决定，此处只读",
+
+  // 全局设置 — 系统
+  envLoading: "正在加载环境变量…",
+  envLoadFailed: "无法加载环境变量",
+  envSaveFailed: "保存环境变量失败",
+  envNothingToSave: "请输入新值或点击「清除」后再保存。",
+  envConfigLead: "按用途分组管理 API 密钥与路径配置，写入仓库根目录 .env；留空表示不修改已配置项。",
+  envConfiguredCount: "已配置",
+  envFilePath: "配置文件",
+  envConfigured: "已配置",
+  envNotConfigured: "未配置",
+  envEnterValue: "输入密钥或配置值",
+  envKeepConfigured: "已配置 {masked}，留空保持不变",
+  envClear: "清除",
+  envClearValue: "清除已保存的值",
+  envClearPending: "保存后将清除此变量",
+  envVarPath: "变量名：{name}",
+  saveEnvVars: "保存环境变量",
+  savingEnvVars: "正在保存…",
+  depsTab: "环境依赖",
+  catalogTab: "技能目录",
+  pipelinesTab: "流水线",
+  pipeLoading: "正在加载流水线…",
+  pipeLoadFailed: "无法加载流水线清单",
+  pipeSaveFailed: "保存流水线设置失败",
+  pipeSaveUi: "保存显示设置",
+  pipeSaving: "保存中…",
+  pipeTotal: "流水线总数",
+  pipeVisible: "可见",
+  pipeProduction: "生产级",
+  pipeSkillIssues: "技能缺失",
+  pipeCategory: "类别",
+  pipeStability: "稳定性",
+  pipeVersion: "版本",
+  pipeStages: "阶段数",
+  pipeLabelZh: "中文名称",
+  pipeSummaryZh: "中文简介",
+  pipeHiddenLabel: "在新建项目中隐藏",
+  pipeHiddenToggle: "隐藏 {name}",
+  pipeHiddenBadge: "已隐藏",
+  pipeStageList: "阶段列表",
+  pipeStageName: "阶段",
+  pipeStageSkill: "技能",
+  pipeStageProduces: "产出物",
+  pipeStageApproval: "人工审批",
+  pipeApprovalYes: "默认需审批",
+  pipeApprovalNo: "自动通过",
+  pipeSchemaWarn: "清单未通过 schema 校验",
+  pipeConfigTitle: "流水线配置",
+  pipeConfigLead: "管理各流水线的步骤、审阅清单与导演提示词。",
+  pipeConfigEditing: "编辑流水线",
+  pipeOpenConfig: "配置步骤与提示词",
+  pipeBackToList: "← 全部流水线",
+  pipeBackLink: "← 项目库",
+  pipeTabPrompt: "导演提示词",
+  pipeTabReview: "审阅清单",
+  pipeTabCriteria: "通过标准",
+  pipePromptHint: "阶段导演技能（Markdown）。Agent 进入该步骤前会阅读此文件。",
+  pipeReviewHint: "人工审阅时检查的要点，写入 manifest review_focus。",
+  pipeCriteriaHint: "阶段完成的判定标准，写入 manifest success_criteria。",
+  pipeReviewPlaceholder: "审阅要点…",
+  pipeCriteriaPlaceholder: "通过标准…",
+  pipeAddItem: "+ 添加一行",
+  pipeRemoveItem: "删除",
+  pipeSaveStage: "保存清单",
+  pipeSavePrompt: "保存提示词",
+  pipeLoadingPrompt: "正在加载技能…",
+  pipePromptLoadFailed: "无法加载导演技能",
+  pipeNoSkill: "此阶段未绑定 skill 路径。",
+  pipeNoStage: "请选择阶段",
+  pipeApprovalDefault: "默认需人工审批",
+  pipeConfigNav: "流水线配置",
+  depsTitle: "环境依赖",
+  depsLead: "查看需安装的外部依赖（系统命令、Python 包、API 密钥）与核心运行时；点击「验证依赖」检测当前环境是否满足。",
+  depsLoading: "正在检测…",
+  depsVerifying: "正在验证…",
+  depsVerify: "验证依赖",
+  depsManifestLoading: "正在加载依赖清单…",
+  depsNoDeclaredDeps: "无声明依赖",
+  depsColName: "名称",
+  depsColPurpose: "说明",
+  depsColPath: "路径",
+  depsPathPending: "待验证",
+  depsLoadFailed: "无法加载依赖报告",
+  depsPackagesOk: "外部依赖",
+  depsPackagesTotal: "外部依赖（未验证）",
+  depsBinariesOk: "核心二进制",
+  depsMissing: "缺失项",
+  depsMissingPending: "缺失项（验证后）",
+  depsUsedBy: "用于：{tools}",
+  depsSetupOffers: "待配置工具",
+  depsOfferEnvVars: "相关环境变量：{vars}",
+  depsSummaryManifestHint: "— 表示尚未检测。点击「验证依赖」后显示已满足数量与缺失项。",
+  depsSetupOffersHint: "以下工具缺少依赖或 API 密钥，按说明安装后可在此页重新检测。",
+  depsCompositionRuntimes: "合成引擎",
+  depsRuntimeFfmpeg: "FFmpeg 直出合成",
+  depsRuntimeRemotion: "Remotion 合成",
+  depsRuntimeHyperframes: "HyperFrames 合成",
+  depsCoreBinaries: "核心二进制",
+  depsRuntimeWarnings: "运行时警告",
+  depsExternalPackages: "外部依赖",
+  depsStatusManifestHint: "以下为各工具声明的外部依赖（已去重聚合）；点击「验证依赖」检测是否已安装或配置。",
+  depsStatusDependencyHint: "按外部依赖（命令 / Python 包 / 环境变量）检测结果。",
+  depsStatusOperationalHint: "已执行完整运行时探测（含 ComfyUI 等服务连通性）。",
+  depsAvailable: "可用",
+  depsUnavailable: "不可用",
+  depsVerifyDetails: "验证详情",
+  depsVerifyAllOk: "全部工具依赖已满足。",
+  depsCheckedAt: "检测时间（UTC）：{time}",
+  depsOk: "可用",
+  depsMissingShort: "缺失",
+
+  // 技能与工具目录
+  catalogLoading: "正在加载技能目录…",
+  catalogLoadFailed: "无法加载技能目录",
+  catalogToolsHint: "外部依赖包与安装检测请见「环境依赖」；API 密钥请见「环境变量」。",
+  catalogLayerHint: "项目流程技能教 Agent 在本仓库里何时、如何制作；API 技术技能教具体供应商/框架的调用与 Prompt 写法。中文说明见各条目；英文原文标题以小字保留便于检索。",
+  catalogLayer2Count: "项目流程技能",
+  catalogLayer3Count: "API 技术技能",
+  catalogPipelineCount: "流水线技能组",
+  catalogIndexHint: "完整索引见仓库 {path}",
+  catalogLinkedSkills: "关联 API 技能（{n}）",
+  catalogLayerSkillsL2: "项目流程技能",
+  catalogLayerSkillsL2Desc: "skills/ 目录：流水线阶段导演、创意规范、核心集成与元技能——回答「在本项目中怎么用」。",
+  catalogLayerSkillsL3: "API 技术技能",
+  catalogLayerSkillsL3Desc: ".agents/skills/ 目录：FLUX、ffmpeg、ElevenLabs 等供应商知识——回答「底层 API 怎么调」。",
+  catalogCategoryCore: "核心集成",
+  catalogCategoryCreative: "创意与用法",
+  catalogCategoryMeta: "元技能",
+  catalogCategoryPipelines: "流水线",
+  catalogCategoryAgent: "Agent 技能",
+  catalogGroupCore: "核心集成",
+  catalogGroupCreative: "创意与用法",
+  catalogGroupMeta: "元技能（编排 / 审阅 /  onboarding）",
+  catalogGroupPipelines: "流水线阶段导演",
+  catalogGroupAgentSkills: "Agent 技术技能",
+  catalogTier_core: "核心基础设施",
+  catalogTier_voice: "语音与旁白",
+  catalogTier_enhance: "画面增强",
+  catalogTier_generate: "AI 生成",
+  catalogTier_source: "素材获取",
+  catalogTier_analyze: "分析与理解",
+  catalogTier_publish: "发布与导出",
+};
+
+export function t(key, vars = {}) {
+  let s = STRINGS[key] ?? key;
+  for (const [k, v] of Object.entries(vars)) {
+    s = s.replaceAll(`{${k}}`, String(v));
+  }
+  return s;
+}
+
+export function stageLabel(name) {
+  return STAGE_NAMES[name] || String(name || "").replaceAll("_", " ");
+}
+
+export function artifactLabel(name) {
+  return ARTIFACT_NAMES[name] || String(name || "artifact").replaceAll("_", " ");
+}
+
+export function statusLabel(status) {
+  return STATUS_LABELS[status] || status || "";
+}
+
+export function capabilityLabel(name) {
+  return CAPABILITY_NAMES[name] || String(name || "").replaceAll("_", " ");
+}
+
+export function fmtAgo(epochSeconds) {
+  if (!epochSeconds) return "";
+  const diff = Date.now() / 1000 - epochSeconds;
+  if (diff < 90) return t("justNow");
+  if (diff < 3600) return t("minutesAgo", { n: Math.round(diff / 60) });
+  if (diff < 86400) return t("hoursAgo", { n: Math.round(diff / 3600) });
+  return t("daysAgo", { n: Math.round(diff / 86400) });
+}
+
+export function themeName(theme) {
+  return theme === "light" ? t("themeLight") : t("themeDark");
+}
+
+export function plural(n, one, many) {
+  return n === 1 ? one : many;
+}

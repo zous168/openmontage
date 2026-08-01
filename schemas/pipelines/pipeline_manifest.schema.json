@@ -155,6 +155,17 @@
         "custom_tools": { "type": "boolean", "default": false }
       },
       "additionalProperties": false
+    },
+    "ui": {
+      "type": "object",
+      "description": "Backlot display metadata (managed via global settings UI)",
+      "properties": {
+        "label_zh": { "type": "string", "description": "Chinese display name in the library" },
+        "summary_zh": { "type": "string", "description": "Short Chinese blurb for create-project picker" },
+        "hidden": { "type": "boolean", "default": false, "description": "Hide from new-project picker when true" },
+        "skill_dir": { "type": "string", "description": "Override skills/pipelines/ subdirectory (when id differs from folder name)" }
+      },
+      "additionalProperties": false
     }
   },
   "additionalProperties": false

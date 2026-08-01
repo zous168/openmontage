@@ -480,6 +480,11 @@ class HyperFramesCompose(BaseTool):
         assets_dir = workspace / "assets"
         assets_dir.mkdir(exist_ok=True)
 
+        # Stage a CJK-capable font into the workspace so non-Latin text cards
+        # render real glyphs. Controlled via OPENMONTAGE_CJK_FONT; no-op when
+        # neither the env override nor the default font file exists.
+        cjk_font_rel = self._stage_cjk_font(assets_dir)
+
         # Resolve asset IDs → file paths + copy into workspace.
         resolved_cuts, asset_copies = self._resolve_and_stage_assets(
             edit_decisions.get("cuts", []),
@@ -527,6 +532,7 @@ class HyperFramesCompose(BaseTool):
             css_vars=css_vars,
             title=edit_decisions.get("metadata", {}).get("title")
             or f"OpenMontage {edit_decisions.get('renderer_family', 'composition')}",
+            cjk_font_rel=cjk_font_rel,
         )
         (workspace / "index.html").write_text(html, encoding="utf-8")
 
@@ -755,6 +761,34 @@ class HyperFramesCompose(BaseTool):
     # ------------------------------------------------------------------
 
     @staticmethod
+    def _stage_cjk_font(assets_dir: Path) -> Optional[str]:
+        """Copy a CJK-capable font into the workspace and return its relative
+        URL (e.g. ``assets/appfont.ttf``), or None if no font is available.
+
+        Source is OPENMONTAGE_CJK_FONT if set, else a sensible OS default.
+        Keeping the file inside the workspace lets the @font-face src be a
+        relative URL, which HyperFrames' StaticGuard accepts.
+        """
+        candidates = []
+        env_font = os.environ.get("OPENMONTAGE_CJK_FONT")
+        if env_font:
+            candidates.append(env_font)
+        candidates += [
+            r"C:/Windows/Fonts/simhei.ttf",
+            r"C:/Windows/Fonts/msyh.ttc",
+            "/System/Library/Fonts/PingFang.ttc",
+            "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        ]
+        for cand in candidates:
+            srcp = Path(cand)
+            if srcp.exists():
+                dest = assets_dir / ("appfont" + srcp.suffix.lower())
+                if not dest.exists() or dest.stat().st_size != srcp.stat().st_size:
+                    shutil.copy2(srcp, dest)
+                return f"assets/{dest.name}"
+        return None
+
+    @staticmethod
     def _require_workspace(inputs: dict[str, Any]) -> Path:
         raw = inputs.get("workspace_path")
         if not raw:
@@ -943,6 +977,7 @@ class HyperFramesCompose(BaseTool):
         total_duration: float,
         css_vars: dict[str, str],
         title: str,
+        cjk_font_rel: Optional[str] = None,
     ) -> str:
         """Emit a HyperFrames-contract-compliant index.html.
 
@@ -958,6 +993,24 @@ class HyperFramesCompose(BaseTool):
         provides a functional starting skeleton.
         """
         vars_css = "\n      ".join(f"{k}: {v};" for k, v in css_vars.items())
+
+        # Font contract: HyperFrames' StaticGuard rejects font families that are
+        # neither in its auto-resolved list nor declared via @font-face (and it
+        # cannot follow `var(--font-*)` indirection). For CJK output we stage a
+        # local font and declare it explicitly so Chinese glyphs render instead
+        # of tofu boxes.
+        if cjk_font_rel:
+            font_face_css = (
+                "@font-face { font-family: 'AppFont'; "
+                f"src: url('{self._escape_attr(cjk_font_rel)}'); "
+                "font-weight: 100 900; font-style: normal; }"
+            )
+            heading_family = "'AppFont', sans-serif"
+            body_family = "'AppFont', sans-serif"
+        else:
+            font_face_css = ""
+            heading_family = "var(--font-heading)"
+            body_family = "var(--font-body)"
 
         clip_html: list[str] = []
         entrance_tweens: list[str] = []
@@ -998,10 +1051,11 @@ class HyperFramesCompose(BaseTool):
   <meta charset="utf-8">
   <title>{self._escape_text(title)}</title>
   <style>
+    {font_face_css}
     :root {{
       {vars_css}
     }}
-    body {{ margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-body); }}
+    body {{ margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: {body_family}; }}
     [data-composition-id="root"] {{
       position: relative;
       width: {width}px;
@@ -1010,8 +1064,8 @@ class HyperFramesCompose(BaseTool):
     }}
     .clip {{ position: absolute; inset: 0; }}
     .clip.video-clip, .clip.image-clip {{ object-fit: cover; width: 100%; height: 100%; }}
-    .clip.text-card {{ display: flex; align-items: center; justify-content: center; padding: 120px 160px; box-sizing: border-box; text-align: center; }}
-    .clip.text-card h1 {{ font-family: var(--font-heading); font-weight: 700; font-size: 96px; line-height: 1.1; margin: 0; color: var(--color-fg); }}
+    .clip.text-card {{ display: flex; flex-direction: column; gap: 24px; align-items: center; justify-content: center; padding: 120px 100px; box-sizing: border-box; text-align: center; }}
+    .clip.text-card h1 {{ font-family: {heading_family}; font-weight: 700; font-size: 96px; line-height: 1.1; margin: 0; color: var(--color-fg); }}
     .clip.text-card .subtitle {{ font-size: 36px; margin-top: 24px; color: var(--color-accent); }}
   </style>
   <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>

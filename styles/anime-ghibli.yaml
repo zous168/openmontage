@@ -1,5 +1,7 @@
 identity:
   name: "Anime Ghibli"
+  name_zh: "吉卜力动画风"
+  summary_zh: "手绘感、温暖色调、叙事向动画"
   category: anime-illustration
   mood: warm, whimsical, contemplative, magical
   pace: gentle

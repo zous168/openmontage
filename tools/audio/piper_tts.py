@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import time
+import wave
 from pathlib import Path
 from typing import Any
 
@@ -116,29 +118,65 @@ class PiperTTS(BaseTool):
         result.duration_seconds = round(time.time() - start, 2)
         return result
 
+    def _models_dir(self) -> Path:
+        """Directory where downloaded .onnx voices live."""
+        env = os.environ.get("PIPER_DATA_DIR") or os.environ.get("PIPER_MODEL_DIR")
+        if env:
+            return Path(env)
+        return Path.home() / ".local" / "share" / "piper"
+
+    def _resolve_model(self, model: str) -> Path:
+        """Resolve a model name (e.g. ``zh_CN-huayan-medium``) or path to a
+        concrete ``.onnx`` file, downloading the voice if it is missing."""
+        p = Path(model)
+        if p.suffix == ".onnx" and p.exists():
+            return p
+
+        models_dir = self._models_dir()
+        candidate = models_dir / f"{model}.onnx"
+        if candidate.exists():
+            return candidate
+        for alt in (Path.cwd() / f"{model}.onnx", Path.home() / f"{model}.onnx"):
+            if alt.exists():
+                return alt
+
+        # Not present locally — download the voice into the models dir.
+        models_dir.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            ["python", "-m", "piper.download_voices", model, "--download-dir", str(models_dir)],
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        if candidate.exists():
+            return candidate
+        raise FileNotFoundError(
+            f"Could not resolve or download Piper voice model '{model}'. "
+            f"Looked in {models_dir}."
+        )
+
     def _generate(self, inputs: dict[str, Any]) -> ToolResult:
         output_path = Path(inputs.get("output_path", "tts_output.wav"))
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        proc = subprocess.run(
-            [
-                "piper",
-                "--model", inputs.get("model", "en_US-lessac-medium"),
-                "--speaker", str(inputs.get("speaker_id", 0)),
-                "--length-scale", str(inputs.get("length_scale", 1.0)),
-                "--sentence-silence", str(inputs.get("sentence_silence", 0.3)),
-                "--output_file", str(output_path),
-            ],
-            input=inputs["text"],
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+        model = inputs.get("model", "en_US-lessac-medium")
+        model_path = self._resolve_model(model)
 
-        if proc.returncode != 0:
-            return ToolResult(success=False, error=f"Piper failed (exit {proc.returncode}): {proc.stderr}")
-        if not output_path.exists():
-            return ToolResult(success=False, error=f"Piper output file missing: {output_path}")
+        # Use the Python API rather than the `piper` CLI: the 1.4.x CLI WAV
+        # writer fails ("# channels not specified") on Python 3.14. The API's
+        # synthesize_wav sets the WAV header itself and is the reliable path.
+        from piper import PiperVoice, SynthesisConfig
+
+        voice = PiperVoice.load(str(model_path))
+        syn_config = SynthesisConfig(
+            speaker_id=int(inputs.get("speaker_id", 0)) or None,
+            length_scale=float(inputs.get("length_scale", 1.0)),
+        )
+        with wave.open(str(output_path), "wb") as wf:
+            voice.synthesize_wav(inputs["text"], wf, syn_config=syn_config)
+
+        if not output_path.exists() or output_path.stat().st_size == 0:
+            return ToolResult(success=False, error=f"Piper output file missing or empty: {output_path}")
 
         return ToolResult(
             success=True,

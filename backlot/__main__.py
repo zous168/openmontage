@@ -10,14 +10,16 @@ initialization and must continue the production even if it fails.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 import webbrowser
 
-from backlot import DEFAULT_PORT
+from backlot import API_VERSION, DEFAULT_PORT
 
 
 def _port() -> int:
@@ -27,12 +29,76 @@ def _port() -> int:
         return DEFAULT_PORT
 
 
-def _server_alive(port: int) -> bool:
+def _probe_health(port: int) -> dict | None:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1.5) as resp:
-            return resp.status == 200
+            if resp.status != 200:
+                return None
+            return json.loads(resp.read().decode("utf-8"))
     except Exception:
+        return None
+
+
+def _server_alive(port: int) -> bool:
+    return _probe_health(port) is not None
+
+
+def _server_ready(port: int) -> bool:
+    data = _probe_health(port)
+    if not data or not data.get("ok"):
         return False
+    try:
+        return int(data.get("api_version", 1)) >= API_VERSION
+    except (TypeError, ValueError):
+        return False
+
+
+def _stop_listener(port: int) -> None:
+    """Best-effort kill of whatever is listening on *port* (stale Backlot)."""
+    if os.name == "nt":
+        try:
+            out = subprocess.run(
+                ["netstat", "-ano"],
+                capture_output=True,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+        except Exception:
+            return
+        raw = out.stdout or b""
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            text = raw.decode("mbcs", errors="replace")
+        pids: set[int] = set()
+        token = f":{port}"
+        for line in text.splitlines():
+            if "LISTENING" not in line or token not in line:
+                continue
+            parts = line.split()
+            if not parts:
+                continue
+            try:
+                pids.add(int(parts[-1]))
+            except ValueError:
+                continue
+        for pid in pids:
+            if pid <= 0:
+                continue
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+    else:
+        subprocess.run(
+            ["fuser", "-k", f"{port}/tcp"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
 
 
 def _spawn_server(port: int) -> None:
@@ -54,6 +120,10 @@ def _spawn_server(port: int) -> None:
 
 def cmd_open(project_id: str | None) -> int:
     port = _port()
+    if _server_alive(port) and not _server_ready(port):
+        print("backlot: restarting server (API update)")
+        _stop_listener(port)
+        time.sleep(0.6)
     if not _server_alive(port):
         try:
             _spawn_server(port)
@@ -62,7 +132,7 @@ def cmd_open(project_id: str | None) -> int:
             return 1
         deadline = time.time() + 15
         while time.time() < deadline:
-            if _server_alive(port):
+            if _server_ready(port):
                 break
             time.sleep(0.4)
         else:
