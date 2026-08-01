@@ -1074,6 +1074,30 @@ function renderDecisions(s) {
     body);
 }
 
+async function copyActivityError(text, btn) {
+  if (!text) return;
+  const markCopied = () => {
+    if (!btn) return;
+    const prev = btn.textContent;
+    btn.textContent = t("copiedError");
+    setTimeout(() => { btn.textContent = prev; }, 1500);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    markCopied();
+  } catch {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    markCopied();
+  }
+}
+
 function renderActivity(s) {
   const events = s.events || [];
   if (!events.length) return null;
@@ -1128,7 +1152,21 @@ function renderActivity(s) {
       statusEl,
     ];
     if (errText) {
-      rowKids.push(el("span", { class: "act-err", title: errText }, errText));
+      const copyBtn = el("button", {
+        type: "button",
+        class: "act-copy-btn",
+        title: t("copyError"),
+        onclick: (e) => {
+          e.stopPropagation();
+          copyActivityError(errText, copyBtn);
+        },
+      }, t("copyError"));
+      rowKids.push(
+        el("div", { class: "act-err-block" },
+          el("pre", { class: "act-err" }, errText),
+          copyBtn,
+        ),
+      );
     }
     body.append(el("div", { class: `act-row${failed ? " act-row--failed" : ""}` }, ...rowKids));
   }

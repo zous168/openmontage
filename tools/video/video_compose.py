@@ -1670,6 +1670,164 @@ class VideoCompose(BaseTool):
 
         return render_result
 
+    @staticmethod
+    def _path_to_file_uri(path: Path) -> str:
+        """Convert a local path to a file:// URI Remotion can load."""
+        posix = path.resolve().as_posix()
+        return f"file://{posix}" if posix.startswith("/") else f"file:///{posix}"
+
+    @classmethod
+    def _infer_project_dir_for_remotion(cls, output_path: Path, props: dict) -> Path | None:
+        """Best-effort project root for resolving relative asset paths."""
+        for parent in [output_path.parent.parent, output_path.parent]:
+            if (parent / "project.json").is_file():
+                return parent
+
+        try:
+            from lib.paths import PROJECTS_DIR
+
+            rel = output_path.resolve().relative_to(PROJECTS_DIR.resolve())
+            if rel.parts:
+                candidate = PROJECTS_DIR / rel.parts[0]
+                if (candidate / "project.json").is_file():
+                    return candidate
+        except (ValueError, ImportError, OSError):
+            pass
+
+        for cut in props.get("cuts", []):
+            source = cut.get("source", "")
+            clean = source.replace("file:///", "").replace("file://", "")
+            if not clean:
+                continue
+            p = Path(clean)
+            for parent in [p.parent, *p.parents]:
+                if (parent / "project.json").is_file():
+                    return parent
+        return None
+
+    @classmethod
+    def _resolve_media_path_for_remotion(
+        cls, path_str: str, project_dir: Path | None,
+    ) -> str:
+        if not path_str or path_str.startswith(("http://", "https://", "data:", "file://")):
+            return path_str
+        p = Path(path_str)
+        if not p.is_absolute() and project_dir is not None:
+            p = (project_dir / p).resolve()
+        else:
+            p = p.resolve()
+        if p.exists():
+            return cls._path_to_file_uri(p)
+        return path_str
+
+    @staticmethod
+    def _remotion_output_size(
+        composition_data: dict, profile_name: str | None,
+    ) -> tuple[int | None, int | None]:
+        """Output dimensions for Remotion CLI: compose_target beats profile."""
+        compose_target = (composition_data.get("metadata") or {}).get("compose_target")
+        if isinstance(compose_target, dict):
+            w, h = compose_target.get("width"), compose_target.get("height")
+            if w and h:
+                return int(w), int(h)
+        if profile_name:
+            try:
+                from lib.media_profiles import get_profile
+
+                p = get_profile(profile_name)
+                return p.width, p.height
+            except (ImportError, ValueError):
+                pass
+        return None, None
+
+    @classmethod
+    def _normalize_narration_for_remotion(cls, src: Path) -> Path:
+        """Resample narration to 48 kHz stereo — avoids browser/Remotion pitch errors."""
+        import shutil
+
+        if not shutil.which("ffmpeg"):
+            return src
+        try:
+            proc = subprocess.run(
+                [
+                    "ffprobe", "-v", "error", "-select_streams", "a:0",
+                    "-show_entries", "stream=sample_rate,channels",
+                    "-of", "csv=p=0", str(src),
+                ],
+                capture_output=True, text=True, timeout=30,
+            )
+            if proc.returncode != 0:
+                return src
+            parts = proc.stdout.strip().split(",")
+            if len(parts) < 2:
+                return src
+            rate, channels = int(parts[0]), int(parts[1])
+            if rate == 48000 and channels == 2:
+                return src
+        except Exception:
+            return src
+
+        dest = src.parent / f"{src.stem}_remotion48k.wav"
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-i", str(src), "-ar", "48000", "-ac", "2", str(dest)],
+                capture_output=True, check=True, timeout=120,
+            )
+            return dest if dest.exists() else src
+        except Exception:
+            return src
+
+    @classmethod
+    def _relative_to_project(cls, path: Path, project_dir: Path) -> str:
+        try:
+            return path.resolve().relative_to(project_dir.resolve()).as_posix()
+        except ValueError:
+            return cls._path_to_file_uri(path)
+
+    def _prepare_remotion_props(
+        self, props: dict, output_path: Path,
+    ) -> Path | None:
+        """Resolve media paths relative to project public dir; normalize narration."""
+        project_dir = self._infer_project_dir_for_remotion(output_path, props)
+        if project_dir is None:
+            return None
+
+        for cut in props.get("cuts", []):
+            source = cut.get("source", "")
+            if not source or source.startswith(("http://", "https://", "data:")):
+                continue
+            if source.startswith("file://"):
+                local = Path(source.replace("file:///", "").replace("file://", ""))
+            else:
+                local = Path(source)
+                if not local.is_absolute():
+                    local = (project_dir / local).resolve()
+            if local.exists():
+                cut["source"] = self._relative_to_project(local, project_dir)
+
+        audio = props.get("audio")
+        if isinstance(audio, dict):
+            for key in ("narration", "music"):
+                layer = audio.get(key)
+                if not isinstance(layer, dict) or not layer.get("src"):
+                    continue
+                src = layer["src"]
+                if src.startswith(("http://", "https://", "data:")):
+                    continue
+                if src.startswith("file://"):
+                    local = Path(src.replace("file:///", "").replace("file://", ""))
+                else:
+                    local = Path(src)
+                    if not local.is_absolute():
+                        local = (project_dir / local).resolve()
+                if not local.exists():
+                    continue
+                if key == "narration":
+                    local = self._normalize_narration_for_remotion(local)
+                layer["src"] = self._relative_to_project(local, project_dir)
+
+        return project_dir
+
     def _remotion_render(self, inputs: dict[str, Any]) -> ToolResult:
         """Render via Remotion (requires Node.js + npx).
 
@@ -1700,15 +1858,7 @@ class VideoCompose(BaseTool):
         # Deep-copy props so we don't mutate the original
         props = json.loads(json.dumps(composition_data))
 
-        # Convert absolute file paths to file:// URIs for Remotion's
-        # Img and OffthreadVideo components
-        for cut in props.get("cuts", []):
-            source = cut.get("source", "")
-            if source and not source.startswith(("http://", "https://", "file://")):
-                resolved = Path(source).resolve()
-                if resolved.exists():
-                    posix = resolved.as_posix()
-                    cut["source"] = f"file:///{posix}" if not posix.startswith("/") else f"file://{posix}"
+        project_dir = self._prepare_remotion_props(props, output_path)
 
         # Build a custom themeConfig from the playbook's actual colors.
         # This ensures every video gets a unique visual identity derived
@@ -1754,11 +1904,18 @@ class VideoCompose(BaseTool):
             f"--props={props_path}",
         ]
 
-        # Apply media profile dimensions
+        if project_dir is not None and project_dir.is_dir():
+            cmd.append(f"--public-dir={project_dir.resolve()}")
+
+        # Output dimensions: metadata.compose_target > profile > composition default.
         profile_name = inputs.get("profile")
-        if profile_name:
+        out_w, out_h = self._remotion_output_size(composition_data, profile_name)
+        if out_w and out_h:
+            cmd.extend(["--width", str(out_w), "--height", str(out_h)])
+        elif profile_name:
             try:
                 from lib.media_profiles import get_profile
+
                 p = get_profile(profile_name)
                 cmd.extend(["--width", str(p.width), "--height", str(p.height)])
             except (ImportError, ValueError):
@@ -2063,6 +2220,15 @@ class VideoCompose(BaseTool):
                     technical_probe["issues"].append(
                         f"Resolution {width}x{height} is very low"
                     )
+                compose_target = (edit_decisions or {}).get("metadata", {}).get("compose_target")
+                if isinstance(compose_target, dict):
+                    target_w = int(compose_target.get("width") or 0)
+                    target_h = int(compose_target.get("height") or 0)
+                    if target_w and target_h and (width != target_w or height != target_h):
+                        technical_probe["issues"].append(
+                            f"Resolution mismatch: rendered {width}x{height} "
+                            f"but compose_target is {target_w}x{target_h}"
+                        )
                 if not audio_stream:
                     technical_probe["issues"].append("No audio stream in output")
             else:

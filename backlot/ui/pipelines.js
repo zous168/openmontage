@@ -1,7 +1,7 @@
 /** Dedicated pipeline config — stages, review checklists, director skill prompts. */
 
 import { el, getJSON, patchJSON, postJSON, putJSON, deleteJSON } from "/ui/lib.js";
-import { t, stageLabel, artifactLabel } from "/ui/i18n.js";
+import { t, stageLabel } from "/ui/i18n.js";
 import { createMdEditor } from "/ui/md-editor.js";
 import { renderLoading, showLoading } from "/ui/loading.js";
 import { buildPipelineManifestForm, renderStageLegacySection } from "/ui/manifest-form.js";
@@ -19,27 +19,6 @@ function pipelineIdFromPath() {
     return decodeURIComponent(parts[parts.length - 1] || "");
   }
   return "";
-}
-
-function stageMediaGuide(stageName) {
-  if (stageName === "assets") return t("pipeStageMediaAssets");
-  if (stageName === "compose") return t("pipeStageMediaCompose");
-  if (stageName === "reference_analysis") return t("pipeStageMediaReference");
-  return t("pipeStageMediaNone");
-}
-
-function renderOutputsArtifactList(title, names) {
-  const items = (names || []).filter(Boolean);
-  return el("div", { class: "pipe-outputs-block" },
-    el("h3", { class: "pipe-outputs-heading" }, title),
-    items.length
-      ? el("ul", { class: "pipe-outputs-list" },
-        ...items.map((name) => el("li", { class: "pipe-outputs-item" },
-          el("span", { class: "pipe-outputs-label" }, artifactLabel(name)),
-          el("code", { class: "pipe-artifact" }, name),
-        )))
-      : el("p", { class: "hint" }, "—"),
-  );
 }
 
 function navigateToPipeline(id) {
@@ -421,10 +400,10 @@ async function renderConfig(pipelineId) {
     }
 
     editorHost.innerHTML = "";
+    if (activeTab === "outputs") activeTab = "structure";
     const tabBar = el("div", { class: "sys-tabs pipe-editor-tabs", role: "tablist" });
     const tabs = [
       { id: "structure", label: t("pipeTabStructure") },
-      { id: "outputs", label: t("pipeTabOutputs") },
       { id: "prompt", label: t("pipeTabPrompt") },
       { id: "review", label: t("pipeTabReview") },
       { id: "criteria", label: t("pipeTabCriteria") },
@@ -467,26 +446,6 @@ async function renderConfig(pipelineId) {
       pane,
       el("div", { class: "lib-form-actions pipe-editor-actions" }, saveManifestBtn, saveSkillBtn),
     );
-
-    if (activeTab === "outputs") {
-      pane.append(
-        el("p", { class: "lib-field-hint pipe-outputs-lead" }, t("pipeOutputsHint")),
-        renderOutputsArtifactList(t("pipeOutputsArtifacts"), stage.produces),
-        renderOutputsArtifactList(t("pipeRequiredArtifacts"), stage.required_artifacts_in),
-        renderOutputsArtifactList(t("pipeOptionalArtifacts"), stage.optional_artifacts_in),
-        el("div", { class: "pipe-outputs-block" },
-          el("h3", { class: "pipe-outputs-heading" }, t("pipeOutputsMediaGuide")),
-          el("p", { class: "pipe-outputs-format" },
-            el("b", {}, t("pipeOutputFormatJson")), " · artifacts/<name>.json"),
-          el("p", { class: "pipe-outputs-format" },
-            el("b", {}, t("pipeOutputFormatMedia")), " · ", stageMediaGuide(stage.name)),
-        ),
-        el("p", { class: "pipe-outputs-board-hint" },
-          el("a", { href: "/", class: "pipe-outputs-board-link" }, t("pipeOpenBoardHint")),
-        ),
-      );
-      return;
-    }
 
     if (activeTab === "structure") {
       const stageIdx = stages.findIndex((s) => s.name === activeStage);

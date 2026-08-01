@@ -883,16 +883,45 @@ aside .panel + .panel { margin-top: 0; }
 .act-row .status.ok { color: var(--green); }
 .act-row .status.run { color: var(--amber); animation: blink 1.4s ease-in-out infinite; }
 .act-row .status.err { color: var(--red); }
-.act-row .act-err {
+.act-row .act-err-block {
   flex: 1 1 100%;
-  margin: 0 0 0 42px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0 0 42px;
+}
+.act-row .act-err {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--red) 18%, transparent);
   color: var(--red);
+  font-family: var(--mono);
   font-size: calc(10px * var(--fs-scale));
-  line-height: 1.4;
-  opacity: .92;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  overflow: visible;
+}
+.act-row .act-copy-btn {
+  flex: none;
+  margin-top: 4px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-family: var(--sans);
+  font-size: calc(10px * var(--fs-scale));
+  cursor: pointer;
+}
+.act-row .act-copy-btn:hover {
+  color: var(--text-1);
+  border-color: var(--border-strong);
 }
 .act-row--failed .tool { color: var(--text-1); }
 @keyframes blink { 50% { opacity: .45; } }

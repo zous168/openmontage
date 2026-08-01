@@ -138,6 +138,47 @@ class ToolResult:
     model: Optional[str] = None
 
 
+# Max error text stored in events.jsonl / Backlot activity panel.
+_EVENT_ERROR_MAX_LEN = 2000
+
+
+def format_tool_error(exc: BaseException, *, tool_name: str = "") -> str:
+    """Turn exceptions into human-readable tool errors for logs and UI."""
+    prefix = f"{tool_name}: " if tool_name else ""
+    if isinstance(exc, KeyError):
+        key = exc.args[0] if exc.args else "?"
+        return f"{prefix}缺少必填参数 {key!r}（调用时未传入该字段）"
+    if isinstance(exc, FileNotFoundError):
+        return f"{prefix}文件不存在: {exc}"
+    if isinstance(exc, TypeError):
+        return f"{prefix}{exc}"
+    msg = str(exc).strip()
+    if msg:
+        return f"{prefix}{type(exc).__name__}: {msg}"
+    return f"{prefix}{type(exc).__name__}"
+
+
+def validate_required_inputs(tool: "BaseTool", inputs: Any) -> Optional[str]:
+    """Return an error message when required schema fields are missing."""
+    if not isinstance(inputs, dict):
+        return f"inputs 必须是 dict，收到 {type(inputs).__name__}"
+    schema = getattr(tool, "input_schema", None) or {}
+    required = schema.get("required") or []
+    if not required:
+        return None
+    props = schema.get("properties") or {}
+    missing: list[str] = []
+    for key in required:
+        if key not in inputs or inputs[key] is None:
+            desc = (props.get(key) or {}).get("description", "")
+            missing.append(f"{key!r}" + (f" — {desc}" if desc else ""))
+    if not missing:
+        return None
+    tool_name = getattr(tool, "name", "") or tool.__class__.__name__
+    joined = "; ".join(missing)
+    return f"{tool_name}: 缺少必填参数: {joined}"
+
+
 import threading as _threading
 
 # Shared nesting counter for instrumented execute() calls (thread-local so
@@ -191,13 +232,27 @@ def _instrument_execute(fn: Callable) -> Callable:
             })
 
         started = time.monotonic()
+        validation_err = validate_required_inputs(self, inputs)
+        if validation_err:
+            result = ToolResult(success=False, error=validation_err)
+            if project_dir is not None:
+                emit_event(project_dir, {
+                    **base, "event": "finish",
+                    "output_path": str(output_path) if output_path else None,
+                    "success": False,
+                    "error": validation_err[:_EVENT_ERROR_MAX_LEN],
+                    "duration_s": round(time.monotonic() - started, 2),
+                })
+            depth_state.value = depth
+            return result
         try:
             result = fn(self, inputs, *args, **kwargs)
         except Exception as exc:
+            err_text = format_tool_error(exc, tool_name=tool_name)
             if project_dir is not None:
                 emit_event(project_dir, {
                     **base, "event": "error",
-                    "error": str(exc)[:300],
+                    "error": err_text[:_EVENT_ERROR_MAX_LEN],
                     "duration_s": round(time.monotonic() - started, 2),
                 })
             raise
@@ -221,7 +276,7 @@ def _instrument_execute(fn: Callable) -> Callable:
                 "duration_s": round(time.monotonic() - started, 2),
             }
             if err:
-                finish["error"] = str(err)[:300]
+                finish["error"] = str(err)[:_EVENT_ERROR_MAX_LEN]
             elif success is False:
                 finish["error"] = "工具返回失败（未提供详细原因）"
             emit_event(project_dir, finish)

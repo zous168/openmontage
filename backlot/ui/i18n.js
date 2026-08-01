@@ -290,6 +290,8 @@ const STRINGS = {
   activityLead: "工具调用与耗时记录（最近 10 条）",
   activityScene: "场景 {id}",
   activitySource: "事件日志",
+  copyError: "复制错误",
+  copiedError: "已复制",
   alsoConsidered: "也曾考虑：",
   revised: " · 已修订",
   decision: "决策",
