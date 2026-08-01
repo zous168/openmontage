@@ -16,6 +16,7 @@ from typing import Any, Optional
 from lib.checkpoint import get_pipeline_stages
 from lib.decision_log import latest_decisions_for_stage
 from lib.events import read_events
+from lib.voice_bounds import check_project_voice_listenability
 
 # Repo-root scripts carrying this marker are dev/dogfood utilities only — not
 # permitted production orchestrators. See tests/contracts/test_pipeline_bypass_contract.py.
@@ -180,6 +181,7 @@ def audit_project(project_dir: Path, *, pipeline_type: Optional[str] = None) -> 
     findings.extend(check_approval_gate_drift(project_dir))
     findings.extend(check_stage_prefix_order(project_dir, pipeline_type))
     findings.extend(check_compose_tool_trace(project_dir, pipeline_type))
+    findings.extend(check_project_voice_listenability(project_dir))
 
     severity_rank = {"critical": 0, "suggestion": 1, "investigation": 2}
     findings.sort(key=lambda f: severity_rank.get(f.get("severity", "investigation"), 9))

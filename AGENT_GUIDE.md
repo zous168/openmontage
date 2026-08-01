@@ -142,6 +142,10 @@ Project state on disk is **contract data**, not a scratchpad. Agents persist art
 
 When a choice changes, **append** a new decision with the same `(category, subject)` — never rewrite or delete older entries.
 
+### Voice Listenability (HARD RULE)
+
+Narration speech rate must stay within normal listening limits. See `skills/meta/voice-performance-director.md` → Listenability Floor. Piper `length_scale` ≥ **0.85** (and ≥ script `provider_notes`); no post-TTS `atempo` squeeze to force-fit timeline unless the user explicitly approved (`decision_log` `downgrade_approval`). `audit_project()` flags `voice_listenability_violation` as **CRITICAL**.
+
 ## What OpenMontage Is
 
 OpenMontage is an instruction-driven video production system. The AI agent IS the intelligence — it reads instructions (pipeline manifests + stage director skills + meta skills) and drives the pipeline using tools.

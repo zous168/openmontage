@@ -95,6 +95,15 @@ For each script section:
    - ElevenLabs: `stability`, `similarity_boost`, `style`, `speed`, and `use_speaker_boost`
 7. Generate using `tts_selector` — it auto-routes to the best available TTS provider based on user preference and availability. Check the registry's `best_for` fields to understand each provider's strengths.
 8. Record the applied `voice_performance` metadata on each narration asset
+   (`generation_summary` must include provider + `length_scale`; never record
+   `atempo fit` unless user approved faster speech in `decision_log`)
+
+### Listenability (Binding)
+
+Before batch TTS, read `script.voice_performance.provider_notes`. For Piper,
+use **at least** the script's `length_scale` and **never below 0.85**. If
+narration duration exceeds scene timing, extend the edit timeline or shorten
+copy — do not accelerate speech to force-fit.
 9. Verify the audio file exists and duration matches expected timing (±15%)
 
 **Pronunciation guide**: If the script contains technical terms, jargon, or names with non-obvious pronunciation, include a pronunciation map in the TTS request.
@@ -254,7 +263,7 @@ the AI model's training data — it may be wrong or outdated.
 
 - **Generating before checking budget**: Always estimate total cost first. A 60-second video with 15 images can burn $3+ quickly.
 - **Inconsistent image style**: Each image_selector call is independent. Use consistent anchors, but adapt them per scene. If you paste the same style prefix into every prompt, the video will feel machine-made and repetitive.
-- **Ignoring narration timing**: If TTS produces 12s of audio for a 10s section, the edit phase will struggle. Check durations.
+- **Ignoring narration timing**: If TTS produces 12s of audio for a 10s section, the edit phase will struggle. Check durations. **Do NOT** fix timing by speeding up TTS beyond the listenability floor (`length_scale` ≥ 0.85 for Piper, no post-TTS `atempo` squeeze). Extend cuts or trim copy instead — see `skills/meta/voice-performance-director.md` → Listenability Floor.
 - **Ignoring delivery cues**: Generating raw script text when `provider_text` or `delivery_cues` exist will flatten the read. Apply the voice-performance contract first.
 - **Missing pronunciation guide**: "PostgreSQL" or "Kubernetes" will be mispronounced without explicit guidance.
 - **One retry then give up**: If an image doesn't match, refine the prompt specifically — don't just retry the same prompt.

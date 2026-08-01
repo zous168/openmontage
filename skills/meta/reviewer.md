@@ -244,6 +244,8 @@ Run at **every gated stage** and again at **compose** before presenting output. 
 
 8. **Decision log mutation**: Agent changed fields on existing decision entries (e.g. toggling `user_visible` on stale rows) instead of appending a new approved entry with the same `(category, subject)`. → **CRITICAL** — "Append-only audit trail violated."
 
+9. **Voice listenability** (`voice_listenability_violation`): Narration used Piper `length_scale` below 0.85, below script `provider_notes`, post-TTS `atempo` outside 0.92–1.05, or `atempo fit` in asset summary. → **CRITICAL** — "Speech rate exceeds normal listenable limits; re-generate TTS at natural pace and extend timeline."
+
 ### Severity summary:
 - Any `audit_project` finding with `severity=critical`: **CRITICAL** — block presentation until fixed or user explicitly accepts a documented downgrade in `decision_log`.
 - Bypass patterns without automated detection (agent admitted to `python -c` orchestration in session): **CRITICAL** — same remedy as above.

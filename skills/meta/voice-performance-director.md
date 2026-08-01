@@ -68,6 +68,28 @@ Section-level delivery cues:
   `similarity_boost` high enough to preserve the voice.
 - Offline/basic voices: rely on punctuation, shorter sentences, and explicit
   segment splitting because provider-level emotion controls may be unavailable.
+- **Piper**: set `length_scale` in `provider_notes` (typical **0.92–1.05** for
+  brisk UGC; never below **0.85**). Values below 1.0 speed speech up; the asset
+  stage MUST NOT use a faster `length_scale` than the script specifies.
+
+## Listenability Floor (HARD RULE)
+
+Narration must stay within **normal listenable speech rate**. When audio is
+longer than the visual timeline, fix the timeline or trim copy — never compress
+speech beyond these bounds without explicit user approval logged as
+`category: downgrade_approval`, `subject: "Narration speech rate"`.
+
+| Control | Allowed range (no extra approval) | If exceeded |
+|---------|-----------------------------------|-------------|
+| Piper `length_scale` | **0.85 – 1.25** (prefer script `provider_notes`) | CRITICAL reviewer finding |
+| Post-TTS `atempo` | **0.92 – 1.05** | CRITICAL — forbidden for timeline fit |
+| Script vs asset | Asset MUST NOT be faster than script `provider_notes` | CRITICAL |
+
+**Wrong:** TTS runs 14s, video target 11s → set `length_scale=0.66` + atempo fit.  
+**Right:** extend `edit_decisions` cuts to 14s, or shorten script, or ask user to accept faster speech.
+
+`lib.production_audit.check_project_voice_listenability()` flags violations in
+`asset_manifest.generation_summary` (e.g. `length_scale=0.66`, `atempo fit`).
 
 ## Sample Gate
 
