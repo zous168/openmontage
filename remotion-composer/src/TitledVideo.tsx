@@ -10,6 +10,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import { getVideoMetadata } from "@remotion/media-utils";
+import { resolveAsset } from "./resolveAsset";
 import { loadFont } from "@remotion/google-fonts/PlayfairDisplay";
 
 // Editorial serif for the tagline — Playfair Display at its boldest weight.
@@ -32,31 +33,6 @@ export interface TitledVideoProps {
   fontSize?: number;
   // Accent color used for the underline and the glow halo.
   accentColor?: string;
-}
-
-// Resolve asset path — handle URLs, absolute paths, and public/ relative paths.
-// Mirrors the helper in Explainer.tsx so absolute Windows/Unix paths work.
-function resolveAsset(src: string): string {
-  if (
-    src.startsWith("http://") ||
-    src.startsWith("https://") ||
-    src.startsWith("data:")
-  ) {
-    return src;
-  }
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    const posix = clean.replace(/\\/g, "/");
-    // POSIX absolute paths already have a leading "/" — file:// + posix
-    // gives exactly three slashes. Windows drive paths (C:/...) need the
-    // extra slash added explicitly. Do not merge these branches — adding
-    // "file:///" unconditionally double-slashes POSIX paths (file:////...).
-    if (posix.startsWith("/")) {
-      return `file://${posix}`;
-    }
-    return `file:///${posix}`;
-  }
-  return staticFile(clean);
 }
 
 // ---------------------------------------------------------------------------

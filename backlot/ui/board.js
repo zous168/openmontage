@@ -1074,6 +1074,23 @@ function renderDecisions(s) {
     body);
 }
 
+function dedupeErrorDisplay(text) {
+  if (!text) return text;
+  const tabRe = /^\[Tab \d+,[^\]]+\]\s*/;
+  const lines = String(text).split(/\r?\n/).filter((l) => l.trim());
+  const counts = new Map();
+  const order = [];
+  for (const line of lines) {
+    const key = line.replace(tabRe, "").trim();
+    if (!counts.has(key)) order.push(key);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return order.map((key) => {
+    const n = counts.get(key);
+    return n > 1 ? `${key} （重复 ${n} 次）` : key;
+  }).join("\n");
+}
+
 async function copyActivityError(text, btn) {
   if (!text) return;
   const markCopied = () => {
@@ -1096,6 +1113,12 @@ async function copyActivityError(text, btn) {
     document.body.removeChild(ta);
     markCopied();
   }
+}
+
+function toggleActivityError(item, row, toggleEl) {
+  const open = item.classList.toggle("act-item--open");
+  row.setAttribute("aria-expanded", open ? "true" : "false");
+  if (toggleEl) toggleEl.textContent = open ? t("hideError") : t("viewError");
 }
 
 function renderActivity(s) {
@@ -1129,6 +1152,7 @@ function renderActivity(s) {
   for (const ev of rows.slice(-10).reverse()) {
     const failed = ev.event === "error" || (ev.event === "finish" && ev.success === false);
     const errText = ev.error || "";
+    const errDisplay = dedupeErrorDisplay(errText);
     let statusEl;
     if (ev.event === "finish") {
       const dur = ev.duration_s != null
@@ -1149,9 +1173,25 @@ function renderActivity(s) {
       el("span", { class: "t" }, fmtClock(ev.ts)),
       el("span", { class: "tool" }, toolLabel(ev.tool)),
       el("span", { class: "target" }, ev.scene_id ? t("activityScene", { id: ev.scene_id }) : ""),
-      statusEl,
     ];
+    const item = el("div", { class: `act-item${failed && errText ? " act-item--failed" : ""}` });
     if (errText) {
+      const toggleEl = el("span", { class: "act-err-toggle" }, t("viewError"));
+      rowKids.push(toggleEl);
+      rowKids.push(statusEl);
+      const row = el("div", {
+        class: "act-row act-row--toggle",
+        role: "button",
+        tabindex: "0",
+        "aria-expanded": "false",
+        onclick: () => toggleActivityError(item, row, toggleEl),
+        onkeydown: (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            toggleActivityError(item, row, toggleEl);
+          }
+        },
+      }, ...rowKids);
       const copyBtn = el("button", {
         type: "button",
         class: "act-copy-btn",
@@ -1161,14 +1201,20 @@ function renderActivity(s) {
           copyActivityError(errText, copyBtn);
         },
       }, t("copyError"));
-      rowKids.push(
-        el("div", { class: "act-err-block" },
-          el("pre", { class: "act-err" }, errText),
-          copyBtn,
-        ),
+      const errKids = [el("pre", { class: "act-err" }, errDisplay)];
+      if (ev.error_log) {
+        errKids.push(el("span", { class: "act-err-log meta" }, `完整日志：${ev.error_log}`));
+      }
+      errKids.push(copyBtn);
+      item.append(
+        row,
+        el("div", { class: "act-err-block" }, ...errKids),
       );
+    } else {
+      rowKids.push(statusEl);
+      item.append(el("div", { class: "act-row" }, ...rowKids));
     }
-    body.append(el("div", { class: `act-row${failed ? " act-row--failed" : ""}` }, ...rowKids));
+    body.append(item);
   }
   return el("div", { class: "panel" },
     el("div", { class: "panel-head" },

@@ -12,6 +12,7 @@ import inspect
 import json
 import os
 import platform
+import re
 import subprocess
 import shutil
 import time
@@ -139,7 +140,35 @@ class ToolResult:
 
 
 # Max error text stored in events.jsonl / Backlot activity panel.
-_EVENT_ERROR_MAX_LEN = 2000
+_EVENT_ERROR_MAX_LEN = 8000
+
+
+def _event_error_payload(
+    project_dir: Path | None, tool_name: str, error: str,
+) -> dict[str, str]:
+    """Summarize error for UI and optionally persist the full log under project/logs/."""
+    from lib.error_digest import summarize_error_text
+
+    full = str(error or "")
+    display = summarize_error_text(full)
+    payload: dict[str, str] = {"error": display[:_EVENT_ERROR_MAX_LEN]}
+    if project_dir is not None and full.strip():
+        try:
+            log_dir = Path(project_dir) / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            safe_tool = re.sub(r"[^\w.-]+", "_", tool_name or "tool")
+            log_path = log_dir / f"last_{safe_tool}_error.txt"
+            log_path.write_text(full, encoding="utf-8")
+            rel = f"logs/last_{safe_tool}_error.txt"
+            payload["error_log"] = rel
+            if rel not in display:
+                payload["error"] = (
+                    display[: _EVENT_ERROR_MAX_LEN - len(rel) - 24]
+                    + f"\n\n完整日志：{rel}"
+                )
+        except OSError:
+            pass
+    return payload
 
 
 def format_tool_error(exc: BaseException, *, tool_name: str = "") -> str:
@@ -240,7 +269,7 @@ def _instrument_execute(fn: Callable) -> Callable:
                     **base, "event": "finish",
                     "output_path": str(output_path) if output_path else None,
                     "success": False,
-                    "error": validation_err[:_EVENT_ERROR_MAX_LEN],
+                    **_event_error_payload(project_dir, tool_name, validation_err),
                     "duration_s": round(time.monotonic() - started, 2),
                 })
             depth_state.value = depth
@@ -252,7 +281,7 @@ def _instrument_execute(fn: Callable) -> Callable:
             if project_dir is not None:
                 emit_event(project_dir, {
                     **base, "event": "error",
-                    "error": err_text[:_EVENT_ERROR_MAX_LEN],
+                    **_event_error_payload(project_dir, tool_name, err_text),
                     "duration_s": round(time.monotonic() - started, 2),
                 })
             raise
@@ -276,7 +305,7 @@ def _instrument_execute(fn: Callable) -> Callable:
                 "duration_s": round(time.monotonic() - started, 2),
             }
             if err:
-                finish["error"] = str(err)[:_EVENT_ERROR_MAX_LEN]
+                finish.update(_event_error_payload(project_dir, tool_name, str(err)))
             elif success is False:
                 finish["error"] = "工具返回失败（未提供详细原因）"
             emit_event(project_dir, finish)

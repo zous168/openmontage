@@ -1676,20 +1676,27 @@ class VideoCompose(BaseTool):
         posix = path.resolve().as_posix()
         return f"file://{posix}" if posix.startswith("/") else f"file:///{posix}"
 
+    _PROJECT_MARKERS = ("project.json", "meta.json")
+
+    @classmethod
+    def _is_project_dir(cls, path: Path) -> bool:
+        return any((path / name).is_file() for name in cls._PROJECT_MARKERS)
+
     @classmethod
     def _infer_project_dir_for_remotion(cls, output_path: Path, props: dict) -> Path | None:
-        """Best-effort project root for resolving relative asset paths."""
-        for parent in [output_path.parent.parent, output_path.parent]:
-            if (parent / "project.json").is_file():
+        """Best-effort project root for --public-dir and relative asset paths."""
+        resolved_out = output_path.resolve()
+        for parent in [resolved_out.parent, *resolved_out.parents]:
+            if cls._is_project_dir(parent):
                 return parent
 
         try:
             from lib.paths import PROJECTS_DIR
 
-            rel = output_path.resolve().relative_to(PROJECTS_DIR.resolve())
+            rel = resolved_out.relative_to(PROJECTS_DIR.resolve())
             if rel.parts:
                 candidate = PROJECTS_DIR / rel.parts[0]
-                if (candidate / "project.json").is_file():
+                if cls._is_project_dir(candidate):
                     return candidate
         except (ValueError, ImportError, OSError):
             pass
@@ -1700,10 +1707,35 @@ class VideoCompose(BaseTool):
             if not clean:
                 continue
             p = Path(clean)
+            if not p.is_absolute():
+                p = p.resolve()
             for parent in [p.parent, *p.parents]:
-                if (parent / "project.json").is_file():
+                if cls._is_project_dir(parent):
                     return parent
         return None
+
+    @classmethod
+    def _local_media_path(cls, source: str, project_dir: Path) -> Path | None:
+        if not source or source.startswith(("http://", "https://", "data:")):
+            return None
+        if source.startswith("file://"):
+            local = Path(source.replace("file:///", "").replace("file://", ""))
+        else:
+            local = Path(source)
+            if not local.is_absolute():
+                local = project_dir / local
+        try:
+            return local.resolve()
+        except OSError:
+            return None
+
+    @classmethod
+    def _path_under_project(cls, path: Path, project_dir: Path) -> bool:
+        try:
+            path.resolve().relative_to(project_dir.resolve())
+            return True
+        except ValueError:
+            return False
 
     @classmethod
     def _resolve_media_path_for_remotion(
@@ -1781,8 +1813,11 @@ class VideoCompose(BaseTool):
     def _relative_to_project(cls, path: Path, project_dir: Path) -> str:
         try:
             return path.resolve().relative_to(project_dir.resolve()).as_posix()
-        except ValueError:
-            return cls._path_to_file_uri(path)
+        except ValueError as exc:
+            raise ValueError(
+                f"资源 {path} 不在项目目录 {project_dir} 内；"
+                "Remotion 需要相对路径，不能使用 file://。"
+            ) from exc
 
     def _prepare_remotion_props(
         self, props: dict, output_path: Path,
@@ -1794,15 +1829,10 @@ class VideoCompose(BaseTool):
 
         for cut in props.get("cuts", []):
             source = cut.get("source", "")
-            if not source or source.startswith(("http://", "https://", "data:")):
+            local = self._local_media_path(source, project_dir)
+            if local is None:
                 continue
-            if source.startswith("file://"):
-                local = Path(source.replace("file:///", "").replace("file://", ""))
-            else:
-                local = Path(source)
-                if not local.is_absolute():
-                    local = (project_dir / local).resolve()
-            if local.exists():
+            if self._path_under_project(local, project_dir):
                 cut["source"] = self._relative_to_project(local, project_dir)
 
         audio = props.get("audio")
@@ -1812,15 +1842,10 @@ class VideoCompose(BaseTool):
                 if not isinstance(layer, dict) or not layer.get("src"):
                     continue
                 src = layer["src"]
-                if src.startswith(("http://", "https://", "data:")):
+                local = self._local_media_path(src, project_dir)
+                if local is None:
                     continue
-                if src.startswith("file://"):
-                    local = Path(src.replace("file:///", "").replace("file://", ""))
-                else:
-                    local = Path(src)
-                    if not local.is_absolute():
-                        local = (project_dir / local).resolve()
-                if not local.exists():
+                if not self._path_under_project(local, project_dir):
                     continue
                 if key == "narration":
                     local = self._normalize_narration_for_remotion(local)
@@ -1858,7 +1883,19 @@ class VideoCompose(BaseTool):
         # Deep-copy props so we don't mutate the original
         props = json.loads(json.dumps(composition_data))
 
-        project_dir = self._prepare_remotion_props(props, output_path)
+        try:
+            project_dir = self._prepare_remotion_props(props, output_path)
+        except ValueError as exc:
+            return ToolResult(success=False, error=str(exc))
+
+        if project_dir is None:
+            return ToolResult(
+                success=False,
+                error=(
+                    "无法推断 Remotion public-dir（项目目录）。"
+                    "请确保 output_path 位于 projects/<id>/ 下。"
+                ),
+            )
 
         # Build a custom themeConfig from the playbook's actual colors.
         # This ensures every video gets a unique visual identity derived
@@ -1905,7 +1942,7 @@ class VideoCompose(BaseTool):
         ]
 
         if project_dir is not None and project_dir.is_dir():
-            cmd.append(f"--public-dir={project_dir.resolve()}")
+            cmd.append(f"--public-dir={project_dir.resolve().as_posix()}")
 
         # Output dimensions: metadata.compose_target > profile > composition default.
         profile_name = inputs.get("profile")
@@ -1943,15 +1980,14 @@ class VideoCompose(BaseTool):
             # determine executable to run".
             self.run_command(cmd, timeout=subprocess_timeout, cwd=composer_dir)
         except subprocess.CalledProcessError as e:
-            # run_command uses check=True + capture_output, so the useful
-            # Remotion diagnostics live in stderr/stdout — surface the tail
-            # instead of the bare "returned non-zero exit status 1".
+            from lib.error_digest import summarize_error_text
+
             detail = (e.stderr or e.stdout or "").strip()
-            tail = "\n".join(detail.splitlines()[-25:]) if detail else "(no output captured)"
-            return ToolResult(
-                success=False,
-                error=f"Remotion render failed (exit {e.returncode}):\n{tail}",
+            tail = "\n".join(detail.splitlines()[-40:]) if detail else "(no output captured)"
+            msg = summarize_error_text(
+                f"Remotion render failed (exit {e.returncode}):\n{tail}",
             )
+            return ToolResult(success=False, error=msg)
         except subprocess.TimeoutExpired as e:
             return ToolResult(
                 success=False,

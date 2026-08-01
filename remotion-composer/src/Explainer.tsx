@@ -10,30 +10,8 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
+import { resolveAsset } from "./resolveAsset";
 import { loadFont } from "@remotion/google-fonts/SpaceGrotesk";
-
-// Resolve asset path — handle URLs, absolute paths (Windows/Unix), and public/ relative paths
-function resolveAsset(src: string): string {
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) {
-    return src;
-  }
-  // Strip any file:// prefix
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  // Absolute paths (Unix: /foo, Windows: C:\foo or C:/foo) — convert to file:// URI
-  // staticFile() only accepts relative paths within public/, so absolute paths must bypass it
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    const posix = clean.replace(/\\/g, "/");
-    // POSIX absolute paths already have a leading "/" — file:// + posix
-    // gives exactly three slashes. Windows drive paths (C:/...) need the
-    // extra slash added explicitly. Do not merge these branches — adding
-    // "file:///" unconditionally double-slashes POSIX paths (file:////...).
-    if (posix.startsWith("/")) {
-      return `file://${posix}`;
-    }
-    return `file:///${posix}`;
-  }
-  return staticFile(clean);
-}
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
 import { CalloutBox } from "./components/CalloutBox";

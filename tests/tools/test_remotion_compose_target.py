@@ -68,6 +68,7 @@ def test_remotion_render_passes_compose_target_dimensions(tool, tmp_path, monkey
     monkeypatch.setattr("shutil.which", lambda _: "/usr/bin/npx")
     monkeypatch.setattr(tool, "run_command", fake_run_command)
 
+    (tmp_path / "project.json").write_text("{}", encoding="utf-8")
     out = tmp_path / "renders" / "out.mp4"
     out.parent.mkdir(parents=True)
     tool._remotion_render(
@@ -82,6 +83,23 @@ def test_remotion_render_passes_compose_target_dimensions(tool, tmp_path, monkey
     assert "--width" in seen["cmd"]
     assert "1080" in seen["cmd"]
     assert "1920" in seen["cmd"]
+    assert any("--public-dir=" in arg for arg in seen["cmd"])
+
+
+def test_prepare_remotion_props_relativizes_absolute_windows_path(tmp_path):
+    project = tmp_path / "demo"
+    (project / "assets" / "images").mkdir(parents=True)
+    (project / "project.json").write_text("{}", encoding="utf-8")
+    img = project / "assets" / "images" / "sc1.jpg"
+    img.write_bytes(b"\xff\xd8\xff\xd9")
+    out = project / "renders" / "out.mp4"
+    out.parent.mkdir(parents=True, exist_ok=True)
+
+    abs_source = img.resolve().as_posix()
+    props = {"cuts": [{"source": abs_source}]}
+    VideoCompose()._prepare_remotion_props(props, out)
+    assert props["cuts"][0]["source"] == "assets/images/sc1.jpg"
+    assert not props["cuts"][0]["source"].startswith("file:")
 
 
 @pytest.fixture

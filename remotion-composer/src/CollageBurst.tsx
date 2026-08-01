@@ -11,6 +11,7 @@ import {
   useVideoConfig,
 } from "remotion";
 import React from "react";
+import { resolveAsset } from "./resolveAsset";
 import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
 
 const { fontFamily: playfairFamily } = loadPlayfair("normal", {
@@ -21,23 +22,6 @@ const { fontFamily: playfairItalic } = loadPlayfair("italic", {
   weights: ["400", "700"],
   subsets: ["latin"],
 });
-
-function resolveAsset(src: string): string {
-  if (src.startsWith("http://") || src.startsWith("https://") || src.startsWith("data:")) return src;
-  const clean = src.replace(/^file:\/\/\/?/, "");
-  if (clean.startsWith("/") || /^[A-Za-z]:[\\/]/.test(clean)) {
-    const posix = clean.replace(/\\/g, "/");
-    // POSIX absolute paths already have a leading "/" — file:// + posix
-    // gives exactly three slashes. Windows drive paths (C:/...) need the
-    // extra slash added explicitly. Do not merge these branches — adding
-    // "file:///" unconditionally double-slashes POSIX paths (file:////...).
-    if (posix.startsWith("/")) {
-      return `file://${posix}`;
-    }
-    return `file:///${posix}`;
-  }
-  return staticFile(clean);
-}
 
 export type CollageTransition =
   | "pop"

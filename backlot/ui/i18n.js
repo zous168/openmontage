@@ -292,6 +292,8 @@ const STRINGS = {
   activitySource: "事件日志",
   copyError: "复制错误",
   copiedError: "已复制",
+  viewError: "查看错误",
+  hideError: "收起错误",
   alsoConsidered: "也曾考虑：",
   revised: " · 已修订",
   decision: "决策",
