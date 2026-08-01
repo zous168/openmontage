@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Generate image + narration assets for my-copy-01 (c1, 图生, 豆包 TTS)."""
+"""Generate image + narration assets for my-copy-01 (c1, 图生, 豆包 TTS).
+
+OPENMONTAGE_NON_PRODUCTION_SCRIPT — dev/dogfood utility only. Production
+assets must come from the assets stage via asset-director + registry tools.
+"""
 from __future__ import annotations
 
 import json

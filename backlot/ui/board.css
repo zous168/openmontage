@@ -674,6 +674,30 @@ aside .panel + .panel { margin-top: 0; }
     max-height: calc(100dvh - 24px);
     overflow-y: auto;
     scrollbar-width: thin;
+    scrollbar-color: #3a3a44 transparent;
+  }
+  /* Scroll inside each rail panel body once content exceeds half-viewport */
+  aside .panel {
+    display: flex;
+    flex-direction: column;
+  }
+  aside .panel-body {
+    max-height: min(380px, calc((100dvh - 96px) / 2));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a44 transparent;
+  }
+  aside .panel-body::-webkit-scrollbar {
+    width: 8px;
+  }
+  aside .panel-body::-webkit-scrollbar-thumb {
+    background: #3a3a44;
+    border-radius: 4px;
+  }
+  aside .panel-body::-webkit-scrollbar-thumb:hover {
+    background: #4e4e5a;
   }
 }
 
@@ -2305,6 +2329,14 @@ body:not(.first) .approval-review { animation: none; }
     max-height: none;
     overflow: visible;
     margin-top: 20px;
+  }
+  aside .panel-body {
+    max-height: min(320px, 50vh);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: #3a3a44 transparent;
   }
   aside .panel + .panel { margin-top: 14px; }
 

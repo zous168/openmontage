@@ -27,7 +27,9 @@ Scripts are allowed ONLY when:
 
 Scripts go in: `projects/<project-name>/scripts/`
 
-### Script Template
+**Never use a script to substitute the pipeline.** A script must perform ONE bounded transform (crop, rename, format conversion). It must NOT chain multiple pipeline stages (e.g. assets → edit → compose), write gated checkpoints as `completed` without user approval, or live at the repo root under `scripts/rerun_*.py`. Multi-stage production belongs to director skills + registry tools + `write_checkpoint`. See AGENT_GUIDE.md → Pipeline Bypass Prohibition.
+
+Repo-root utilities such as `scripts/reset_project_pipeline.py` (checkpoint reset only) are allowed; media-generating bypass scripts must carry `OPENMONTAGE_NON_PRODUCTION_SCRIPT` and are for maintainer dogfood only.
 
 ```python
 """<One-line description of what this script does>

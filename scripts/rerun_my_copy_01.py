@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Full production rerun for my-copy-01: assets → edit → compose (+ subtitle burn)."""
+"""Full production rerun for my-copy-01: assets → edit → compose (+ subtitle burn).
+
+OPENMONTAGE_NON_PRODUCTION_SCRIPT — dev/dogfood utility only. Do NOT use for
+pipeline production. Agents must run stage director skills + registry tools +
+write_checkpoint per AGENT_GUIDE.md → Pipeline Bypass Prohibition (HARD RULE).
+"""
 from __future__ import annotations
 
 import json

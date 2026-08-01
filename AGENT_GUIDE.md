@@ -67,6 +67,81 @@ When the user asks to make, create, produce, or generate any video content — a
 
 The intelligence is in the skills, not in improvised code. An agent that reads the director skills and Layer 3 knowledge will produce significantly better output than one that calls tools directly with generic prompts.
 
+### Pipeline Bypass Prohibition (HARD RULE)
+
+Production orchestration MUST stay inside the pipeline loop. The agent drives stages with **director skills + registry tools + checkpoints** — not with improvised Python that chains multiple stages.
+
+**Forbidden bypass patterns:**
+
+| Pattern | Why it violates the contract |
+|---------|------------------------------|
+| Repo-root `scripts/rerun_*.py` (or similar) calling `tool.execute()` across assets→compose | Replaces stage directors, skips human gates, leaves no tool trace in `events.jsonl` |
+| `python -c` / inline scripts that write `checkpoint_*` with `human_approved=true` while `decision_log` still has `user_approved=false` | Forges approval without user consent |
+| Skipping `awaiting_human` on proposal/script/assets when the manifest requires it | Same as silent approval |
+| Composing while `get_next_stage()` is not `compose` | Stage order violation |
+
+**Allowed Python (not bypass):**
+
+- **Tools** — `video_analyzer`, `tts_selector`, `video_compose`, etc. via the registry
+- **Persistence** — `lib.checkpoint.write_checkpoint`, `init_project`, `get_next_stage`
+- **Governance utilities** — `lib.production_audit.audit_project` (read-only), `scripts/reset_project_pipeline.py` (checkpoint reset only — does not generate media)
+- **Project-scoped one-offs** — only under `projects/<id>/scripts/` per `skills/meta/capability-extension.md`, with a `capability_extension` decision; never multi-stage pipeline substitutes
+
+**Enforcement:** `skills/meta/reviewer.md` treats bypass signals as **CRITICAL**. Contract tests in `tests/contracts/test_pipeline_bypass_contract.py` guard the agent guide, reviewer skill, and non-production script markers. After compose, run `audit_project()` when reviewing — approval drift and missing tool traces are blocking findings.
+
+**If you need a full rerun:** reset checkpoints (`scripts/reset_project_pipeline.py`), then re-enter at `get_next_stage()` and execute each stage with its director skill. Do not wrap the pipeline in a single script.
+
+### Agent Introspection (HARD RULE)
+
+Agents discover project state through **repository APIs and IDE read tools** — not shell directory listings.
+
+**Preferred (in order):**
+
+1. **`python -m lib.project_status <project-id>`** — single source of truth for `next_stage`, completed stages, artifact paths, director skill path, tool trace summary, and optional `--audit`
+2. **IDE Read / Glob** — open a known artifact or skill file when you already know the path
+3. **Documented one-liners** — registry preflight, `write_checkpoint`, `init_project` (see sections below)
+
+**Forbidden for exploration:**
+
+| Pattern | Why |
+|---------|-----|
+| `dir`, `ls`, `find`, `Get-ChildItem`, `tree` to discover project layout | Fragile on Windows/PowerShell; bypasses canonical paths; error-prone |
+| Writing temporary `.py` files just to print paths or list directories | Improvised orchestration smell; use `lib.project_status` instead |
+| Multi-line `python -c` scripts that chain tool calls across stages | Same class of bypass as `rerun_*.py` — one stage per agent turn |
+
+**Allowed `python -c` (single-purpose only):**
+
+- `lib.project_status.build_project_status(...)` or the CLI above
+- `lib.checkpoint.write_checkpoint` / `get_next_stage` / `init_project` — **one call site per invocation**
+- `tools.tool_registry.registry.discover()` + one catalog method for preflight
+- `lib.production_audit.audit_project(...)` — read-only governance
+
+**Production work still uses registry tools** (`BaseTool.execute()`), not shell transcodes and not ad-hoc Python that replaces director skills.
+
+### Artifact Persistence (HARD RULE)
+
+Project state on disk is **contract data**, not a scratchpad. Agents persist artifacts only through validated library APIs — never by editing JSON with the file editor or shell redirection.
+
+**Forbidden:**
+
+| Pattern | Why |
+|---------|-----|
+| `Write` / `StrReplace` on `projects/<id>/decision_log.json` | Bypasses schema validation and append-only audit trail; agents mutate `user_visible` to cheat drift checks |
+| Direct edits to `checkpoint_*.json` or `artifacts/*.json` | Same — use `write_checkpoint()` |
+| One-off helpers like `_compose_once.py`, `run_stage.py` under repo root or project root | Improvised orchestration — use registry tools + director skills |
+| "Fixing audit" by hiding old `decision_log` entries instead of appending approved ones | Violates append-only history; Backlot shows latest per `(category, subject)` |
+
+**Required APIs:**
+
+| Need | Use |
+|------|-----|
+| Stage complete + artifacts | `lib.checkpoint.write_checkpoint(...)` |
+| Append decisions mid-stage / rerun approval | `lib.decision_log.append_decisions(project_id, [...])` or CLI `python -m lib.decision_log append <id> --file decisions.json` |
+| Inspect state | `python -m lib.project_status <id>` |
+| Generate media | Registry tools (`piper_tts`, `video_compose`, …) via `BaseTool.execute()` |
+
+When a choice changes, **append** a new decision with the same `(category, subject)` — never rewrite or delete older entries.
+
 ## What OpenMontage Is
 
 OpenMontage is an instruction-driven video production system. The AI agent IS the intelligence — it reads instructions (pipeline manifests + stage director skills + meta skills) and drives the pipeline using tools.
@@ -187,7 +262,7 @@ The agent itself orchestrates the production state machine:
 The agent:
 
 1. Reads the pipeline manifest (`pipeline_defs/*.yaml`) to know the process
-2. Calls `checkpoint.get_next_stage()` to find where to resume
+2. Calls `python -m lib.project_status <project-id>` (or `checkpoint.get_next_stage()`) to find where to resume and which director skill to read next
 3. Reads the stage's director skill (`skills/pipelines/<pipeline>/<stage>-director.md`) to know HOW
 4. Uses tools (`tools/`) for concrete capabilities
 5. Self-reviews using the reviewer meta skill (`skills/meta/reviewer.md`)
@@ -197,6 +272,8 @@ The agent:
 Infrastructure files:
 
 - `lib/checkpoint.py` — read/write checkpoints, stage validation
+- `lib/project_status.py` — **agent introspection CLI** (`python -m lib.project_status <id>`)
+- `lib/decision_log.py` — **append-only decision log API** (`python -m lib.decision_log append …`)
 - `tools/cost_tracker.py` — budget governance
 - `lib/pipeline_loader.py` — manifest loading and helpers
 
@@ -701,7 +778,7 @@ The `.agents/skills/` directory is large. When you're not coming in through a to
 
 ## What Not To Do
 
-- **Do not bypass the pipeline.** Never write ad-hoc scripts to call tools directly. All production goes through pipeline stages with director skills. See Rule Zero.
+- **Do not bypass the pipeline.** Never write ad-hoc scripts to call tools directly. All production goes through pipeline stages with director skills. See Rule Zero and **Pipeline Bypass Prohibition (HARD RULE)**. Repo-root `scripts/rerun_*.py` files are dev/dogfood utilities marked `OPENMONTAGE_NON_PRODUCTION_SCRIPT` — agents must not use them for production runs.
 - **Do not call generation tools without reading their Layer 3 skill.** Check the tool's `agent_skills` field, read the referenced skill, then craft your prompts using that guidance.
 - **Do not skip stage director skills.** Before executing any pipeline stage, read its director skill. The skill contains the quality bar, the workflow, and the review criteria.
 - Do not use deleted legacy names such as `tts_cloud`, `tts_engine`, or `video_gen`.

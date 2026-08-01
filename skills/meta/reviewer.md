@@ -222,6 +222,34 @@ Run at **every stage** after proposal. The decision log (`schemas/artifacts/deci
 - Decision with only 1 option considered: **SUGGESTION** — "Log rejected alternatives for auditability"
 - All decisions at confidence 1.0: **SUGGESTION** — "Unrealistic confidence — at least provider selection involves tradeoffs"
 
+## Pipeline Orchestration Bypass Review
+
+Run at **every gated stage** and again at **compose** before presenting output. Detects agents that replaced the pipeline with ad-hoc Python.
+
+### Checks (use `lib.production_audit.audit_project(project_dir)`)
+
+1. **Approval gate drift** (`approval_gate_drift`): A gated checkpoint (`proposal`, `script`, `scene_plan`, `assets`) is `completed` with `human_approved=true` while any `user_visible` decision_log entry for that stage still has `user_approved=false`. → **CRITICAL** — "Checkpoint claims human approval but decision_log does not. Re-open the stage as awaiting_human; do not forge approval."
+
+2. **Stage order violation** (`stage_order_violation`): `get_completed_stages()` is not a prefix of the pipeline's stage list. → **CRITICAL** — "Stages completed out of order — likely a bypass script skipped director skills."
+
+3. **Compose without tool trace** (`compose_without_tool_trace`): `compose` is `completed`, `assets` is `completed`, but `events.jsonl` has no successful `finish` event for any asset-stage tool (`tts_selector`, `piper_tts`, `image_selector`, `frame_sampler`, `subtitle_gen`, etc.). → **CRITICAL** — "Compose finished without registry tool events — production likely ran via ad-hoc script. Re-run via stage directors so BaseTool instrumentation records events."
+
+4. **Non-production script misuse**: If the agent invoked a repo-root script matching `rerun_*.py` or `run_*_assets.py` during a production run → **CRITICAL** — "Used a non-production bypass script. Re-run from `get_next_stage()` with director skills only."
+
+5. **Improvised orchestration** (session review when automation is inconclusive): Agent used shell directory listings (`dir`, `ls`, `Get-ChildItem`, `find`) to explore `projects/` instead of `python -m lib.project_status <id>`, OR wrote multi-stage temp Python to chain tools. → **SUGGESTION** at first occurrence; **CRITICAL** if it skipped director skills or left no tool trace.
+
+6. **Introspection neglect**: Agent could not explain `next_stage` or artifact paths without running exploratory shell. → **SUGGESTION** — "Use `lib.project_status` before improvising."
+
+7. **Direct artifact file edits**: Agent used editor/shell to rewrite `decision_log.json`, `checkpoint_*.json`, or `artifacts/*.json` instead of `write_checkpoint()` / `lib.decision_log.append_decisions()`. → **CRITICAL** — "Project JSON is contract data; use library APIs only."
+
+8. **Decision log mutation**: Agent changed fields on existing decision entries (e.g. toggling `user_visible` on stale rows) instead of appending a new approved entry with the same `(category, subject)`. → **CRITICAL** — "Append-only audit trail violated."
+
+### Severity summary:
+- Any `audit_project` finding with `severity=critical`: **CRITICAL** — block presentation until fixed or user explicitly accepts a documented downgrade in `decision_log`.
+- Bypass patterns without automated detection (agent admitted to `python -c` orchestration in session): **CRITICAL** — same remedy as above.
+
+See AGENT_GUIDE.md → Pipeline Bypass Prohibition (HARD RULE).
+
 ## Creative Differentiation Review
 
 Run at **scene_plan** and **edit** stages. Prevents the "every video looks the same" failure mode.
