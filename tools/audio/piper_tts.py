@@ -35,13 +35,16 @@ class PiperTTS(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
 
-    dependencies = ["cmd:piper"]
+    dependencies = ["python:piper"]
     install_instructions = (
-        "Install Piper TTS:\n"
+        "Install the Piper Python package (required for synthesis):\n"
         "  pip install piper-tts\n"
-        "Or download from https://github.com/rhasspy/piper/releases\n"
-        "Then download a voice model:\n"
-        "  piper --download-dir ~/.piper/models --model en_US-lessac-medium"
+        "Optional CLI (voice download only):\n"
+        "  https://github.com/rhasspy/piper/releases\n"
+        "Download a voice model (example English):\n"
+        "  python -m piper.download_voices en_US-lessac-medium\n"
+        "Chinese example:\n"
+        "  python -m piper.download_voices zh_CN-huayan-medium"
     )
     agent_skills = ["text-to-speech"]
 
@@ -98,9 +101,9 @@ class PiperTTS(BaseTool):
     user_visible_verification = ["Listen to generated audio for intelligibility"]
 
     def get_status(self) -> ToolStatus:
-        if shutil.which("piper"):
-            return ToolStatus.AVAILABLE
-        return ToolStatus.UNAVAILABLE
+        # Generation uses the Python API (`from piper import PiperVoice`), not
+        # the `piper` CLI. A CLI-only install must not read as available.
+        return super().get_status()
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0

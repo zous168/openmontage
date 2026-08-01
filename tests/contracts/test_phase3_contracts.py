@@ -119,19 +119,17 @@ class TestPiperTTS:
         assert "text_to_speech" in tool.capabilities
         assert "offline_generation" in tool.capabilities
 
-    def test_status_requires_piper_executable_even_if_python_package_imports(self, monkeypatch):
-        """F-12 regression: Piper generation shells out to `piper`, so importing
-        the Python package is not enough to mark the provider available."""
+    def test_status_requires_piper_python_package(self, monkeypatch):
+        """CLI on PATH is not enough — synthesis imports ``piper``."""
         original_import = builtins.__import__
-        original_which = shutil.which
 
         def fake_import(name, *args, **kwargs):
             if name == "piper":
-                return object()
+                raise ImportError("No module named 'piper'")
             return original_import(name, *args, **kwargs)
 
-        monkeypatch.setattr(shutil, "which", lambda cmd: None if cmd == "piper" else original_which(cmd))
         monkeypatch.setattr(builtins, "__import__", fake_import)
+        monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/piper" if cmd == "piper" else shutil.which(cmd))
 
         assert PiperTTS().get_status() == ToolStatus.UNAVAILABLE
 

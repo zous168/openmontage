@@ -185,6 +185,27 @@ class TestBaseToolInstrumentation:
         assert events[1]["success"] is True
         assert events[1]["cost_usd"] == 0.05
 
+    def test_execute_emits_error_on_failed_result(self, tmp_path, monkeypatch):
+        import lib.events as events_mod
+        monkeypatch.setattr(events_mod, "PROJECTS_DIR", tmp_path)
+
+        from tools.base_tool import BaseTool, ToolResult
+
+        class FailTool(BaseTool):
+            name = "fail_tool"
+
+            def execute(self, inputs):
+                return ToolResult(success=False, error="provider unavailable")
+
+        project = tmp_path / "proj-fail"
+        project.mkdir()
+        FailTool().execute({"output_path": str(project / "out.png")})
+
+        events = read_events(project)
+        assert [e["event"] for e in events] == ["start", "finish"]
+        assert events[1]["success"] is False
+        assert events[1]["error"] == "provider unavailable"
+
     def test_execute_emits_error_event_and_reraises(self, tmp_path, monkeypatch):
         import lib.events as events_mod
         monkeypatch.setattr(events_mod, "PROJECTS_DIR", tmp_path)

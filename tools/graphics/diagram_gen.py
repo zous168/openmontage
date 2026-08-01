@@ -35,11 +35,11 @@ class DiagramGen(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
 
-    dependencies = []  # checked dynamically
+    dependencies = ["python:PIL", "cmd:mmdc"]
     install_instructions = (
-        "For Mermaid diagrams:\n"
+        "For Mermaid diagrams (recommended):\n"
         "  npm install -g @mermaid-js/mermaid-cli\n"
-        "For Pillow-based diagrams (fallback):\n"
+        "For box/flowchart diagrams (required minimum):\n"
         "  pip install Pillow"
     )
     agent_skills = ["beautiful-mermaid", "d3-viz"]
@@ -104,8 +104,12 @@ class DiagramGen(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        if self._has_mermaid() or self._has_pillow():
+        has_pillow = self._has_pillow()
+        has_mmdc = self._has_mermaid()
+        if has_mmdc:
             return ToolStatus.AVAILABLE
+        if has_pillow:
+            return ToolStatus.DEGRADED
         return ToolStatus.UNAVAILABLE
 
     def _has_mermaid(self) -> bool:

@@ -168,13 +168,7 @@ class ClipSearch(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        try:
-            import numpy  # noqa: F401
-            import torch  # noqa: F401
-            import transformers  # noqa: F401
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
-        return ToolStatus.AVAILABLE
+        return super().get_status()
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0

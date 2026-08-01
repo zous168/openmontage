@@ -48,13 +48,18 @@ function renderSlate(s) {
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
   const inProgress = s.stages.find((x) => x.status === "in_progress");
   const stalled = s.stages.find((x) => x.stalled);
+  const pipelineIdle = s.stages.some((x) => x.name === "compose" && x.status === "completed")
+    && !s.stages.some((x) => !x.undeclared && (x.status === "in_progress" || x.status === "awaiting_human"));
+  const productionActive = typeof s.production_active === "boolean"
+    ? (s.production_active || Boolean(inProgress || awaiting))
+    : (Boolean(inProgress || awaiting) || (Boolean(s.live) && !pipelineIdle));
   let liveEl;
   if (awaiting) {
     liveEl = el("span", { class: "live" }, el("span", { class: "dot" }), t("awaitingYou"));
   } else if (stalled) {
     liveEl = el("span", { class: "live", style: "color:var(--red)" },
       el("span", { class: "dot", style: "background:var(--red);animation:none" }), t("stalled"));
-  } else if (s.live || inProgress) {
+  } else if (productionActive) {
     liveEl = el("span", { class: "live" }, el("span", { class: "dot" }), t("live"));
   } else {
     liveEl = el("span", { class: "live idle" }, el("span", { class: "dot" }),
@@ -135,6 +140,8 @@ function stageSub(st) {
   } else if (st.status === "in_progress") hint = t("inProgress");
   else if (st.status === "failed") {
     hint = st.error ? String(st.error).slice(0, 60) : t("failed");
+  } else if (st.blocked_by_upstream) {
+    hint = t("blockedByUpstreamHint");
   } else if (st.timestamp) {
     const approved = st.gated && st.human_approved ? t("approvedSuffix") : "";
     hint = fmtClock(st.timestamp) + approved;
@@ -1096,21 +1103,34 @@ function renderActivity(s) {
   for (const slot of open.values()) rows.push(slot.ev);
   rows.sort((a, b) => String(a.ts).localeCompare(String(b.ts)));
   for (const ev of rows.slice(-10).reverse()) {
+    const failed = ev.event === "error" || (ev.event === "finish" && ev.success === false);
+    const errText = ev.error || "";
     let statusEl;
     if (ev.event === "finish") {
-      statusEl = el("span", { class: `status ${ev.success === false ? "err" : "ok"}` },
-        `${ev.success === false ? "✕" : "✓"}${ev.duration_s != null ? ` ${ev.duration_s.toFixed ? ev.duration_s.toFixed(1) : ev.duration_s}s` : ""}${ev.cost_usd ? ` ${fmtMoney(ev.cost_usd)}` : ""}`);
+      const dur = ev.duration_s != null
+        ? ` ${ev.duration_s.toFixed ? ev.duration_s.toFixed(1) : ev.duration_s}s`
+        : "";
+      const cost = ev.cost_usd ? ` ${fmtMoney(ev.cost_usd)}` : "";
+      statusEl = el("span", { class: `status ${failed ? "err" : "ok"}` },
+        `${failed ? "✕" : "✓"}${dur}${cost}`);
     } else if (ev.event === "error") {
-      statusEl = el("span", { class: "status err" }, "✕");
+      const dur = ev.duration_s != null
+        ? ` ${ev.duration_s.toFixed ? ev.duration_s.toFixed(1) : ev.duration_s}s`
+        : "";
+      statusEl = el("span", { class: "status err" }, `✕${dur}`);
     } else {
       statusEl = el("span", { class: "status run" }, t("running"));
     }
-    body.append(el("div", { class: "act-row" },
+    const rowKids = [
       el("span", { class: "t" }, fmtClock(ev.ts)),
       el("span", { class: "tool" }, toolLabel(ev.tool)),
       el("span", { class: "target" }, ev.scene_id ? t("activityScene", { id: ev.scene_id }) : ""),
       statusEl,
-    ));
+    ];
+    if (errText) {
+      rowKids.push(el("span", { class: "act-err", title: errText }, errText));
+    }
+    body.append(el("div", { class: `act-row${failed ? " act-row--failed" : ""}` }, ...rowKids));
   }
   return el("div", { class: "panel" },
     el("div", { class: "panel-head" },
@@ -1118,7 +1138,7 @@ function renderActivity(s) {
         el("h2", {}, t("activity")),
         el("p", { class: "panel-lead" }, t("activityLead")),
       ),
-      el("span", { class: "meta" }, "events.jsonl")),
+      el("span", { class: "meta" }, t("activitySource"))),
     body);
 }
 
@@ -1625,6 +1645,9 @@ function normalize(s) {
     s.source_media = null;
   }
   s.events = Array.isArray(s.events) ? s.events : [];
+  if (typeof s.production_active !== "boolean") {
+    s.production_active = undefined;
+  }
   if (s.storyboard && Array.isArray(s.storyboard.scenes)) {
     for (const c of s.storyboard.scenes) {
       c.takes = Array.isArray(c.takes) ? c.takes : [];

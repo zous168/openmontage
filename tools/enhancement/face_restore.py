@@ -99,11 +99,7 @@ class FaceRestore(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        try:
-            import gfpgan  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])

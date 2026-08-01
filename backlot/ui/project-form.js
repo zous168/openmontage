@@ -3,6 +3,14 @@
 import { el, postForm } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
 
+/** Pull the first http(s) URL out of Douyin/Short share paste text. */
+export function extractMediaUrl(raw) {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  const match = text.match(/https?:\/\/[^\s<>"'，。；、）\]】]+/i);
+  return match ? match[0].replace(/[.,;\)\]}」]+$/, "") : text;
+}
+
 export function renderPathField(field, initialValue) {
   const key = field.key;
   const isReference = key === "reference_media_path";
@@ -92,12 +100,18 @@ export function renderBootstrapField(field, initialValue) {
   } else if (field.type === "url") {
     control = el("input", {
       class: "lib-field-input",
-      type: "url",
+      type: "text",
+      inputmode: "url",
       name: key,
       "data-key": key,
+      "data-field-type": "url",
       required: field.required ? "true" : null,
       autocomplete: "off",
       placeholder: field.hint_zh || "https://",
+    });
+    control.addEventListener("blur", () => {
+      const cleaned = extractMediaUrl(control.value);
+      if (cleaned) control.value = cleaned;
     });
   } else if (field.type === "path") {
     control = renderPathField(field, initialValue);
@@ -133,7 +147,10 @@ export function collectBootstrapInputs(container) {
   for (const node of container.querySelectorAll("[data-key]")) {
     if (node.classList?.contains("lib-field-readonly")) continue;
     const key = node.dataset.key;
-    const val = node.value != null ? String(node.value).trim() : "";
+    let val = node.value != null ? String(node.value).trim() : "";
+    if (node.dataset.fieldType === "url" || key.endsWith("_url")) {
+      val = extractMediaUrl(val);
+    }
     if (val) inputs[key] = node.type === "number" ? Number(val) : val;
   }
   return inputs;

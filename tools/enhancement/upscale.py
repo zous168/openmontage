@@ -113,11 +113,7 @@ class Upscale(BaseTool):
     # ------------------------------------------------------------------
 
     def get_status(self) -> ToolStatus:
-        try:
-            import realesrgan  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     # ------------------------------------------------------------------
     # Execution

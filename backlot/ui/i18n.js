@@ -87,34 +87,40 @@ const DECISION_SUBJECT_NAMES = {
 
 const TOOL_NAMES = {
   subtitle_gen: "字幕生成",
-  remotion_caption_burn: "Remotion 字幕烧录",
+  remotion_caption_burn: "字幕烧录",
   video_compose: "视频合成",
-  hyperframes_compose: "HyperFrames 合成",
+  hyperframes_compose: "超帧合成",
   transcriber: "语音转写",
   video_trimmer: "视频裁剪",
   frame_sampler: "帧采样",
   audio_mixer: "音频混音",
   audio_enhance: "音频增强",
   audio_probe: "音频探测",
+  audio_energy: "音频能量",
+  scene_detect: "场景检测",
   image_gen: "图像生成",
   image_selector: "图像筛选",
   video_selector: "视频筛选",
-  openai_image: "OpenAI 图像",
-  google_imagen: "Google Imagen",
-  pixabay_image: "Pixabay 图像",
+  flux_image: "图像生成",
+  openai_image: "图像生成",
+  google_imagen: "图像生成",
+  pixabay_image: "图库图像",
   diagram_gen: "图表生成",
   music_gen: "音乐生成",
-  pixabay_music: "Pixabay 音乐",
-  freesound_music: "Freesound 音乐",
-  suno_music: "Suno 音乐",
-  piper_tts: "Piper 配音",
+  pixabay_music: "图库音乐",
+  freesound_music: "音效库音乐",
+  suno_music: "音乐生成",
+  piper_tts: "本地配音",
   doubao_tts: "豆包配音",
-  tts_selector: "配音选择器",
+  tts_selector: "配音选择",
   lip_sync: "口型同步",
   upscale: "超分辨率",
   screen_recorder: "屏幕录制",
   video_analyzer: "视频分析",
   video_downloader: "视频下载",
+  video_understand: "视频理解",
+  transcript_fetcher: "字幕抓取",
+  visual_qa: "画面质检",
   showcase_card: "展示卡片",
   character_rig_renderer: "角色渲染",
   character_animation_reviewer: "角色动画审阅",
@@ -158,6 +164,7 @@ const STRINGS = {
   inProgress: "进行中",
   failed: "失败",
   stalledRail: "可能卡住",
+  blockedByUpstreamHint: "等待上一阶段完成",
   undeclaredStage: "「{name}」已运行，但未在本流水线清单中声明",
 
   // 脚本
@@ -282,6 +289,7 @@ const STRINGS = {
   activity: "活动",
   activityLead: "工具调用与耗时记录（最近 10 条）",
   activityScene: "场景 {id}",
+  activitySource: "事件日志",
   alsoConsidered: "也曾考虑：",
   revised: " · 已修订",
   decision: "决策",
@@ -739,7 +747,8 @@ export function decisionSubjectLabel(subject) {
 export function toolLabel(name) {
   if (!name) return "";
   const key = String(name).trim();
-  return TOOL_NAMES[key] || key.replaceAll("_", " ");
+  if (TOOL_NAMES[key]) return TOOL_NAMES[key];
+  return key.split("_").filter(Boolean).join("·");
 }
 
 export function statusLabel(status) {

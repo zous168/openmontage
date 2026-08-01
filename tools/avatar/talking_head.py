@@ -37,11 +37,11 @@ class TalkingHead(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.LOCAL_GPU
 
-    dependencies = []  # checked dynamically via get_status()
+    dependencies = []  # runtime checked via _is_sadtalker_ready()
     install_instructions = (
-        "Clone https://github.com/OpenTalker/SadTalker and set SADTALKER_PATH env var\n"
-        "Requires: PyTorch with CUDA, ffmpeg\n"
-        "pip install sadtalker  # or clone the repo"
+        "Clone https://github.com/OpenTalker/SadTalker and set SADTALKER_PATH to the repo root.\n"
+        "The repo must contain inference.py and downloaded model checkpoints.\n"
+        "SadTalker's Python environment must include PyTorch with CUDA and ffmpeg."
     )
 
     agent_skills = ["ffmpeg"]
@@ -108,21 +108,26 @@ class TalkingHead(BaseTool):
     # Status
     # ------------------------------------------------------------------
 
-    def get_status(self) -> ToolStatus:
-        """Check for SadTalker availability via env var or Python import."""
-        # 1. SADTALKER_PATH env var pointing to cloned repo
+    def _resolve_sadtalker_dir(self) -> Path | None:
         sadtalker_path = os.environ.get("SADTALKER_PATH", "")
-        if sadtalker_path and Path(sadtalker_path).is_dir():
-            return ToolStatus.AVAILABLE
-
-        # 2. Installed as a Python package
+        if sadtalker_path:
+            candidate = Path(sadtalker_path)
+            if candidate.is_dir():
+                return candidate
         try:
-            import sadtalker  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            pass
+            import sadtalker
 
-        return ToolStatus.UNAVAILABLE
+            return Path(sadtalker.__file__).parent
+        except (ImportError, AttributeError):
+            return None
+
+    def _is_sadtalker_ready(self) -> bool:
+        """True when SadTalker inference.py exists (what execute() invokes)."""
+        sadtalker_dir = self._resolve_sadtalker_dir()
+        return sadtalker_dir is not None and (sadtalker_dir / "inference.py").is_file()
+
+    def get_status(self) -> ToolStatus:
+        return ToolStatus.AVAILABLE if self._is_sadtalker_ready() else ToolStatus.UNAVAILABLE
 
     # ------------------------------------------------------------------
     # Cost & runtime estimates
@@ -140,6 +145,12 @@ class TalkingHead(BaseTool):
     # ------------------------------------------------------------------
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        if self.get_status() != ToolStatus.AVAILABLE:
+            return ToolResult(
+                success=False,
+                error="SadTalker not available. " + self.install_instructions,
+            )
+
         image_path = Path(inputs["image_path"])
         audio_path = Path(inputs["audio_path"])
 
@@ -180,14 +191,12 @@ class TalkingHead(BaseTool):
         output_path: Path,
     ) -> ToolResult:
         """Run SadTalker inference via subprocess."""
-        sadtalker_path = os.environ.get("SADTALKER_PATH", "")
-        if not sadtalker_path or not Path(sadtalker_path).is_dir():
+        sadtalker_dir = self._resolve_sadtalker_dir()
+        if sadtalker_dir is None:
             return ToolResult(
                 success=False,
-                error="SADTALKER_PATH not set or directory does not exist.\n" + self.install_instructions,
+                error="SadTalker not available. " + self.install_instructions,
             )
-
-        sadtalker_dir = Path(sadtalker_path)
         result_dir = output_path.parent / "sadtalker_results"
         result_dir.mkdir(parents=True, exist_ok=True)
 

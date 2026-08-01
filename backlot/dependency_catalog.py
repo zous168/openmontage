@@ -23,15 +23,25 @@ DEPENDENCY_CATALOG: dict[str, dict[str, str]] = {
         "description_zh": "ManimCE 数学/科普动画引擎，将 Python 场景代码渲染为动画视频",
         "install_hint_zh": "pip install manim，然后运行 manim checkhealth；需 FFmpeg，公式渲染可选 LaTeX",
     },
+    "cmd:mmdc": {
+        "label_zh": "Mermaid CLI",
+        "description_zh": "Mermaid 图表命令行渲染器（@mermaid-js/mermaid-cli）",
+        "install_hint_zh": "npm install -g @mermaid-js/mermaid-cli",
+    },
     "cmd:npx": {
         "label_zh": "npx",
         "description_zh": "Node.js 包执行器，用于运行 HyperFrames 等前端合成 CLI",
         "install_hint_zh": "安装 Node.js（自带 npm/npx）并加入 PATH",
     },
     "cmd:piper": {
-        "label_zh": "Piper",
-        "description_zh": "Piper 本地神经语音合成 CLI，离线生成旁白 WAV",
-        "install_hint_zh": "从 Piper 发布页下载对应平台二进制，加入 PATH（见 piper_tts 工具说明）",
+        "label_zh": "Piper CLI",
+        "description_zh": "Piper 命令行（可选，用于下载语音模型）",
+        "install_hint_zh": "可选：从 Piper 发布页下载 CLI；合成必需 pip install piper-tts",
+    },
+    "python:piper": {
+        "label_zh": "piper-tts",
+        "description_zh": "Piper Python 包，本地神经语音合成（from piper import PiperVoice）",
+        "install_hint_zh": "pip install piper-tts",
     },
     "python:PIL": {
         "label_zh": "Pillow",
@@ -43,6 +53,11 @@ DEPENDENCY_CATALOG: dict[str, dict[str, str]] = {
         "description_zh": "OpenCV 计算机视觉库，用于素材索引与画面分析（import 名为 cv2）",
         "install_hint_zh": "pip install opencv-python",
     },
+    "python:diffusers": {
+        "label_zh": "Diffusers",
+        "description_zh": "HuggingFace 本地 Stable Diffusion 推理库",
+        "install_hint_zh": "pip install diffusers transformers accelerate torch",
+    },
     "python:faster_whisper": {
         "label_zh": "faster-whisper",
         "description_zh": "本地 Whisper 语音识别，离线转写与字幕时间轴",
@@ -52,6 +67,11 @@ DEPENDENCY_CATALOG: dict[str, dict[str, str]] = {
         "label_zh": "GFPGAN",
         "description_zh": "人脸修复与清晰度增强模型",
         "install_hint_zh": "pip install gfpgan（通常需配合 PyTorch）",
+    },
+    "python:manim": {
+        "label_zh": "ManimCE",
+        "description_zh": "Manim 社区版 Python 包（数学/科普动画）",
+        "install_hint_zh": "pip install manim；可用 manim 或 python -m manim 调用",
     },
     "python:numpy": {
         "label_zh": "NumPy",

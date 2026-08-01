@@ -28,11 +28,26 @@ from lib.pipeline_loader import PIPELINE_DEFS_DIR, list_pipelines, load_pipeline
 from lib.source_media_review import detect_media_type
 
 # Internal / test manifests — hidden from the library picker by default.
-# reference-driven: legacy wrapper; standard flow uses meta/video-reference-analyst
-# on any pipeline with optional reference_url / reference_media_path in bootstrap.
-_HIDDEN_PIPELINES = frozenset({"framework-smoke", "reference-driven"})
+# reference-driven is a first-class pipeline; other pipelines may optionally attach
+# reference_url / reference_media_path and invoke meta/video-reference-analyst as a skill.
+_HIDDEN_PIPELINES = frozenset({"framework-smoke"})
 
 _PROJECT_ID_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_MEDIA_URL_RE = re.compile(
+    r"https?://[^\s<>\"'，。；、）\]】]+",
+    re.IGNORECASE,
+)
+
+
+def normalize_media_url(raw: Any) -> str:
+    """Extract the first http(s) URL from pasted share text (e.g. Douyin copy string)."""
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    match = _MEDIA_URL_RE.search(text)
+    if match:
+        return match.group(0).rstrip(".,;)]}」")
+    return text
 
 MEDIA_STAGING_DIR = REPO_ROOT / ".backlot" / "media-staging"
 MAX_STAGED_MEDIA_BYTES = 2 * 1024 * 1024 * 1024  # 2 GiB
@@ -281,6 +296,31 @@ PIPELINE_BOOTSTRAP_FIELDS: dict[str, list[dict[str, Any]]] = {
         _REFERENCE_URL,
         _REFERENCE_PATH,
     ],
+    "reference-driven": [
+        _f(
+            "reference_url",
+            "url",
+            "参考视频链接",
+            required=False,
+            hint_zh="可直接粘贴抖音分享文案，系统会自动提取链接并通过 VidDown 下载；与本地参考视频二选一",
+        ),
+        _f(
+            "reference_media_path",
+            "path",
+            "参考视频（本地）",
+            required=False,
+            hint_zh="选择本地视频或粘贴路径；与参考链接二选一",
+        ),
+        _f(
+            "topic",
+            "text",
+            "差异化方向（可选）",
+            required=False,
+            hint_zh="希望借鉴参考片哪方面、但要做出什么不同；留空则由 Agent 提案",
+        ),
+        _PLATFORM,
+        _DURATION,
+    ],
     "framework-smoke": [],
 }
 
@@ -432,6 +472,12 @@ def _apply_pipeline_rules(pipeline_type: str, normalized: dict[str, Any], raw: d
         # Alias for downstream brief metadata
         normalized.setdefault("topic", normalized.get("thematic_question"))
 
+    if pipeline_type == "reference-driven":
+        url = str(raw.get("reference_url") or normalized.get("reference_url") or "").strip()
+        path = str(raw.get("reference_media_path") or normalized.get("reference_media_path") or "").strip()
+        if not url and not path:
+            raise BootstrapError("请填写参考视频链接或本地参考视频。")
+
 def validate_production_inputs(
     pipeline_type: str,
     inputs: Optional[dict[str, Any]],
@@ -462,7 +508,7 @@ def validate_production_inputs(
         elif ftype == "path":
             normalized[key] = str(value).strip().strip('"').strip("'")
         elif ftype == "url":
-            normalized[key] = str(value).strip()[:2000]
+            normalized[key] = normalize_media_url(value)[:2000]
         else:
             normalized[key] = _parse_text(value, field)
 
@@ -678,7 +724,7 @@ def create_project_workspace(
         "version": "1.0",
         "created_via": "backlot_library",
     }
-    has_reference = bool(
+    has_reference = pipeline == "reference-driven" or bool(
         str(production_inputs.get("reference_url") or "").strip()
         or str(production_inputs.get("reference_media_path") or "").strip()
     )

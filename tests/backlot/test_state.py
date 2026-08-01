@@ -257,6 +257,26 @@ class TestFindingsFixes:
         s = load_board_state(p)
         assert s["artifacts"]["script"]["title"] == "Test Film"
 
+    def test_remotion_public_path_resolves_to_assets(self, projects_root):
+        from backlot.state import _asset_entry
+
+        p = _make_project(projects_root, "remotion-paths")
+        img_dir = p / "assets" / "images"
+        img_dir.mkdir(parents=True, exist_ok=True)
+        (img_dir / "sc1.jpg").write_bytes(b"\xff\xd8\xff")
+        entry = _asset_entry(
+            p,
+            {
+                "id": "img_sc1",
+                "type": "image",
+                "path": "remotion-paths/images/sc1.jpg",
+                "scene_id": "sc1",
+            },
+        )
+        assert entry["exists"] is True
+        assert entry["renderable"] is True
+        assert entry["path"] == "assets/images/sc1.jpg"
+
     def test_stalled_in_progress_stage_flagged(self, projects_root):
         # F-05: an in_progress stage with no recent activity reads stalled.
         import os
@@ -283,6 +303,149 @@ class TestFindingsFixes:
         s = load_board_state(p)
         research = next(x for x in s["stages"] if x["name"] == "research")
         assert "stalled" not in research
+
+    def test_pending_stage_inferred_in_progress_from_events(self, projects_root):
+        """Tool activity before the first checkpoint should not read as 待开始."""
+        p = _make_project(projects_root, "live-run")
+        _write(p / "project.json", {
+            "project_id": "live-run",
+            "title": "Live",
+            "pipeline_type": "reference-driven",
+        })
+        (p / "events.jsonl").write_text(
+            '{"ts":"2026-08-01T13:05:20Z","tool":"video_analyzer","event":"start"}\n',
+            encoding="utf-8",
+        )
+        s = load_board_state(p)
+        ref = next(x for x in s["stages"] if x["name"] == "reference_analysis")
+        assert ref["status"] == "in_progress"
+        assert ref.get("inferred_from_events") is True
+
+    def test_downstream_completed_capped_when_upstream_awaiting(self, projects_root):
+        """Later checkpoints must not show 已完成 while an earlier stage awaits approval."""
+        p = _make_project(projects_root, "gate-skip")
+        _write(p / "project.json", {
+            "project_id": "gate-skip",
+            "title": "Gate",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_assets.json", {
+            "stage": "assets", "status": "awaiting_human",
+            "timestamp": "2026-01-01T05:00:00Z", "artifacts": {},
+        })
+        _write(p / "checkpoint_edit.json", {
+            "stage": "edit", "status": "completed",
+            "timestamp": "2026-01-01T06:00:00Z", "artifacts": {},
+        })
+        _write(p / "checkpoint_compose.json", {
+            "stage": "compose", "status": "completed",
+            "timestamp": "2026-01-01T07:00:00Z", "artifacts": {},
+        })
+        s = load_board_state(p)
+        by_name = {st["name"]: st for st in s["stages"]}
+        assert by_name["assets"]["status"] == "awaiting_human"
+        assert by_name["edit"]["status"] == "pending"
+        assert by_name["edit"].get("blocked_by_upstream") is True
+        assert by_name["edit"].get("raw_status") == "completed"
+        assert by_name["compose"]["status"] == "pending"
+        assert by_name["compose"].get("blocked_by_upstream") is True
+
+    def test_rerun_assets_in_progress_keeps_downstream_completed(self, projects_root):
+        """Re-running assets must not demote edit/compose or infer publish."""
+        p = _make_project(projects_root, "rerun-live")
+        _write(p / "project.json", {
+            "project_id": "rerun-live",
+            "title": "Rerun",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_scene_plan.json", {
+            "stage": "scene_plan", "status": "completed",
+            "timestamp": "2026-01-01T04:00:00Z", "artifacts": {},
+        })
+        _write(p / "checkpoint_assets.json", {
+            "stage": "assets", "status": "in_progress",
+            "timestamp": "2026-08-01T13:54:01Z", "artifacts": {},
+        })
+        _write(p / "checkpoint_edit.json", {
+            "stage": "edit", "status": "completed",
+            "timestamp": "2026-08-01T13:50:00Z", "artifacts": {},
+        })
+        _write(p / "checkpoint_compose.json", {
+            "stage": "compose", "status": "completed",
+            "timestamp": "2026-08-01T13:51:00Z", "artifacts": {},
+        })
+        (p / "events.jsonl").write_text(
+            '{"ts":"2026-08-01T13:54:05+00:00","tool":"transcriber","event":"start"}\n'
+            '{"ts":"2026-08-01T13:54:23+00:00","tool":"transcriber","event":"finish","success":true}\n',
+            encoding="utf-8",
+        )
+        s = load_board_state(p)
+        by_name = {st["name"]: st for st in s["stages"]}
+        assert by_name["assets"]["status"] == "in_progress"
+        assert by_name["edit"]["status"] == "completed"
+        assert by_name["compose"]["status"] == "completed"
+        assert by_name["publish"]["status"] == "pending"
+        assert not by_name["publish"].get("inferred_from_events")
+
+    def test_recent_activity_without_active_stage_not_live(self, projects_root):
+        """Finished run: recent checkpoint writes must not keep the header live."""
+        p = _make_project(projects_root, "done-run")
+        _write(p / "project.json", {
+            "project_id": "done-run",
+            "title": "Done",
+            "pipeline_type": "reference-driven",
+        })
+        for stage in ("scene_plan", "assets", "edit", "compose"):
+            _write(p / f"checkpoint_{stage}.json", {
+                "stage": stage, "status": "completed",
+                "timestamp": "2026-08-01T13:57:00Z", "artifacts": {},
+            })
+        (p / "events.jsonl").write_text(
+            '{"ts":"2026-08-01T13:57:02+00:00","tool":"video_compose","event":"finish","success":true}\n',
+            encoding="utf-8",
+        )
+        s = load_board_state(p)
+        assert s["live"] is False
+        publish = next(x for x in s["stages"] if x["name"] == "publish")
+        assert publish["status"] == "pending"
+
+    def test_stale_unfinished_tool_event_not_live(self, projects_root):
+        """Interrupted run: orphan tool start must not keep the board live."""
+        p = _make_project(projects_root, "orphan-start")
+        _write(p / "project.json", {
+            "project_id": "orphan-start",
+            "title": "Orphan",
+            "pipeline_type": "reference-driven",
+        })
+        for stage in ("scene_plan", "assets", "edit", "compose"):
+            _write(p / f"checkpoint_{stage}.json", {
+                "stage": stage, "status": "completed",
+                "timestamp": "2026-08-01T14:05:00Z", "artifacts": {},
+            })
+        (p / "events.jsonl").write_text(
+            '{"ts":"2026-01-01T12:00:00+00:00","tool":"hyperframes_compose","event":"start"}\n',
+            encoding="utf-8",
+        )
+        s = load_board_state(p)
+        assert s["live"] is False
+
+    def test_recent_tool_finish_infers_in_progress_before_checkpoint(self, projects_root):
+        """Tool finished recently but checkpoint not written yet → show 进行中."""
+        p = _make_project(projects_root, "cp-lag")
+        _write(p / "project.json", {
+            "project_id": "cp-lag",
+            "title": "Lag",
+            "pipeline_type": "reference-driven",
+        })
+        (p / "events.jsonl").write_text(
+            '{"ts":"2026-08-01T13:05:20+00:00","tool":"video_analyzer","event":"start"}\n'
+            '{"ts":"2026-08-01T13:05:43+00:00","tool":"video_analyzer","event":"finish","success":true,"duration_s":22.9}\n',
+            encoding="utf-8",
+        )
+        s = load_board_state(p)
+        ref = next(x for x in s["stages"] if x["name"] == "reference_analysis")
+        assert ref["status"] == "in_progress"
+        assert ref.get("inferred_from_events") is True
 
 
 class TestStoryboardVisualSelection:

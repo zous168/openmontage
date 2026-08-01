@@ -850,7 +850,7 @@ aside .panel + .panel { margin-top: 0; }
 .decision .d-alt { font-size: calc(10.5px * var(--fs-scale)); color: var(--text-3); margin-top: 4px; }
 .decision .d-alt s { opacity: .8; }
 
-.act-row { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-family: var(--mono); font-size: calc(11px * var(--fs-scale)); }
+.act-row { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 9px; padding: 7px 0; border-bottom: 1px solid var(--border-soft); font-family: var(--mono); font-size: calc(11px * var(--fs-scale)); }
 .act-row:last-child { border-bottom: none; }
 .act-row .t { color: var(--text-3); font-size: calc(10px * var(--fs-scale)); flex: none; }
 .act-row .tool { color: var(--text-2); }
@@ -859,6 +859,18 @@ aside .panel + .panel { margin-top: 0; }
 .act-row .status.ok { color: var(--green); }
 .act-row .status.run { color: var(--amber); animation: blink 1.4s ease-in-out infinite; }
 .act-row .status.err { color: var(--red); }
+.act-row .act-err {
+  flex: 1 1 100%;
+  margin: 0 0 0 42px;
+  color: var(--red);
+  font-size: calc(10px * var(--fs-scale));
+  line-height: 1.4;
+  opacity: .92;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.act-row--failed .tool { color: var(--text-1); }
 @keyframes blink { 50% { opacity: .45; } }
 
 /* ---------- filmstrip ---------- */

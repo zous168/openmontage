@@ -36,13 +36,14 @@ class FaceTracker(BaseTool):
     execution_mode = ExecutionMode.SYNC
     determinism = Determinism.DETERMINISTIC
 
-    dependencies = ["cmd:ffmpeg"]
+    dependencies = ["python:cv2"]
     install_instructions = (
-        "For best results install MediaPipe:\n"
-        "pip install mediapipe opencv-python\n\n"
-        "Falls back to OpenCV Haar cascade (ships with opencv-python)."
+        "Required: pip install opencv-python\n\n"
+        "For best results also install MediaPipe:\n"
+        "  pip install mediapipe\n\n"
+        "Without MediaPipe, falls back to OpenCV Haar cascade."
     )
-    agent_skills = ["ffmpeg"]
+    agent_skills = []
 
     capabilities = [
         "face_detection",
@@ -129,11 +130,11 @@ class FaceTracker(BaseTool):
             return False
 
     def get_status(self) -> ToolStatus:
-        if self._has_mediapipe() and self._has_opencv():
+        if super().get_status() != ToolStatus.AVAILABLE:
+            return ToolStatus.UNAVAILABLE
+        if self._has_mediapipe():
             return ToolStatus.AVAILABLE
-        if self._has_opencv():
-            return ToolStatus.DEGRADED
-        return ToolStatus.UNAVAILABLE
+        return ToolStatus.DEGRADED
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         input_path = Path(inputs["input_path"])

@@ -156,8 +156,12 @@ class TestBacklotServerApi:
         assert len(body) >= 11
         ids = {p["id"] for p in body}
         assert "framework-smoke" not in ids
-        assert "reference-driven" not in ids
+        assert "reference-driven" in ids
         assert "cinematic" in ids
+        ref = next(p for p in body if p["id"] == "reference-driven")
+        ref_keys = {f["key"] for f in ref["bootstrap_fields"]}
+        assert "reference_url" in ref_keys
+        assert "reference_media_path" in ref_keys
         sample = next(p for p in body if p["id"] == "cinematic")
         assert sample["label_zh"]
         assert "summary_zh" in sample
@@ -173,6 +177,21 @@ class TestBacklotServerApi:
         assert any(f["key"] == "dub_mode" for f in loc["bootstrap_fields"])
         for p in body:
             assert p["bootstrap_fields"], f"{p['id']} missing bootstrap_fields"
+
+    def test_reference_url_extracts_from_douyin_share_text(self):
+        from backlot.bootstrap import normalize_media_url, validate_production_inputs
+
+        share = (
+            "2.35 复制打开抖音，看看【示例】 "
+            "https://v.douyin.com/tyV7nsNEpOw/ "
+            "07/31 TL:/"
+        )
+        assert normalize_media_url(share) == "https://v.douyin.com/tyV7nsNEpOw/"
+        parsed = validate_production_inputs(
+            "reference-driven",
+            {"reference_url": share, "target_platform": "douyin"},
+        )
+        assert parsed["reference_url"] == "https://v.douyin.com/tyV7nsNEpOw/"
 
     def test_create_project_bootstraps_workspace(self, client, projects_root):
         res = client.post(

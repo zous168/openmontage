@@ -10,6 +10,7 @@ import ast
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -92,7 +93,7 @@ class MathAnimate(BaseTool):
     determinism = Determinism.DETERMINISTIC
     runtime = ToolRuntime.LOCAL
 
-    dependencies = ["cmd:manim"]
+    dependencies = ["python:manim"]
     install_instructions = (
         "Install ManimCE:\n"
         "  pip install manim\n"
@@ -185,10 +186,21 @@ class MathAnimate(BaseTool):
         "Verify math formulas render correctly (requires LaTeX)",
     ]
 
-    def get_status(self) -> ToolStatus:
+    @classmethod
+    def _manim_command_prefix(cls) -> list[str]:
+        """Resolve how to invoke Manim (CLI on PATH or python -m manim)."""
         if shutil.which("manim"):
-            return ToolStatus.AVAILABLE
-        return ToolStatus.UNAVAILABLE
+            return ["manim"]
+        try:
+            import manim  # noqa: F401
+        except ImportError:
+            return []
+        return [sys.executable, "-m", "manim"]
+
+    def get_status(self) -> ToolStatus:
+        if not self._manim_command_prefix():
+            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0  # local, free
@@ -206,7 +218,8 @@ class MathAnimate(BaseTool):
         return estimates.get(quality, 15.0)
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
-        if not shutil.which("manim"):
+        manim_prefix = self._manim_command_prefix()
+        if not manim_prefix:
             return ToolResult(
                 success=False,
                 error="Manim not found. " + self.install_instructions,
@@ -310,7 +323,12 @@ class MathAnimate(BaseTool):
         scene_file.write_text(scene_code, encoding="utf-8")
 
         # Build Manim CLI command
-        cmd = ["manim"]
+        cmd = list(self._manim_command_prefix())
+        if not cmd:
+            return ToolResult(
+                success=False,
+                error="Manim not found. " + self.install_instructions,
+            )
 
         # Quality flag
         preset = QUALITY_PRESETS.get(quality, QUALITY_PRESETS["medium"])

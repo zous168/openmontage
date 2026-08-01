@@ -44,11 +44,11 @@ class LipSync(BaseTool):
     determinism = Determinism.STOCHASTIC
     runtime = ToolRuntime.LOCAL_GPU
 
-    dependencies = ["python:torch", "cmd:ffmpeg"]
+    dependencies = []  # runtime checked via _is_runtime_ready()
     install_instructions = (
-        "Option 1: pip install wav2lip (if available)\n"
-        "Option 2: Clone https://github.com/Rudrabha/Wav2Lip and set WAV2LIP_PATH env var\n"
-        "Requires: PyTorch with CUDA, ffmpeg"
+        "Clone https://github.com/Rudrabha/Wav2Lip and set WAV2LIP_PATH to the repo root.\n"
+        "Download model checkpoints into checkpoints/ (wav2lip.pth or wav2lip_gan.pth).\n"
+        "Wav2Lip's own Python environment must include PyTorch with CUDA and ffmpeg."
     )
 
     agent_skills = ["ffmpeg"]
@@ -107,21 +107,20 @@ class LipSync(BaseTool):
         "Check face region for visual artifacts or jitter",
     ]
 
+    def _is_runtime_ready(self) -> bool:
+        """True when execute() can run inference (repo, script, checkpoint)."""
+        wav2lip_dir = self._resolve_wav2lip_dir()
+        if wav2lip_dir is None:
+            return False
+        if not (wav2lip_dir / "inference.py").is_file():
+            return False
+        checkpoints = wav2lip_dir / "checkpoints"
+        if not checkpoints.is_dir():
+            return False
+        return any((checkpoints / name).is_file() for name in MODEL_CHECKPOINTS.values())
+
     def get_status(self) -> ToolStatus:
-        """Check Wav2Lip availability via env var or Python import."""
-        # Check WAV2LIP_PATH environment variable
-        wav2lip_path = os.environ.get("WAV2LIP_PATH")
-        if wav2lip_path and Path(wav2lip_path).is_dir():
-            return ToolStatus.AVAILABLE
-
-        # Fallback: try importing wav2lip as a Python package
-        try:
-            import wav2lip  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            pass
-
-        return ToolStatus.UNAVAILABLE
+        return ToolStatus.AVAILABLE if self._is_runtime_ready() else ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, Any]) -> float:
         return 0.0  # local GPU, free

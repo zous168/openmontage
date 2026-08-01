@@ -210,14 +210,21 @@ def _instrument_execute(fn: Callable) -> Callable:
             project_dir = infer_project_dir(inputs)
         if project_dir is not None:
             cost = getattr(result, "cost_usd", None)
-            emit_event(project_dir, {
+            success = getattr(result, "success", None)
+            err = getattr(result, "error", None)
+            finish: dict[str, Any] = {
                 **base, "event": "finish",
                 "output_path": str(output_path) if output_path else None,
-                "success": getattr(result, "success", None),
+                "success": success,
                 # NOTE: 0.0 is meaningful (ran for free) — only None is dropped.
                 "cost_usd": cost if isinstance(cost, (int, float)) else None,
                 "duration_s": round(time.monotonic() - started, 2),
-            })
+            }
+            if err:
+                finish["error"] = str(err)[:300]
+            elif success is False:
+                finish["error"] = "工具返回失败（未提供详细原因）"
+            emit_event(project_dir, finish)
         return result
 
     wrapper._backlot_instrumented = True  # type: ignore[attr-defined]
@@ -294,7 +301,13 @@ class BaseTool(ABC):
     # ---- Status reporting ----
 
     def get_status(self) -> ToolStatus:
-        """Check if this tool's dependencies are satisfied."""
+        """Check if this tool's dependencies are satisfied.
+
+        Subclasses that override this should either call ``super().get_status()``
+        (when ``dependencies`` matches what ``execute()`` needs) or implement
+        checks that mirror the exact runtime path — never a weaker proxy such as
+        CLI-on-PATH when execution uses a Python import.
+        """
         try:
             self.check_dependencies()
             return ToolStatus.AVAILABLE

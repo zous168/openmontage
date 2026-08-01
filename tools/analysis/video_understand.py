@@ -133,13 +133,7 @@ class VideoUnderstand(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        """Check if transformers and torch are both importable."""
-        try:
-            import transformers  # noqa: F401
-            import torch  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def estimate_runtime(self, inputs: dict[str, Any]) -> float:
         """Estimate runtime in seconds based on mode and frame count."""

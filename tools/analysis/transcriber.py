@@ -96,11 +96,7 @@ class Transcriber(BaseTool):
     ]
 
     def get_status(self) -> ToolStatus:
-        try:
-            import faster_whisper  # noqa: F401
-            return ToolStatus.AVAILABLE
-        except ImportError:
-            return ToolStatus.UNAVAILABLE
+        return super().get_status()
 
     def _has_diarization(self) -> bool:
         try:

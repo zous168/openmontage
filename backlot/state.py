@@ -43,6 +43,22 @@ _DEMO_PROJECT_IDS = frozenset({"backlot-demo-run", "the-last-lighthouse"})
 # How long (seconds) without filesystem activity before a board reads "idle".
 LIVE_WINDOW_SECONDS = 5 * 60
 
+# Upstream statuses that hard-block downstream from reading as finished.
+# ``in_progress`` is intentionally excluded: a stage re-run may refresh assets
+# while edit/compose checkpoints from the prior run remain valid on disk.
+_UPSTREAM_HARD_BLOCK = frozenset({"awaiting_human", "failed"})
+
+# Orphan tools (not declared on a stage manifest) still belong to a stage for
+# live-rail inference — otherwise active_tools fallback picks the wrong stage.
+_ORPHAN_TOOL_STAGES: dict[str, str] = {
+    "transcriber": "assets",
+    "subtitle_gen": "assets",
+    "piper_tts": "assets",
+    "doubao_tts": "assets",
+    "elevenlabs_tts": "assets",
+    "frame_sampler": "reference_analysis",
+}
+
 # An in_progress stage with no filesystem activity for this long is flagged
 # as possibly stalled (F-05: a wedged agent must be visible, not silent —
 # heartbeat checkpoints and tool events both reset the clock).
@@ -91,6 +107,14 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
                         str(name) for name in (s.get("produces") or [])
                         if isinstance(name, str) and name
                     ],
+                    "tools_available": [
+                        str(tool) for tool in (s.get("tools_available") or [])
+                        if isinstance(tool, str) and tool
+                    ],
+                    "required_tools": [
+                        str(tool) for tool in (s.get("required_tools") or [])
+                        if isinstance(tool, str) and tool
+                    ],
                 }
                 for s in manifest.get("stages", [])
                 if isinstance(s, dict) and s.get("name")
@@ -100,6 +124,7 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
                     "pipeline_type": pipeline_type,
                     "label_zh": pipeline_label_zh(pipeline_type),
                     "stages": stages,
+                    "reference_input": manifest.get("reference_input") or {},
                     "known": True,
                 }
         except Exception:
@@ -399,8 +424,12 @@ def _resolve_asset_path(project_dir: Path, raw_path: str) -> Optional[Path]:
     else:
         candidates.append(project_dir / raw_path)
         candidates.append(REPO_ROOT / raw_path)
-        # repo-relative with the project prefix repeated
         parts = p.parts
+        # Remotion public URL paths: "<project_id>/images/foo.jpg" — files live
+        # under projects/<id>/assets/images/ after staging, not at project root.
+        if len(parts) >= 2 and parts[0] == project_dir.name:
+            candidates.append(project_dir / "assets" / Path(*parts[1:]))
+        # repo-relative with the project prefix repeated
         if len(parts) > 2 and parts[0] == "projects":
             candidates.append(project_dir.parent / Path(*parts[1:]))
     for c in candidates:
@@ -1156,6 +1185,185 @@ def _build_project_summary(
     }
 
 
+def _event_epoch(ts: Any) -> Optional[float]:
+    """Parse ISO event timestamp to Unix epoch; None on failure."""
+    if not ts or not isinstance(ts, str):
+        return None
+    try:
+        from datetime import datetime
+        text = ts.replace("Z", "+00:00")
+        return datetime.fromisoformat(text).timestamp()
+    except (ValueError, OSError, OverflowError):
+        return None
+
+
+def _active_top_level_tools(
+    events: list[dict[str, Any]],
+    *,
+    now: Optional[float] = None,
+) -> set[str]:
+    """Tools whose outermost (depth 0) run has started but not finished.
+
+    Starts older than LIVE_WINDOW_SECONDS without a matching finish are treated
+    as stale (interrupted runs) so the board does not stay live forever.
+    """
+    import time
+
+    if now is None:
+        now = time.time()
+    active: set[str] = set()
+    started_at: dict[str, float] = {}
+    for ev in events:
+        depth = ev.get("depth")
+        if depth not in (None, 0):
+            continue
+        tool = ev.get("tool")
+        if not tool:
+            continue
+        name = str(tool)
+        kind = ev.get("event")
+        if kind == "start":
+            active.add(name)
+            epoch = _event_epoch(ev.get("ts"))
+            if epoch is not None:
+                started_at[name] = epoch
+        elif kind in ("finish", "error"):
+            active.discard(name)
+            started_at.pop(name, None)
+    stale = [
+        name for name in active
+        if name in started_at and (now - started_at[name]) > LIVE_WINDOW_SECONDS
+    ]
+    for name in stale:
+        active.discard(name)
+    return active
+
+
+def _build_tool_to_stage(pipeline_meta: dict[str, Any]) -> dict[str, str]:
+    """Map tool names to pipeline stage names for live activity inference."""
+    tool_to_stage: dict[str, str] = {}
+    for stage_def in pipeline_meta.get("stages") or []:
+        if not isinstance(stage_def, dict):
+            continue
+        name = stage_def.get("name")
+        if not name:
+            continue
+        for key in ("tools_available", "required_tools"):
+            for tool in stage_def.get(key) or []:
+                tool_to_stage.setdefault(str(tool), str(name))
+    ref = pipeline_meta.get("reference_input") or {}
+    for tool in ref.get("analysis_tools") or []:
+        tool_to_stage.setdefault(str(tool), "reference_analysis")
+    for tool, stage in _ORPHAN_TOOL_STAGES.items():
+        tool_to_stage.setdefault(tool, stage)
+    return tool_to_stage
+
+
+def _first_actionable_stage(stages: list[dict[str, Any]]) -> Optional[str]:
+    """First manifest stage that is not finished and not blocked upstream."""
+    for st in stages:
+        if st.get("undeclared") or st.get("blocked_by_upstream"):
+            continue
+        status = st.get("status") or "pending"
+        if status in ("pending", "in_progress"):
+            return str(st["name"])
+    return None
+
+
+def _enforce_stage_order(stages: list[dict[str, Any]]) -> None:
+    """Downstream stages cannot read as completed while upstream awaits approval."""
+    blocked = False
+    for st in stages:
+        if st.get("undeclared"):
+            continue
+        status = st.get("status") or "pending"
+        has_checkpoint = bool(st.get("timestamp"))
+        if blocked:
+            if status in ("completed", "in_progress"):
+                st["raw_status"] = status
+                st["status"] = "pending"
+                st["blocked_by_upstream"] = True
+        elif has_checkpoint and status in _UPSTREAM_HARD_BLOCK:
+            blocked = True
+
+
+def _infer_in_progress_from_events(
+    stages: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    pipeline_meta: dict[str, Any],
+    *,
+    last_activity: float,
+    now: float,
+) -> None:
+    """Show liveness before the first checkpoint lands (tool runs write events first).
+
+    Checkpoint protocol requires agents to write ``in_progress`` early; when they
+    don't, recent ``events.jsonl`` activity still updates the stage rail — including
+    the gap between a tool ``finish`` and the checkpoint write.
+    """
+    if not events or not last_activity:
+        return
+    if (now - last_activity) > LIVE_WINDOW_SECONDS:
+        return
+
+    tool_to_stage = _build_tool_to_stage(pipeline_meta)
+    active_tools = _active_top_level_tools(events)
+    actionable = _first_actionable_stage(stages)
+    if not actionable:
+        return
+
+    target: Optional[str] = None
+    for tool in active_tools:
+        mapped = tool_to_stage.get(tool)
+        if mapped:
+            target = mapped
+            break
+
+    def _apply_inference(stage_name: str) -> None:
+        if stage_name != actionable:
+            return
+        for st in stages:
+            if st.get("name") != stage_name:
+                continue
+            if st.get("blocked_by_upstream"):
+                return
+            if st.get("status") == "pending":
+                st["status"] = "in_progress"
+                st["inferred_from_events"] = True
+            return
+
+    if target:
+        _apply_inference(target)
+        return
+
+    # No tool currently running — show in_progress for recent activity (checkpoint lag).
+    # Gated by last_activity above; event timestamps may lag file mtime slightly.
+    stage_tools = {t for t, s in tool_to_stage.items() if s == actionable}
+    if stage_tools:
+        for ev in reversed(events):
+            if ev.get("depth") not in (None, 0):
+                continue
+            tool = ev.get("tool")
+            if tool in stage_tools and ev.get("event") in ("start", "finish", "error"):
+                _apply_inference(actionable)
+                return
+
+
+def _production_active(
+    stages: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    *,
+    now: Optional[float] = None,
+) -> bool:
+    """True when a stage or tool run indicates work is still happening."""
+    for st in stages:
+        if st.get("undeclared"):
+            continue
+        if st.get("status") in ("in_progress", "awaiting_human"):
+            return True
+    return bool(_active_top_level_tools(events, now=now))
+
+
 def _last_activity(project_dir: Path) -> float:
     """Most recent mtime among state-bearing files (bounded scan)."""
     latest = 0.0
@@ -1210,6 +1418,15 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         cp = checkpoints.get(stage_entry["name"])
         stage_entry["outputs"] = _resolve_stage_outputs(stage_entry, cp, artifact_keys)
 
+    import time
+    last_activity = _last_activity(project_dir)
+    now = time.time()
+
+    _enforce_stage_order(stages)
+    _infer_in_progress_from_events(
+        stages, events, pipeline_meta, last_activity=last_activity, now=now,
+    )
+
     # Cost: latest checkpoint snapshot wins; fall back to manifest total.
     cost = None
     for cp in sorted(checkpoints.values(), key=lambda c: c.get("_mtime", 0), reverse=True):
@@ -1220,10 +1437,6 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         total = (artifacts.get("asset_manifest") or {}).get("total_cost_usd")
         if total is not None:
             cost = {"total_spent_usd": total}
-
-    import time
-    last_activity = _last_activity(project_dir)
-    now = time.time()
 
     # Stall detection: an in_progress stage that stopped writing anything.
     for stage_entry in stages:
@@ -1238,6 +1451,8 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
     project_summary = _build_project_summary(
         project_dir, stages, artifacts, media, checkpoints, pipeline_meta,
     )
+
+    production_active = _production_active(stages, events, now=now)
 
     state: dict[str, Any] = {
         "project_id": project_id,
@@ -1256,7 +1471,12 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         "events": events,
         "cost": cost,
         "last_activity": last_activity,
-        "live": bool(last_activity and (now - last_activity) < LIVE_WINDOW_SECONDS),
+        "production_active": production_active,
+        "live": bool(
+            last_activity
+            and (now - last_activity) < LIVE_WINDOW_SECONDS
+            and production_active
+        ),
     }
     state["poster"] = _find_poster(project_dir, state)
     return state
