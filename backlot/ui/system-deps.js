@@ -2,6 +2,7 @@
 
 import { el, getJSON } from "/ui/lib.js";
 import { capabilityLabel, t } from "/ui/i18n.js";
+import { showLoading } from "/ui/loading.js";
 import { renderCatalogReport } from "/ui/skill-tool-catalog.js";
 
 function statusBadge(ok, labelOk, labelBad) {
@@ -228,7 +229,7 @@ export function renderDepsReport(data) {
 export async function loadDepsManifestInto(host, errorBox) {
   errorBox.hidden = true;
   host.innerHTML = "";
-  host.append(el("p", { class: "deps-loading" }, t("depsManifestLoading")));
+  showLoading(host, t("depsManifestLoading"));
   try {
     const data = await getJSON("/api/system/dependencies");
     host.innerHTML = "";
@@ -243,7 +244,7 @@ export async function loadDepsManifestInto(host, errorBox) {
 export async function loadDepsInto(host, errorBox, { verify = false } = {}) {
   errorBox.hidden = true;
   host.innerHTML = "";
-  host.append(el("p", { class: "deps-loading" }, verify ? t("depsVerifying") : t("depsLoading")));
+  showLoading(host, verify ? t("depsVerifying") : t("depsLoading"));
   try {
     const data = await getJSON(`/api/system/dependencies?check=1${verify ? "&verify=1" : ""}`);
     host.innerHTML = "";
@@ -258,7 +259,7 @@ export async function loadDepsInto(host, errorBox, { verify = false } = {}) {
 export async function loadCatalogInto(host, errorBox) {
   errorBox.hidden = true;
   host.innerHTML = "";
-  host.append(el("p", { class: "deps-loading" }, t("catalogLoading")));
+  showLoading(host, t("catalogLoading"));
   try {
     const data = await getJSON("/api/system/catalog");
     host.innerHTML = "";

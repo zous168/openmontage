@@ -1,5 +1,6 @@
 import { deleteJSON, el, fmtAgo, getJSON, patchJSON, postJSON, subscribe, thumbURL } from "/ui/lib.js";
 import { artifactLabel, stageLabel, statusLabel, t } from "/ui/i18n.js";
+import { renderLoading } from "/ui/loading.js";
 import {
   renderBootstrapField,
   renderStylePlaybookField,
@@ -87,7 +88,7 @@ function refreshToolbar() {
 
 function renderPipelinesButton() {
   return el("a", {
-    class: "global-settings-btn pipe-config-nav-btn",
+    class: "global-settings-btn",
     href: "/pipelines",
   }, t("pipeConfigNav"));
 }
@@ -419,8 +420,14 @@ function card(p) {
 }
 
 async function render() {
+  const showInitialLoading = firstPaint;
   document.body.classList.toggle("first", firstPaint);
   firstPaint = false;
+
+  if (showInitialLoading) {
+    grid.innerHTML = "";
+    grid.append(renderLoading(t("loadingProjects"), { block: true }));
+  }
 
   const projects = await getJSON("/api/projects");
   document.getElementById("count").textContent = t("projects", { n: projects.length });

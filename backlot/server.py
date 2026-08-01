@@ -25,9 +25,14 @@ from pydantic import BaseModel, Field
 from backlot.env_config import build_env_catalog, update_env_vars
 from backlot.app_settings import app_settings_response, update_app_settings
 from backlot.pipeline_admin import (
+    add_pipeline_stage,
     build_pipeline_admin_catalog,
+    build_pipeline_editor_hints,
+    delete_pipeline_stage,
     get_pipeline_config,
     read_skill_markdown,
+    reorder_pipeline_stages,
+    update_pipeline_manifest,
     update_pipeline_stage,
     update_pipeline_ui,
     write_skill_markdown,
@@ -92,9 +97,50 @@ class UpdatePipelineUiBody(BaseModel):
 
 
 class UpdatePipelineStageBody(BaseModel):
+    new_name: Optional[str] = Field(default=None, max_length=64)
+    skill: Optional[str] = Field(default=None, max_length=240)
+    produces: Optional[list[str]] = None
+    tools_available: Optional[list[str]] = None
+    required_artifacts_in: Optional[list[str]] = None
+    optional_artifacts_in: Optional[list[str]] = None
+    checkpoint_required: Optional[bool] = None
     review_focus: Optional[list[str]] = None
     success_criteria: Optional[list[str]] = None
     human_approval_default: Optional[bool] = None
+    sub_stages: Optional[list[dict[str, Any]]] = None
+
+
+class UpdatePipelineManifestBody(BaseModel):
+    version: Optional[str] = Field(default=None, max_length=32)
+    description: Optional[str] = Field(default=None, max_length=4000)
+    category: Optional[str] = Field(default=None, max_length=40)
+    stability: Optional[str] = Field(default=None, max_length=20)
+    default_checkpoint_policy: Optional[str] = Field(default=None, max_length=32)
+    required_skills: Optional[list[str]] = None
+    compatible_playbooks: Optional[Any] = None
+    reference_input: Optional[dict[str, Any]] = None
+    orchestration: Optional[dict[str, Any]] = None
+    extensions: Optional[dict[str, Any]] = None
+    ui: Optional[dict[str, Any]] = None
+    metadata: Optional[dict[str, Any]] = None
+
+
+class CreatePipelineStageBody(BaseModel):
+    name: str = Field(min_length=1, max_length=64)
+    skill: Optional[str] = Field(default=None, max_length=240)
+    produces: Optional[list[str]] = None
+    tools_available: Optional[list[str]] = None
+    required_artifacts_in: Optional[list[str]] = None
+    optional_artifacts_in: Optional[list[str]] = None
+    checkpoint_required: Optional[bool] = True
+    human_approval_default: Optional[bool] = False
+    review_focus: Optional[list[str]] = None
+    success_criteria: Optional[list[str]] = None
+    insert_after: Optional[str] = Field(default=None, max_length=64)
+
+
+class ReorderPipelineStagesBody(BaseModel):
+    stage_names: list[str] = Field(min_length=1)
 
 
 class UpdateSkillBody(BaseModel):
@@ -318,6 +364,27 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @app.patch("/api/system/pipelines/{pipeline_id}/manifest")
+    async def patch_system_pipeline_manifest(
+        pipeline_id: str,
+        payload: UpdatePipelineManifestBody,
+    ) -> dict:
+        try:
+            return await asyncio.to_thread(
+                update_pipeline_manifest,
+                pipeline_id,
+                **payload.model_dump(exclude_unset=True),
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/api/system/pipelines/{pipeline_id}/editor-hints")
+    async def system_pipeline_editor_hints(pipeline_id: str) -> dict:
+        try:
+            return await asyncio.to_thread(build_pipeline_editor_hints, pipeline_id)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @app.patch("/api/system/pipelines/{pipeline_id}/stages/{stage_name}")
     async def patch_system_pipeline_stage(
         pipeline_id: str,
@@ -329,9 +396,42 @@ def create_app() -> FastAPI:
                 update_pipeline_stage,
                 pipeline_id,
                 stage_name,
-                review_focus=payload.review_focus,
-                success_criteria=payload.success_criteria,
-                human_approval_default=payload.human_approval_default,
+                **payload.model_dump(exclude_unset=True),
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.post("/api/system/pipelines/{pipeline_id}/stages")
+    async def post_system_pipeline_stage(
+        pipeline_id: str,
+        payload: CreatePipelineStageBody,
+    ) -> dict:
+        try:
+            return await asyncio.to_thread(
+                add_pipeline_stage,
+                pipeline_id,
+                **payload.model_dump(exclude_unset=True),
+            )
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.delete("/api/system/pipelines/{pipeline_id}/stages/{stage_name}")
+    async def delete_system_pipeline_stage(pipeline_id: str, stage_name: str) -> dict:
+        try:
+            return await asyncio.to_thread(delete_pipeline_stage, pipeline_id, stage_name)
+        except BootstrapError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.put("/api/system/pipelines/{pipeline_id}/stages/order")
+    async def put_system_pipeline_stage_order(
+        pipeline_id: str,
+        payload: ReorderPipelineStagesBody,
+    ) -> dict:
+        try:
+            return await asyncio.to_thread(
+                reorder_pipeline_stages,
+                pipeline_id,
+                payload.stage_names,
             )
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -535,11 +635,11 @@ def create_app() -> FastAPI:
 
     @app.get("/pipelines")
     async def pipelines_list_page() -> HTMLResponse:
-        return _ui_html("pipelines.html", ("board.css", "pipelines.js", "i18n.js"))
+        return _ui_html("pipelines.html", ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"))
 
     @app.get("/pipelines/{pipeline_id}")
     async def pipelines_config_page(pipeline_id: str) -> HTMLResponse:
-        return _ui_html("pipelines.html", ("board.css", "pipelines.js", "i18n.js"))
+        return _ui_html("pipelines.html", ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"))
 
     @app.get("/")
     async def library_page() -> HTMLResponse:

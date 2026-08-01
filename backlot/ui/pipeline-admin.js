@@ -2,6 +2,7 @@
 
 import { el, getJSON, patchJSON } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
+import { showLoading } from "/ui/loading.js";
 
 function renderSummaryBar(summary) {
   const s = summary || {};
@@ -206,8 +207,7 @@ function renderPipelineList(data, host, errorBox) {
 }
 
 export async function loadPipelinesInto(host, errorBox) {
-  host.innerHTML = "";
-  host.append(el("p", { class: "deps-loading" }, t("pipeLoading")));
+  showLoading(host, t("pipeLoading"));
   errorBox.hidden = true;
   try {
     const data = await getJSON("/api/system/pipelines");

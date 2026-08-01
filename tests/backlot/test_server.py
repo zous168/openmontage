@@ -97,7 +97,7 @@ class TestBacklotServerApi:
     def test_health(self, client):
         response = client.get("/api/health")
         assert response.status_code == 200
-        assert response.json() == {"ok": True, "app": "backlot", "api_version": 25}
+        assert response.json() == {"ok": True, "app": "backlot", "api_version": 27}
 
     def test_style_playbooks_api_returns_chinese_labels(self, client):
         res = client.get("/api/style-playbooks")
@@ -667,6 +667,147 @@ class TestBacklotServerApi:
         )
         assert patch_skill.status_code == 200
         assert "Updated" in patch_skill.json()["content"]
+
+    def test_pipeline_stage_structure_crud(self, client, tmp_path, monkeypatch):
+        import yaml
+        from lib import pipeline_loader as pl
+
+        defs = tmp_path / "pipeline_defs"
+        skills = tmp_path / "skills" / "pipelines" / "demo"
+        defs.mkdir(parents=True)
+        skills.mkdir(parents=True)
+        skill_ref = "pipelines/demo/script-director"
+        (skills / "script-director.md").write_text("# Script\n", encoding="utf-8")
+        manifest = {
+            "name": "demo-pipe",
+            "version": "1.0",
+            "category": "custom",
+            "stability": "beta",
+            "stages": [{
+                "name": "script",
+                "skill": skill_ref,
+                "produces": ["script"],
+                "tools_available": ["tts_selector"],
+            }],
+        }
+        (defs / "demo-pipe.yaml").write_text(
+            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(pl, "PIPELINE_DEFS_DIR", defs)
+        monkeypatch.setattr("backlot.pipeline_admin.PIPELINE_DEFS_DIR", defs)
+        monkeypatch.setattr("backlot.pipeline_admin._SKILLS_ROOT", tmp_path / "skills")
+        monkeypatch.setattr("backlot.pipeline_admin._ARTIFACTS_SCHEMA_DIR", tmp_path / "schemas" / "artifacts")
+
+        patch_struct = client.patch(
+            "/api/system/pipelines/demo-pipe/stages/script",
+            json={
+                "produces": ["script", "brief"],
+                "tools_available": ["tts_selector", "elevenlabs_tts"],
+                "required_artifacts_in": ["brief"],
+                "checkpoint_required": False,
+            },
+        )
+        assert patch_struct.status_code == 200
+        body = patch_struct.json()
+        assert body["produces"] == ["script", "brief"]
+        assert "elevenlabs_tts" in body["tools_available"]
+        assert body["required_artifacts_in"] == ["brief"]
+        assert body["checkpoint_required"] is False
+
+        created = client.post(
+            "/api/system/pipelines/demo-pipe/stages",
+            json={"name": "publish", "insert_after": "script", "produces": ["publish_log"]},
+        )
+        assert created.status_code == 200
+        assert created.json()["name"] == "publish"
+
+        reordered = client.put(
+            "/api/system/pipelines/demo-pipe/stages/order",
+            json={"stage_names": ["publish", "script"]},
+        )
+        assert reordered.status_code == 200
+        assert [s["name"] for s in reordered.json()["stages"]] == ["publish", "script"]
+
+        renamed = client.patch(
+            "/api/system/pipelines/demo-pipe/stages/publish",
+            json={"new_name": "delivery"},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["name"] == "delivery"
+
+        deleted = client.delete("/api/system/pipelines/demo-pipe/stages/script")
+        assert deleted.status_code == 200
+        assert deleted.json()["stage_count"] == 1
+
+        hints = client.get("/api/system/pipelines/demo-pipe/editor-hints")
+        assert hints.status_code == 200
+        assert "artifacts" in hints.json()
+        assert "tools" in hints.json()
+
+    def test_patch_pipeline_manifest_root_fields(self, client, tmp_path, monkeypatch):
+        import yaml
+        from lib import pipeline_loader as pl
+
+        defs = tmp_path / "pipeline_defs"
+        defs.mkdir(parents=True)
+        manifest = {
+            "name": "demo-pipe",
+            "version": "1.0",
+            "description": "Before",
+            "category": "custom",
+            "stability": "beta",
+            "default_checkpoint_policy": "guided",
+            "required_skills": ["meta/reviewer"],
+            "stages": [{"name": "script", "skill": "meta/reviewer"}],
+        }
+        (defs / "demo-pipe.yaml").write_text(
+            yaml.safe_dump(manifest, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(pl, "PIPELINE_DEFS_DIR", defs)
+        monkeypatch.setattr("backlot.pipeline_admin.PIPELINE_DEFS_DIR", defs)
+
+        patch = client.patch(
+            "/api/system/pipelines/demo-pipe/manifest",
+            json={
+                "version": "2.0",
+                "description": "After",
+                "category": "cinematic",
+                "stability": "production",
+                "default_checkpoint_policy": "manual_all",
+                "required_skills": ["meta/reviewer", "meta/onboarding"],
+                "reference_input": {
+                    "supported": True,
+                    "analysis_depth": "deep",
+                    "analysis_tools": ["video_analyzer"],
+                },
+                "extensions": {
+                    "custom_scripts": True,
+                    "custom_playbooks": False,
+                    "custom_skills": True,
+                    "custom_tools": False,
+                },
+                "ui": {"label_zh": "演示流水线", "summary_zh": "摘要", "hidden": True},
+                "orchestration": {"mode": "ep", "budget_default_usd": 12.5},
+                "metadata": {"owner": "qa"},
+            },
+        )
+        assert patch.status_code == 200
+        body = patch.json()
+        assert body["version"] == "2.0"
+        assert body["description"] == "After"
+        assert body["label_zh"] == "演示流水线"
+        assert body["manifest"]["reference_input"]["supported"] is True
+        assert body["manifest"]["extensions"]["custom_playbooks"] is False
+        assert body["manifest"]["metadata"]["owner"] == "qa"
+        assert len(body["stages"]) == 1
+        assert body["stages"][0]["name"] == "script"
+
+        raw = yaml.safe_load((defs / "demo-pipe.yaml").read_text(encoding="utf-8"))
+        assert raw["version"] == "2.0"
+        assert raw["ui"]["hidden"] is True
+        assert raw["stages"] == [{"name": "script", "skill": "meta/reviewer"}]
 
     def test_get_system_env_vars(self, client):
         res = client.get("/api/system/env-vars")

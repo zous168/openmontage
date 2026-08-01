@@ -8,58 +8,76 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-# Pipeline stage directors (skills/pipelines/*/*-director.md)
+# Manifest stage `name` → 中文（与 backlot/ui/i18n.js STAGE_NAMES 保持一致）
+_STAGE_NAME_ZH: dict[str, str] = {
+    "research": "调研",
+    "proposal": "方案",
+    "idea": "创意",
+    "script": "脚本",
+    "scene": "分镜",
+    "scene_plan": "分镜",
+    "assets": "资产",
+    "edit": "剪辑",
+    "compose": "合成",
+    "publish": "发布",
+    "character_design": "角色设计",
+    "rig_plan": "绑骨方案",
+    "reference": "参考分析",
+    "sample": "样片预览",
+}
+
+# Pipeline stage skills (skills/pipelines/*/*-director.md) — 展示用步骤短名
 _STAGE_CATALOG: dict[str, dict[str, str]] = {
     "executive-producer": {
-        "label_zh": "总制片",
+        "label_zh": "总控",
         "description_zh": "统筹整条流水线的阶段顺序、质量门与跨阶段回退策略",
     },
     "research-director": {
-        "label_zh": "调研导演",
+        "label_zh": "调研",
         "description_zh": "网络调研、受众与数据收集，产出调研简报",
     },
     "proposal-director": {
-        "label_zh": "方案导演",
+        "label_zh": "方案",
         "description_zh": "基于调研生成创意方案、成本估算与审批材料",
     },
     "idea-director": {
-        "label_zh": "创意导演",
+        "label_zh": "创意",
         "description_zh": "从主题发散创意方向、钩子与叙事结构，产出创意简报",
     },
     "reference-director": {
-        "label_zh": "参考分析导演",
+        "label_zh": "参考分析",
         "description_zh": "分析参考视频的 pacing、结构与风格，提炼可复用要点",
     },
     "script-director": {
-        "label_zh": "脚本导演",
+        "label_zh": "脚本",
         "description_zh": "撰写旁白脚本、段落节奏与 TTS 表达提示",
     },
     "scene-director": {
-        "label_zh": "分镜导演",
+        "label_zh": "分镜",
         "description_zh": "规划镜头、画面手法与可视化可行性",
     },
     "character-design-director": {
-        "label_zh": "角色设计导演",
+        "label_zh": "角色设计",
         "description_zh": "定义角色外观、风格约束与一致性规范",
     },
     "rig-plan-director": {
-        "label_zh": "绑骨方案导演",
+        "label_zh": "绑骨方案",
         "description_zh": "规划角色绑骨结构、姿势库与动画实现路径",
     },
     "asset-director": {
-        "label_zh": "资产导演",
+        "label_zh": "资产",
         "description_zh": "生成/收集 TTS、图像、音乐、图表等阶段资产",
     },
     "edit-director": {
-        "label_zh": "剪辑导演",
+        "label_zh": "剪辑",
         "description_zh": "时间线组装、转场、字幕与音频 ducking",
     },
     "compose-director": {
-        "label_zh": "合成导演",
+        "label_zh": "合成",
         "description_zh": "FFmpeg / Remotion / HyperFrames 最终渲染与混音",
     },
     "publish-director": {
-        "label_zh": "发布导演",
+        "label_zh": "发布",
         "description_zh": "SEO 元数据、章节标记与多平台导出打包",
     },
 }
@@ -418,7 +436,17 @@ def skill_description_zh(item: dict[str, Any]) -> str:
 def stage_label_zh(stage: Optional[str]) -> str:
     if not stage:
         return ""
-    return _STAGE_CATALOG.get(stage, {}).get("label_zh") or stage.replace("-", " ")
+    if stage in _STAGE_NAME_ZH:
+        return _STAGE_NAME_ZH[stage]
+    base = stage.replace("-director", "").replace("-", "_")
+    if base in _STAGE_NAME_ZH:
+        return _STAGE_NAME_ZH[base]
+    if stage in _STAGE_CATALOG:
+        return _STAGE_CATALOG[stage]["label_zh"]
+    hyphen = stage.replace("_", "-")
+    if hyphen in _STAGE_CATALOG:
+        return _STAGE_CATALOG[hyphen]["label_zh"]
+    return stage.replace("-", " ").replace("_", " ")
 
 
 def enrich_skill_item(item: dict[str, Any]) -> dict[str, Any]:

@@ -2,6 +2,7 @@
 
 import { el, getJSON, patchJSON } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
+import { renderLoading } from "/ui/loading.js";
 import { renderStylePlaybookField } from "/ui/project-form.js";
 import { applyPreferences, getFontScale, getTheme } from "/ui/preferences.js";
 import { loadCatalogInto, loadDepsInto, loadDepsManifestInto } from "/ui/system-deps.js";
@@ -54,6 +55,11 @@ function normalizeSettingsTab(tab) {
  * }} opts
  */
 export function openAppSettings({ modalHost, onClose, onSaved, initialTab = "prefs" }) {
+  mountModal(modalHost, el("div", { class: "modal-page lib-create-panel app-settings-panel" },
+    buildModalHeader(t("globalSettingsTitle"), t("globalSettingsLead")),
+    renderLoading(t("loadingSettings"), { block: true }),
+  ), onClose);
+
   return getJSON("/api/settings").then((settings) => {
     const styleField = renderStylePlaybookField(
       settings.style_playbook_options,

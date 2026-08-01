@@ -69,6 +69,26 @@ export async function postJSON(url, body) {
   return data;
 }
 
+export async function putJSON(url, body) {
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = null;
+  }
+  if (!res.ok) {
+    const detail = data?.detail;
+    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    throw new Error(msg);
+  }
+  return data;
+}
+
 export async function patchJSON(url, body) {
   const res = await fetch(url, {
     method: "PATCH",

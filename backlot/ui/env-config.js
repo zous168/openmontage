@@ -2,6 +2,7 @@
 
 import { el, getJSON, patchJSON } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
+import { showLoading } from "/ui/loading.js";
 
 function renderSummary(data) {
   return el("div", { class: "deps-summary env-summary" },
@@ -88,7 +89,7 @@ export function renderEnvConfig(data, { formId = "appSettingsEnvForm" } = {}) {
 export async function loadEnvConfigInto(host, errorBox, { formId = "appSettingsEnvForm", onRendered } = {}) {
   errorBox.hidden = true;
   host.innerHTML = "";
-  host.append(el("p", { class: "deps-loading" }, t("envLoading")));
+  showLoading(host, t("envLoading"));
   try {
     const data = await getJSON("/api/system/env-vars");
     host.innerHTML = "";
