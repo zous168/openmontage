@@ -334,6 +334,10 @@ class VideoCompose(BaseTool):
         start = time.time()
 
         try:
+            if operation in ("compose", "render", "remotion_render", "encode"):
+                from lib.deliverable_spec import enrich_render_inputs
+
+                inputs = enrich_render_inputs(inputs)
             if operation == "compose":
                 result = self._compose(inputs)
             elif operation == "render":
@@ -407,27 +411,46 @@ class VideoCompose(BaseTool):
         preset = inputs.get("preset", "medium")
         profile_name = inputs.get("profile")
 
-        # Resolve target resolution + fit mode. Priority: explicit `profile`
-        # arg > edit_decisions.metadata.compose_target > default (landscape HD).
+        # Resolve target resolution + fit mode. Priority: compose_target
+        # (project deliverable or explicit metadata) > named profile > default.
         # compose_target = {"width": W, "height": H, "fit": "pad"|"cover"} lets a
         # caller request vertical (9:16) or any aspect without a named profile.
         # fit="pad" letterboxes (no content loss, the historical default);
         # fit="cover" scales-to-fill and centre-crops (better for vertical social).
         resolution = "1920x1080"
         fit_mode = "pad"
+        target_fps = 30
         compose_target = (edit_decisions.get("metadata") or {}).get("compose_target")
+        has_compose_target = False
         if isinstance(compose_target, dict):
             try:
                 resolution = f"{int(compose_target['width'])}x{int(compose_target['height'])}"
+                has_compose_target = True
             except (KeyError, ValueError, TypeError):
                 pass
             if compose_target.get("fit") in ("pad", "cover"):
                 fit_mode = compose_target["fit"]
-        if profile_name:
+            if compose_target.get("fps") not in (None, ""):
+                try:
+                    target_fps = int(compose_target["fps"])
+                except (TypeError, ValueError):
+                    pass
+        if profile_name and not has_compose_target:
             try:
                 from lib.media_profiles import get_profile
+
                 p = get_profile(profile_name)
                 resolution = f"{p.width}x{p.height}"
+                target_fps = p.fps
+            except (ImportError, ValueError):
+                pass
+        elif profile_name:
+            try:
+                from lib.media_profiles import get_profile
+
+                p = get_profile(profile_name)
+                if not (isinstance(compose_target, dict) and compose_target.get("fps") not in (None, "")):
+                    target_fps = p.fps
             except (ImportError, ValueError):
                 pass
         try:
@@ -525,7 +548,7 @@ class VideoCompose(BaseTool):
                             f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease",
                             f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black",
                         ]
-                    vf_parts: list[str] = [*geom, "setsar=1", "fps=30"]
+                    vf_parts: list[str] = [*geom, "setsar=1", f"fps={target_fps}"]
                     af_parts: list[str] = []
                     if speed != 1.0:
                         vf_parts.append(f"setpts={1.0/speed}*PTS")
@@ -540,7 +563,7 @@ class VideoCompose(BaseTool):
                         "-crf", str(crf),
                         "-preset", preset,
                         "-pix_fmt", "yuv420p",
-                        "-r", "30",
+                        "-r", str(target_fps),
                     ])
 
                     # Audio handling: some source clips have no audio stream
@@ -575,7 +598,7 @@ class VideoCompose(BaseTool):
                             "-crf", str(crf),
                             "-preset", preset,
                             "-pix_fmt", "yuv420p",
-                            "-r", "30",
+                            "-r", str(target_fps),
                             "-c:a", "aac",
                             "-b:a", "192k",
                             "-ar", "48000",
@@ -623,7 +646,9 @@ class VideoCompose(BaseTool):
             # This must be checked BEFORE choosing copy vs encode, because
             # -s and -r are incompatible with -c:v copy.
             profile_flags: list[str] = []
-            if profile_name:
+            if has_compose_target or profile_name:
+                profile_flags = ["-s", f"{target_w}x{target_h}", "-r", str(target_fps)]
+            elif profile_name:
                 try:
                     from lib.media_profiles import get_profile
                     p = get_profile(profile_name)

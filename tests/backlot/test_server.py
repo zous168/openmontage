@@ -16,6 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from backlot import API_VERSION
 from backlot import server as server_mod
 from backlot import state as state_mod
 from backlot import app_settings as app_settings_mod
@@ -97,7 +98,7 @@ class TestBacklotServerApi:
     def test_health(self, client):
         response = client.get("/api/health")
         assert response.status_code == 200
-        assert response.json() == {"ok": True, "app": "backlot", "api_version": 27}
+        assert response.json() == {"ok": True, "app": "backlot", "api_version": API_VERSION}
 
     def test_style_playbooks_api_returns_chinese_labels(self, client):
         res = client.get("/api/style-playbooks")
@@ -162,6 +163,8 @@ class TestBacklotServerApi:
         ref_keys = {f["key"] for f in ref["bootstrap_fields"]}
         assert "reference_url" in ref_keys
         assert "reference_media_path" in ref_keys
+        assert "aspect_ratio" in ref_keys
+        assert "quality_tier" in ref_keys
         sample = next(p for p in body if p["id"] == "cinematic")
         assert sample["label_zh"]
         assert "summary_zh" in sample
@@ -235,7 +238,10 @@ class TestBacklotServerApi:
 
         state = client.get("/api/project/new-promo/state")
         assert state.status_code == 200
-        assert state.json()["pipeline"]["pipeline_type"] == "avatar-spokesperson"
+        state_body = state.json()
+        assert state_body["pipeline"]["pipeline_type"] == "avatar-spokesperson"
+        assert state_body["style_playbook"] == "clean-professional"
+        assert state_body["style_playbook_label_zh"] == "干净专业"
 
     def test_create_project_rejects_duplicate(self, client, projects_root):
         _make_project(projects_root, "taken")
@@ -452,6 +458,11 @@ class TestBacklotServerApi:
         assert body["bootstrap_notes"] == "备注"
         assert body["production_inputs"]["target_platform"] == "douyin"
         assert any(f["key"] == "target_platform" for f in body["bootstrap_fields"])
+        assert any(f["key"] == "aspect_ratio" for f in body["bootstrap_fields"])
+        assert any(f["key"] == "thumbnail_text_hook" for f in body["bootstrap_fields"])
+        assert body["deliverable"]["resolution"] == "1080x1920"
+        assert body["cover_brief"]["source"] == "auto_frame"
+        assert body["deliverable"]["aspect_ratio"] == "9:16"
         assert body["source_media"]["path"] == "assets/video/source.mp4"
         assert body["source_media"]["exists"] is False
 

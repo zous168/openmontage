@@ -139,8 +139,14 @@ export const CaptionOverlay: React.FC<CaptionOverlayProps> = ({
           Math.round(((nextStart - page.startMs) / 1000) * fps)
         );
 
+        const preview = page.words.map((w) => w.word).join("").slice(0, 12);
         return (
-          <Sequence key={i} from={fromFrame} durationInFrames={duration}>
+          <Sequence
+            key={i}
+            from={fromFrame}
+            durationInFrames={duration}
+            name={`caption ${i + 1}`}
+          >
             <PageRenderer
               page={page}
               fontSize={fontSize}

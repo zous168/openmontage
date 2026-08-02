@@ -147,6 +147,38 @@ def get_profile(name: str) -> MediaProfile:
     return ALL_PROFILES[name]
 
 
+def profile_for_deliverable(spec: dict) -> MediaProfile:
+    """Build a MediaProfile that matches a resolved project deliverable spec."""
+    base_name = str(spec.get("media_profile") or "generic_hd")
+    try:
+        base = get_profile(base_name)
+    except ValueError:
+        base = GENERIC_HD
+
+    aspect_map = {
+        "9:16": AspectRatio.PORTRAIT_9_16,
+        "16:9": AspectRatio.LANDSCAPE_16_9,
+        "1:1": AspectRatio.SQUARE_1_1,
+        "21:9": AspectRatio.CINEMATIC_21_9,
+    }
+    aspect_key = str(spec.get("aspect_ratio") or "16:9")
+    return MediaProfile(
+        name=f"project_{spec.get('resolution', 'hd')}_{spec.get('fps', 30)}",
+        width=int(spec["width"]),
+        height=int(spec["height"]),
+        aspect_ratio=aspect_map.get(aspect_key, base.aspect_ratio),
+        fps=int(spec["fps"]),
+        codec=base.codec,
+        audio_codec=base.audio_codec,
+        crf=base.crf,
+        pixel_format=base.pixel_format,
+        max_file_size_mb=base.max_file_size_mb,
+        max_duration_seconds=base.max_duration_seconds,
+        caption_format=base.caption_format,
+        notes=f"Project deliverable ({spec.get('quality_tier', '')})",
+    )
+
+
 def get_profiles_for_platform(platform: str) -> list[MediaProfile]:
     """Get all profiles matching a platform prefix."""
     return [p for name, p in ALL_PROFILES.items() if name.startswith(platform)]

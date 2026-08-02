@@ -3,6 +3,7 @@ import { artifactLabel, stageLabel, statusLabel, t } from "/ui/i18n.js";
 import { renderLoading } from "/ui/loading.js";
 import {
   renderBootstrapField,
+  renderBootstrapSections,
   renderStylePlaybookField,
   collectBootstrapInputs,
 } from "/ui/project-form.js";
@@ -249,10 +250,7 @@ function openCreateModal() {
         : "";
       bootstrapHost.innerHTML = "";
       if (picked?.bootstrap_fields?.length) {
-        bootstrapHost.append(
-          el("p", { class: "lib-bootstrap-title" }, t("fieldProductionInputs")),
-          ...picked.bootstrap_fields.map((f) => renderBootstrapField(f)),
-        );
+        bootstrapHost.append(...renderBootstrapSections(picked.bootstrap_fields));
       }
     }
 

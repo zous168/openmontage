@@ -156,6 +156,48 @@ export function collectBootstrapInputs(container) {
   return inputs;
 }
 
+export function renderDeliverableSummary(deliverable) {
+  if (!deliverable?.resolution) return null;
+  return el("p", { class: "lib-field-hint lib-deliverable-summary" },
+    t("fieldDeliverableResolved", {
+      resolution: deliverable.resolution,
+      aspect: deliverable.aspect_ratio || "",
+    }),
+  );
+}
+
+export function renderCoverSummary(coverBrief) {
+  if (!coverBrief) return null;
+  const parts = [];
+  if (coverBrief.text_hook) parts.push(coverBrief.text_hook);
+  if (coverBrief.style_notes) parts.push(coverBrief.style_notes);
+  if (!parts.length && coverBrief.source === "auto_frame") {
+    parts.push(t("fieldCoverAutoFrame"));
+  }
+  if (!parts.length) return null;
+  return el("p", { class: "lib-field-hint lib-cover-summary" }, parts.join(" · "));
+}
+
+export function renderBootstrapSections(fields, values = {}) {
+  const production = fields.filter((f) => !f.field_group || f.field_group === "production");
+  const deliverable = fields.filter((f) => f.field_group === "deliverable");
+  const cover = fields.filter((f) => f.field_group === "cover");
+  const nodes = [];
+  if (production.length) {
+    nodes.push(el("p", { class: "lib-bootstrap-title" }, t("fieldProductionInputs")));
+    nodes.push(...production.map((f) => renderBootstrapField(f, values[f.key])));
+  }
+  if (deliverable.length) {
+    nodes.push(el("p", { class: "lib-bootstrap-title" }, t("fieldDeliverableSpec")));
+    nodes.push(...deliverable.map((f) => renderBootstrapField(f, values[f.key])));
+  }
+  if (cover.length) {
+    nodes.push(el("p", { class: "lib-bootstrap-title" }, t("fieldCoverSpec")));
+    nodes.push(...cover.map((f) => renderBootstrapField(f, values[f.key])));
+  }
+  return nodes;
+}
+
 export function renderStylePlaybookField(options, selectedValue = "") {
   const hint = el("p", { class: "lib-field-hint lib-style-playbook-hint" }, "");
   const select = el("select", { class: "lib-field-input", name: "style_playbook" },

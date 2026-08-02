@@ -242,6 +242,14 @@ def _instrument_execute(fn: Callable) -> Callable:
         tool_name = getattr(self, "name", "") or self.__class__.__name__
         scene_id = inputs.get("scene_id") if isinstance(inputs, dict) else None
         output_path = inputs.get("output_path") if isinstance(inputs, dict) else None
+        if isinstance(inputs, dict):
+            try:
+                from lib.deliverable_spec import enrich_project_deliverable
+
+                inputs = enrich_project_deliverable(inputs)
+                output_path = inputs.get("output_path")
+            except Exception:
+                pass
         # Nesting depth: selector tools delegate to provider tools' execute().
         # Both emit (the ticker wants the provider name too), but depth lets
         # consumers dedupe — e.g. sum cost_usd only at depth 0.

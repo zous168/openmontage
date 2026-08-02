@@ -180,6 +180,8 @@ interface Cut {
   source: string;
   in_seconds: number;
   out_seconds: number;
+  /** Editorial section label (Hook, 双口味, …) — shown on Sequence name when set. */
+  reason?: string;
   layer?: string;
   type?: string;
   // Component-specific props
@@ -257,6 +259,7 @@ interface Cut {
 }
 
 interface Overlay {
+  id?: string;
   type: "section_title" | "stat_reveal" | "hero_title" | "provider_chip";
   in_seconds: number;
   out_seconds: number;
@@ -393,7 +396,7 @@ const ImageScene: React.FC<{ src: string; animation?: string }> = ({
           transform: `scale(${scale}) translate(${translateX}px, ${translateY}px)`,
           willChange: "transform, opacity",
         }}
-      />
+        from={-1} />
       <Vignette />
     </AbsoluteFill>
   );
@@ -753,6 +756,18 @@ const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
   return null;
 };
 
+function cutSequenceName(cut: Cut): string {
+  const file = cut.source?.split("/").pop() || cut.source || "";
+  if (cut.id && cut.reason) return `${cut.id} · ${cut.reason}`;
+  if (cut.id && file) return `${cut.id} · ${file}`;
+  return cut.id || file || "cut";
+}
+
+function overlaySequenceName(overlay: Overlay, index: number): string {
+  if (overlay.text) return overlay.text;
+  return overlay.type || `overlay-${index + 1}`;
+}
+
 // ---------------------------------------------------------------------------
 // Main composition
 // ---------------------------------------------------------------------------
@@ -768,33 +783,41 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
     <AbsoluteFill style={{ background: theme.backgroundColor, fontFamily: theme.headingFont || fontFamily }}>
       {/* Layer 0: Animated gradient background — driven by theme */}
       <AnimatedBackground theme={theme} />
-
       {/* Layer 1: Visual scenes */}
       {cuts.map((cut) => {
         const from = Math.round(cut.in_seconds * fps);
         const duration = Math.round((cut.out_seconds - cut.in_seconds) * fps);
 
         return (
-          <Sequence key={cut.id} from={from} durationInFrames={duration}>
+          <Sequence
+            key={cut.id}
+            from={from}
+            durationInFrames={duration}
+            name={cutSequenceName(cut)}
+          >
             <SceneRenderer cut={cut} theme={theme} />
           </Sequence>
         );
       })}
-
       {/* Layer 2: Overlays (section titles, stat reveals, hero titles) */}
       {overlays?.map((overlay, i) => {
         const from = Math.round(overlay.in_seconds * fps);
         const duration = Math.round(
           (overlay.out_seconds - overlay.in_seconds) * fps
         );
+        const overlayName = overlaySequenceName(overlay, i);
 
         return (
-          <Sequence key={`overlay-${i}`} from={from} durationInFrames={duration}>
+          <Sequence
+            key={`overlay-${overlay.id || i}`}
+            from={from}
+            durationInFrames={duration}
+            name={overlayName}
+          >
             <OverlayRenderer overlay={overlay} />
           </Sequence>
         );
       })}
-
       {/* Layer 3: Captions (word-by-word highlight) */}
       {captions && captions.length > 0 && (
         <CaptionOverlay
@@ -805,12 +828,10 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
           backgroundColor={theme.captionBackgroundColor}
         />
       )}
-
       {/* Layer 4: Audio — narration */}
       {audio?.narration?.src && (
         <Audio src={resolveAsset(audio.narration.src)} volume={audio.narration.volume ?? 1} />
       )}
-
       {/* Layer 4: Audio — music with offset, fade in/out, and optional loop */}
       {audio?.music?.src && (
         <Audio

@@ -144,6 +144,14 @@ def build_project_status(
     marker = _load_json(project_dir / "project.json") or {}
     meta = _load_json(project_dir / "meta.json") or {}
     pipeline_type = marker.get("pipeline_type") or "unknown"
+    production_inputs = meta.get("production_inputs") or {}
+    deliverable = None
+    try:
+        from lib.deliverable_spec import resolve_deliverable
+
+        deliverable = resolve_deliverable(production_inputs)
+    except Exception:
+        pass
 
     try:
         manifest = load_pipeline_readonly(pipeline_type)
@@ -174,7 +182,8 @@ def build_project_status(
         "tool_trace": _tool_trace_summary(project_dir),
         "intake": {
             "mode": meta.get("intake_mode"),
-            "production_inputs": meta.get("production_inputs"),
+            "production_inputs": production_inputs,
+            "deliverable": deliverable,
         },
         "agent_commands": {
             "status": f"python -m lib.project_status {project_id}",

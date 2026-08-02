@@ -5,6 +5,9 @@ import { t } from "/ui/i18n.js";
 import {
   collectBootstrapInputs,
   renderBootstrapField,
+  renderBootstrapSections,
+  renderCoverSummary,
+  renderDeliverableSummary,
   renderStylePlaybookField,
 } from "/ui/project-form.js";
 import { renderSourceMediaSection } from "/ui/source-media-preview.js";
@@ -127,8 +130,9 @@ export function openProjectSettings(projectId, { modalHost, onClose, onSaved }) 
         .map(effectiveField);
       if (visible.length) {
         bootstrapHost.append(
-          el("p", { class: "lib-bootstrap-title" }, t("fieldProductionInputs")),
-          ...visible.map((f) => renderBootstrapField(f, productionInputs[f.key])),
+          ...renderBootstrapSections(visible, productionInputs),
+          renderDeliverableSummary(settings.deliverable),
+          renderCoverSummary(settings.cover_brief),
         );
       }
       if (hasLockedMedia) bootstrapHost.append(replaceMediaRow);

@@ -391,6 +391,10 @@ class HyperFramesCompose(BaseTool):
         operation = inputs["operation"]
         start = time.time()
         try:
+            if operation == "render":
+                from lib.deliverable_spec import enrich_render_inputs
+
+                inputs = enrich_render_inputs(inputs)
             if operation == "doctor":
                 result = self._doctor(inputs)
             elif operation == "scaffold_workspace":
@@ -473,7 +477,9 @@ class HyperFramesCompose(BaseTool):
                 error="edit_decisions with non-empty cuts[] is required for scaffold_workspace",
             )
 
-        width, height, fps = self._resolve_dimensions(profile_name, inputs.get("fps", 30))
+        width, height, fps = self._resolve_dimensions(
+            profile_name, inputs.get("fps", 30), inputs,
+        )
 
         workspace.mkdir(parents=True, exist_ok=True)
         (workspace / "compositions").mkdir(exist_ok=True)
@@ -709,7 +715,7 @@ class HyperFramesCompose(BaseTool):
 
         # 4. Render.
         width, height, fps = self._resolve_dimensions(
-            inputs.get("profile"), inputs.get("fps", 30)
+            inputs.get("profile"), inputs.get("fps", 30), inputs,
         )
         quality = inputs.get("quality", "standard")
         args = [
@@ -797,9 +803,26 @@ class HyperFramesCompose(BaseTool):
 
     @staticmethod
     def _resolve_dimensions(
-        profile_name: Optional[str], fps_in: int
+        profile_name: Optional[str], fps_in: int, inputs: Optional[dict[str, Any]] = None,
     ) -> tuple[int, int, int]:
-        """Resolve output dimensions from the media profile, with a safe default."""
+        """Resolve output dimensions from compose_target, deliverable, or profile."""
+        inputs = inputs or {}
+        ed = inputs.get("edit_decisions") or {}
+        compose_target = (ed.get("metadata") or {}).get("compose_target")
+        if isinstance(compose_target, dict):
+            try:
+                w, h = int(compose_target["width"]), int(compose_target["height"])
+                fps = int(compose_target.get("fps") or fps_in or 30)
+                return w, h, fps
+            except (KeyError, TypeError, ValueError):
+                pass
+        deliverable = inputs.get("deliverable")
+        if isinstance(deliverable, dict) and deliverable.get("width"):
+            return (
+                int(deliverable["width"]),
+                int(deliverable["height"]),
+                int(deliverable.get("fps") or fps_in or 30),
+            )
         if profile_name:
             try:
                 from lib.media_profiles import get_profile  # type: ignore
@@ -807,7 +830,7 @@ class HyperFramesCompose(BaseTool):
                 return int(p.width), int(p.height), int(p.fps)
             except Exception:
                 pass
-        return 1920, 1080, int(fps_in)
+        return 1920, 1080, int(fps_in or 30)
 
     @staticmethod
     def _compute_total_duration(cuts: list[dict]) -> float:

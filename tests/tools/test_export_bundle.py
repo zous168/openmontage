@@ -5,6 +5,7 @@ schema-valid publish_log, chapter formatting, and the missing-video error path.
 """
 
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -146,6 +147,113 @@ def test_default_export_dir_inside_project_workspace(tmp_path):
     result = ExportBundle().execute({"video_path": str(video), "title": "T"})
     assert result.success is True
     assert Path(result.data["export_path"]) == (tmp_path / "projects" / "demo" / "exports").resolve()
+
+
+def test_export_bundle_includes_deliverable_from_project_meta(tmp_path):
+    video = tmp_path / "projects" / "demo" / "renders" / "final.mp4"
+    _make_video(video)
+    meta = tmp_path / "projects" / "demo" / "meta.json"
+    meta.write_text(
+        json.dumps({
+            "production_inputs": {
+                "target_platform": "douyin",
+                "aspect_ratio": "9:16",
+                "quality_tier": "1080p",
+            },
+        }),
+        encoding="utf-8",
+    )
+    result = ExportBundle().execute(
+        {
+            "video_path": str(video),
+            "title": "Douyin clip",
+            "export_dir": str(tmp_path / "out"),
+        }
+    )
+    assert result.success is True
+    entry = result.data["publish_log"]["entries"][0]
+    assert entry["platform"] == "douyin"
+    assert entry["metadata_used"]["deliverable"]["resolution"] == "1080x1920"
+    meta_json = json.loads(
+        (Path(result.data["export_path"]) / "metadata" / "metadata.json").read_text()
+    )
+    assert meta_json["deliverable"]["aspect_ratio"] == "9:16"
+
+
+def test_export_bundle_uses_project_cover_intake(tmp_path):
+    video = tmp_path / "projects" / "demo" / "renders" / "final.mp4"
+    _make_video(video)
+    meta = tmp_path / "projects" / "demo" / "meta.json"
+    meta.write_text(
+        json.dumps({
+            "production_inputs": {
+                "target_platform": "douyin",
+                "thumbnail_text_hook": "又回购了",
+                "thumbnail_style_notes": "竖屏产品特写",
+            },
+        }),
+        encoding="utf-8",
+    )
+    result = ExportBundle().execute(
+        {
+            "video_path": str(video),
+            "title": "Douyin clip",
+            "export_dir": str(tmp_path / "out"),
+        }
+    )
+    assert result.success is True
+    root = Path(result.data["export_path"])
+    concept = json.loads((root / "thumbnails" / "concept.json").read_text(encoding="utf-8"))
+    assert concept["text_overlay"] == "又回购了"
+    assert concept["source"] == "auto_frame"
+    assert "prompt" in concept
+    meta_json = json.loads((root / "metadata" / "metadata.json").read_text(encoding="utf-8"))
+    assert meta_json["cover_brief"]["text_hook"] == "又回购了"
+
+
+def test_export_bundle_text_to_image_cover(tmp_path, monkeypatch):
+    video = tmp_path / "projects" / "demo" / "renders" / "final.mp4"
+    _make_video(video)
+    meta = tmp_path / "projects" / "demo" / "meta.json"
+    meta.write_text(
+        json.dumps({
+            "production_inputs": {
+                "target_platform": "douyin",
+                "aspect_ratio": "9:16",
+                "quality_tier": "1080p",
+                "thumbnail_source": "text_to_image",
+                "thumbnail_text_hook": "又回购了",
+            },
+        }),
+        encoding="utf-8",
+    )
+    fake_png = tmp_path / "generated.png"
+    fake_png.write_bytes(b"fakepng")
+
+    def _fake_generate(prompt, output_path, *, width, height, aspect_ratio, preferred_provider="auto"):
+        dest = Path(output_path)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(fake_png, dest)
+        return dest, {"provider": "mock", "prompt": prompt, "width": width, "height": height}, None
+
+    monkeypatch.setattr(
+        "lib.publish_intake.generate_cover_thumbnail",
+        _fake_generate,
+    )
+
+    result = ExportBundle().execute(
+        {
+            "video_path": str(video),
+            "title": "Douyin clip",
+            "export_dir": str(tmp_path / "out"),
+        }
+    )
+    assert result.success is True
+    root = Path(result.data["export_path"])
+    assert (root / "thumbnails" / "thumbnail.png").is_file()
+    concept = json.loads((root / "thumbnails" / "concept.json").read_text(encoding="utf-8"))
+    assert concept["generation"]["provider"] == "mock"
+    assert "又回购了" in concept["prompt"]
 
 
 def test_registry_discovers_export_bundle():

@@ -50,6 +50,8 @@ from backlot.bootstrap import (
     update_project_settings,
 )
 from backlot import API_VERSION
+from backlot.edit_preview import build_edit_preview_info, start_edit_preview
+from lib.composition_timeline import build_composition_timeline
 from backlot.state import PROJECTS_DIR, REPO_ROOT, _is_demo_project, list_projects, load_board_state, summarize_project
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
@@ -145,6 +147,12 @@ class ReorderPipelineStagesBody(BaseModel):
 
 class UpdateSkillBody(BaseModel):
     content: str = Field(max_length=500_000)
+
+
+class EditPreviewStartBody(BaseModel):
+    runtime: str = Field(min_length=1, max_length=32)
+    mode: str = Field(default="studio", max_length=16)
+    scaffold: bool = False
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -527,6 +535,40 @@ def create_app() -> FastAPI:
     async def project_state(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(load_board_state, project_dir)
+
+    @app.get("/api/project/{project_id}/composition-timeline")
+    async def composition_timeline(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        edit_path = project_dir / "artifacts" / "edit_decisions.json"
+        if not edit_path.is_file():
+            raise HTTPException(status_code=404, detail="edit_decisions 不存在")
+        edit = json.loads(edit_path.read_text(encoding="utf-8"))
+        return await asyncio.to_thread(build_composition_timeline, edit)
+
+    @app.get("/api/project/{project_id}/edit-preview")
+    async def edit_preview_info(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        return await asyncio.to_thread(build_edit_preview_info, project_dir)
+
+    @app.post("/api/project/{project_id}/edit-preview/start")
+    async def edit_preview_start(project_id: str, payload: EditPreviewStartBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            return await asyncio.to_thread(
+                start_edit_preview,
+                project_dir,
+                runtime=payload.runtime,
+                mode=payload.mode,
+                scaffold=payload.scaffold,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/project/{project_id}/events")
     async def project_events(project_id: str, request: Request) -> StreamingResponse:

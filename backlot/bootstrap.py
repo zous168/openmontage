@@ -336,9 +336,17 @@ def pipeline_label_zh(pipeline_id: Optional[str]) -> str:
 
 def bootstrap_fields_for_pipeline(pipeline_id: str) -> list[dict[str, Any]]:
     """Form fields the library UI should collect for this pipeline."""
+    from lib.deliverable_spec import deliverable_bootstrap_fields
+    from lib.publish_intake import cover_bootstrap_fields
+
     if pipeline_id in PIPELINE_BOOTSTRAP_FIELDS:
-        return list(PIPELINE_BOOTSTRAP_FIELDS[pipeline_id])
-    return []
+        fields = list(PIPELINE_BOOTSTRAP_FIELDS[pipeline_id])
+    else:
+        fields = []
+    if any(f.get("key") == "target_platform" for f in fields):
+        fields.extend(deliverable_bootstrap_fields())
+        fields.extend(cover_bootstrap_fields())
+    return fields
 
 
 class BootstrapError(ValueError):
@@ -779,6 +787,23 @@ def list_style_playbook_options() -> list[dict[str, str]]:
     return options
 
 
+_STYLE_PLAYBOOK_LABELS: Optional[dict[str, str]] = None
+
+
+def style_playbook_label_zh(playbook_id: Optional[str]) -> str:
+    """Resolve a style playbook id to its Chinese display label."""
+    if not playbook_id:
+        return ""
+    global _STYLE_PLAYBOOK_LABELS
+    if _STYLE_PLAYBOOK_LABELS is None:
+        _STYLE_PLAYBOOK_LABELS = {
+            o["value"]: o["label_zh"]
+            for o in list_style_playbook_options()
+            if o.get("value")
+        }
+    return _STYLE_PLAYBOOK_LABELS.get(playbook_id, playbook_id)
+
+
 _SETTINGS_LOCKED_PATH_KEYS = frozenset({"source_media_path", "reference_media_path"})
 
 
@@ -866,7 +891,28 @@ def validate_production_inputs_partial(
     normalized: dict[str, Any] = {}
     raw = dict(inputs)
 
+    from lib.deliverable_spec import DELIVERABLE_KEYS, normalize_deliverable_field
+    from lib.publish_intake import COVER_KEYS, normalize_cover_field
+
     for key, value in inputs.items():
+        if key in DELIVERABLE_KEYS:
+            if value is None or str(value).strip() == "":
+                continue
+            try:
+                normalized[key] = normalize_deliverable_field(key, value)
+            except ValueError as exc:
+                if str(exc) != "empty":
+                    raise BootstrapError(str(exc)) from exc
+            continue
+        if key in COVER_KEYS:
+            if value is None or str(value).strip() == "":
+                continue
+            try:
+                normalized[key] = normalize_cover_field(key, value)
+            except ValueError as exc:
+                if str(exc) != "empty":
+                    raise BootstrapError(str(exc)) from exc
+            continue
         field = field_by_key.get(key)
         if field is None:
             continue
@@ -911,6 +957,11 @@ def load_project_settings(project_dir: Path) -> dict[str, Any]:
         bootstrap_fields.append(f)
 
     from backlot.state import source_media_summary
+    from lib.deliverable_spec import resolve_deliverable
+    from lib.publish_intake import resolve_cover_brief
+
+    deliverable = resolve_deliverable(production_inputs)
+    cover_brief = resolve_cover_brief(production_inputs)
 
     return {
         "project_id": marker.get("project_id") or project_dir.name,
@@ -921,6 +972,8 @@ def load_project_settings(project_dir: Path) -> dict[str, Any]:
         "style_playbook_options": list_style_playbook_options(),
         "bootstrap_notes": meta.get("bootstrap_notes") or "",
         "production_inputs": production_inputs,
+        "deliverable": deliverable,
+        "cover_brief": cover_brief,
         "has_pipeline_state": has_state,
         "bootstrap_fields": bootstrap_fields,
         "created_at": marker.get("created_at"),

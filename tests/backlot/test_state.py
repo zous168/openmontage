@@ -694,3 +694,72 @@ class TestProjectSummary:
         assert names == {"script"}
         script_entry = next(a for a in summary["artifacts"] if a["name"] == "script")
         assert script_entry["stages"] == ["script"]
+
+    def test_project_summary_includes_publish_export_cover(self, projects_root):
+        p = _make_project(projects_root, "proj-pub")
+        _write(p / "project.json", {
+            "project_id": "proj-pub",
+            "title": "Publish Cover",
+            "pipeline_type": "cinematic",
+        })
+        thumb = p / "exports" / "thumbnails" / "thumbnail.jpg"
+        thumb.parent.mkdir(parents=True, exist_ok=True)
+        thumb.write_bytes(b"fake-jpg")
+        export_video = p / "exports" / "video" / "output.mp4"
+        export_video.parent.mkdir(parents=True, exist_ok=True)
+        export_video.write_bytes(b"mp4")
+        _write(p / "artifacts" / "publish_log.json", {
+            "version": "1.0",
+            "entries": [{
+                "platform": "douyin",
+                "status": "exported",
+                "export_path": str(p / "exports"),
+                "timestamp": "2026-01-01T12:00:00Z",
+            }],
+        })
+
+        s = load_board_state(p)
+        media_paths = {m["path"] for m in s["project_summary"]["media"]}
+        assert "exports/thumbnails/thumbnail.jpg" in media_paths
+        assert "exports/video/output.mp4" in media_paths
+        cover = next(
+            m for m in s["project_summary"]["media"]
+            if m["path"] == "exports/thumbnails/thumbnail.jpg"
+        )
+        assert cover["label"] == "封面"
+        assert cover["source_artifact"] == "publish_log"
+
+    def test_board_state_includes_deliverable_from_meta(self, projects_root):
+        p = _make_project(projects_root, "proj-deliverable")
+        _write(p / "project.json", {
+            "project_id": "proj-deliverable",
+            "title": "Deliverable",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "meta.json", {
+            "version": "1.0",
+            "production_inputs": {
+                "target_platform": "douyin",
+                "aspect_ratio": "9:16",
+                "quality_tier": "720p",
+                "fps": 30,
+            },
+        })
+
+        s = load_board_state(p)
+        assert s["deliverable"]["resolution"] == "720x1280"
+        assert s["deliverable"]["aspect_ratio"] == "9:16"
+        assert s["deliverable"]["quality_tier"] == "720p"
+
+    def test_board_state_style_playbook_label_zh(self, projects_root):
+        p = _make_project(projects_root, "styled")
+        _write(p / "project.json", {
+            "project_id": "styled",
+            "title": "风格测试",
+            "pipeline_type": "reference-driven",
+            "style_playbook": "clean-professional",
+        })
+
+        s = load_board_state(p)
+        assert s["style_playbook"] == "clean-professional"
+        assert s["style_playbook_label_zh"] == "干净专业"

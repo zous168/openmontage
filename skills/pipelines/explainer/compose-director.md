@@ -27,6 +27,17 @@ Read `edit_decisions.render_runtime` before anything else. It was locked at prop
 | Playbook | Active style playbook | Quality targets |
 | Tools | `video_compose`, `audio_mixer` | Rendering capabilities |
 | Media profiles | `lib/media_profiles.py` | Output format specs (resolution, codec, bitrate) |
+| Project deliverable | `meta.json` → `production_inputs` | Auto-applied by tools (see below) |
+
+### Project deliverable spec (automatic)
+
+When the project has deliverable fields in Backlot settings (`aspect_ratio`, `quality_tier`, `fps`, plus `target_platform`), tools apply them **without** manual `profile`/`compose_target` arguments:
+
+- **`video_compose` / `hyperframes_compose` / `video_stitch`** — set `edit_decisions.metadata.compose_target` and default `profile` from `lib/deliverable_spec.resolve_deliverable()`
+- **`export_bundle`** — writes deliverable into export `metadata.json` and `publish_log`
+- **AI video/image tools** — default `aspect_ratio`, `width`, `height` from the same spec when unset
+
+Explicit tool inputs still win. Read resolved spec via project settings API (`deliverable`) or `python -m lib.project_status <id> --json` → `intake.deliverable`.
 
 ## Process
 

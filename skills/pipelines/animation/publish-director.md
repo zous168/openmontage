@@ -31,6 +31,11 @@ Store in `publish_log.metadata`:
 - `thumbnail_concept`
 - `platform_notes`
 
+When the project cover source is **文生图（text_to_image）**, `export_bundle` auto-generates
+`exports/thumbnails/thumbnail.png` via `image_selector` using a prompt assembled from
+cover hook text, style notes, title, playbook, and deliverable aspect ratio. On provider
+failure it falls back to auto frame capture.
+
 ### 3. Quality Gate
 
 - metadata fits the actual animation mode,

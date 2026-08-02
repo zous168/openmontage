@@ -12,6 +12,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+from backlot.bootstrap import style_playbook_label_zh
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-overridable)
 
@@ -913,6 +914,83 @@ def _normalize_media_entry(
     }
 
 
+def _resolve_export_root(project_dir: Path, export_raw: str) -> Optional[Path]:
+    """Resolve export_bundle output directory inside or beside the project."""
+    if not export_raw or not isinstance(export_raw, str):
+        return None
+    stripped = export_raw.strip()
+    if not stripped:
+        return None
+    candidates: list[Path] = []
+    p = Path(stripped)
+    if p.is_absolute():
+        candidates.append(p)
+    else:
+        candidates.append(project_dir / stripped)
+        candidates.append(REPO_ROOT / stripped)
+    candidates.append(project_dir / "exports")
+    for c in candidates:
+        try:
+            if c.is_dir():
+                return c.resolve()
+        except OSError:
+            continue
+    return None
+
+
+def _collect_export_bundle_media(
+    project_dir: Path,
+    export_raw: str,
+    *,
+    source_artifact: str = "publish_log",
+) -> list[dict[str, Any]]:
+    """Thumbnail + export video from export_bundle layout (exports/…)."""
+    items: list[dict[str, Any]] = []
+    root = _resolve_export_root(project_dir, export_raw)
+    if root is None:
+        return items
+    try:
+        root.relative_to(Path(project_dir).resolve())
+    except (ValueError, OSError):
+        # Never serve bundle media outside the project workspace.
+        fallback = project_dir / "exports"
+        root = fallback if fallback.is_dir() else None
+    if root is None:
+        return items
+
+    thumb_dir = root / "thumbnails"
+    if thumb_dir.is_dir():
+        for f in sorted(thumb_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in MEDIA_IMAGE_EXT:
+                entry = _normalize_media_entry(
+                    project_dir,
+                    _rel(project_dir, f),
+                    label="封面",
+                    source_artifact=source_artifact,
+                    media_type="image",
+                )
+                if entry and entry.get("exists"):
+                    items.append(entry)
+                break
+
+    video_dir = root / "video"
+    if video_dir.is_dir():
+        for f in sorted(video_dir.iterdir()):
+            if f.is_file() and f.suffix.lower() in MEDIA_VIDEO_EXT:
+                entry = _normalize_media_entry(
+                    project_dir,
+                    _rel(project_dir, f),
+                    label="导出成片",
+                    source_artifact=source_artifact,
+                    media_type="video",
+                )
+                if entry and entry.get("exists"):
+                    items.append(entry)
+                break
+
+    return items
+
+
 def _media_from_artifact(
     project_dir: Path,
     artifact_name: str,
@@ -987,6 +1065,28 @@ def _media_from_artifact(
             )
             if entry:
                 items.append(entry)
+        return items
+
+    if artifact_name == "publish_log":
+        seen_export: set[str] = set()
+        for entry in artifact.get("entries") or []:
+            if not isinstance(entry, dict):
+                continue
+            export_path = str(entry.get("export_path") or "").strip()
+            if not export_path or export_path in seen_export:
+                continue
+            seen_export.add(export_path)
+            items.extend(
+                _collect_export_bundle_media(
+                    project_dir, export_path, source_artifact=artifact_name,
+                )
+            )
+        if not items:
+            items.extend(
+                _collect_export_bundle_media(
+                    project_dir, "exports", source_artifact=artifact_name,
+                )
+            )
         return items
 
     # Generic walk for path-like fields on uncommon artifacts.
@@ -1142,11 +1242,13 @@ def _build_project_summary(
             "label": str(path).split("/")[-1],
         })
 
-    for rel_dir, kind in (
-        ("assets/images", "image"),
-        ("assets/video", "video"),
-        ("assets/audio", "audio"),
-        ("assets/music", "audio"),
+    for rel_dir, kind, label in (
+        ("exports/thumbnails", "image", "封面"),
+        ("exports/video", "video", "导出成片"),
+        ("assets/images", "image", None),
+        ("assets/video", "video", None),
+        ("assets/audio", "audio", None),
+        ("assets/music", "audio", None),
     ):
         d = project_dir / rel_dir
         if not d.is_dir():
@@ -1158,8 +1260,9 @@ def _build_project_summary(
                 add_media(_normalize_media_entry(
                     project_dir,
                     _rel(project_dir, f),
-                    label=f.name,
+                    label=label or f.name,
                     media_type=kind,
+                    source_artifact="publish_log" if rel_dir.startswith("exports/") else None,
                 ))
         except OSError:
             continue
@@ -1395,6 +1498,13 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
     marker = _read_json(project_dir / "project.json") or {}
     meta_json = _read_json(project_dir / "meta.json") or {}
 
+    production_inputs = meta_json.get("production_inputs") or {}
+    try:
+        from lib.deliverable_spec import resolve_deliverable
+        deliverable = resolve_deliverable(production_inputs)
+    except Exception:
+        deliverable = None
+
     checkpoints = _collect_checkpoints(project_dir)
     history = _collect_history(project_dir)
 
@@ -1454,11 +1564,15 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
 
     production_active = _production_active(stages, events, now=now)
 
+    style_playbook = marker.get("style_playbook")
+
     state: dict[str, Any] = {
         "project_id": project_id,
         "title": marker.get("title") or meta_json.get("name") or project_id.replace("-", " ").title(),
         "pipeline": pipeline_meta,
-        "style_playbook": marker.get("style_playbook"),
+        "style_playbook": style_playbook,
+        "style_playbook_label_zh": style_playbook_label_zh(style_playbook) if style_playbook else None,
+        "deliverable": deliverable,
         "created_at": marker.get("created_at"),
         "has_marker": bool(marker),
         "has_pipeline_state": bool(checkpoints),

@@ -155,6 +155,11 @@ class VideoStitch(BaseTool):
                 data=self.dry_run(inputs),
             )
 
+        if operation in ("stitch", "preview_stitch", "spatial"):
+            from lib.deliverable_spec import enrich_render_inputs
+
+            inputs = enrich_render_inputs(inputs)
+
         try:
             if operation == "validate":
                 result = self._validate(inputs)
@@ -409,6 +414,33 @@ class VideoStitch(BaseTool):
 
         Returns (width, height, fps, video_codec, audio_codec).
         """
+        deliverable = inputs.get("deliverable")
+        if isinstance(deliverable, dict) and deliverable.get("width"):
+            try:
+                from lib.media_profiles import profile_for_deliverable
+
+                profile = profile_for_deliverable(deliverable)
+                return (
+                    profile.width,
+                    profile.height,
+                    profile.fps,
+                    profile.codec,
+                    profile.audio_codec,
+                )
+            except Exception:
+                pass
+
+        ed = inputs.get("edit_decisions") or {}
+        compose_target = (ed.get("metadata") or {}).get("compose_target")
+        if isinstance(compose_target, dict):
+            try:
+                w, h = int(compose_target["width"]), int(compose_target["height"])
+                fps = int(compose_target.get("fps") or 30)
+                video_codec = inputs.get("codec", "libx264")
+                return w, h, fps, video_codec, "aac"
+            except (KeyError, TypeError, ValueError):
+                pass
+
         # If a media profile is specified, use it
         profile_name = inputs.get("profile")
         if profile_name:

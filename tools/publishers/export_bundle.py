@@ -101,6 +101,10 @@ class ExportBundle(BaseTool):
                 "type": "object",
                 "description": "Thumbnail concept JSON when no rendered thumbnail exists.",
             },
+            "thumbnail_preferred_provider": {
+                "type": "string",
+                "description": "Preferred image provider when cover source is text_to_image (image_selector).",
+            },
             "platform": {
                 "type": "string",
                 "description": "Target platform label for the publish_log entry. Defaults to 'local'.",
@@ -156,12 +160,19 @@ class ExportBundle(BaseTool):
     # ---- Execution ----
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
+        from lib.deliverable_spec import load_deliverable_from_project
+
         video_path = Path(inputs["video_path"]).expanduser()
         if not video_path.is_file():
             return ToolResult(success=False, error=f"video_path not found: {video_path}")
 
         title = inputs["title"]
         project_name = inputs.get("project_name") or self._infer_project_name(video_path)
+
+        deliverable = None
+        resolved_video = video_path.resolve()
+        if resolved_video.parent.name == "renders":
+            deliverable = load_deliverable_from_project(resolved_video.parent.parent)
 
         # Explicitly-provided optional assets must exist — silently dropping them
         # would ship a publish package missing part of an approved deliverable.
@@ -204,6 +215,14 @@ class ExportBundle(BaseTool):
         chapters = inputs.get("chapters", []) or []
         chapter_lines = self._chapter_lines(chapters)
 
+        cover_brief = None
+        project_dir = None
+        if resolved_video.parent.name == "renders":
+            project_dir = resolved_video.parent.parent
+            from lib.publish_intake import load_cover_brief_from_project
+
+            cover_brief = load_cover_brief_from_project(project_dir)
+
         # metadata.json
         metadata = {
             "title": title,
@@ -212,6 +231,20 @@ class ExportBundle(BaseTool):
             "hashtags": hashtags,
             "chapters": chapters,
         }
+        if deliverable:
+            metadata["deliverable"] = {
+                "resolution": deliverable["resolution"],
+                "aspect_ratio": deliverable["aspect_ratio"],
+                "quality_tier": deliverable["quality_tier"],
+                "fps": deliverable["fps"],
+                "target_platform": deliverable.get("target_platform"),
+            }
+        if cover_brief:
+            metadata["cover_brief"] = {
+                "text_hook": cover_brief.get("text_hook"),
+                "style_notes": cover_brief.get("style_notes"),
+                "source": cover_brief.get("source"),
+            }
         meta_json = meta_dir / "metadata.json"
         meta_json.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
         files_written.append(str(meta_json))
@@ -236,21 +269,104 @@ class ExportBundle(BaseTool):
             chapters_txt.write_text("\n".join(chapter_lines) + "\n", encoding="utf-8")
             files_written.append(str(chapters_txt))
 
-        # Thumbnail: real image if given, else concept JSON
+        # Thumbnail: explicit path > text_to_image > auto_frame > concept_only
         thumb_in = inputs.get("thumbnail_path")
+        thumbnail_concept = inputs.get("thumbnail_concept")
+        style_playbook = ""
+        marker_path = (project_dir / "project.json") if project_dir else None
+        if marker_path and marker_path.is_file():
+            try:
+                marker = json.loads(marker_path.read_text(encoding="utf-8"))
+                style_playbook = str(marker.get("style_playbook") or "")
+            except (OSError, json.JSONDecodeError):
+                pass
+
+        cover_source = (cover_brief or {}).get("source", "auto_frame")
+        preferred_provider = inputs.get("thumbnail_preferred_provider") or "auto"
+        generation_meta: dict[str, Any] | None = None
+        t2i_error: str | None = None
+        thumbnail_written = False
+
         if thumb_in and Path(thumb_in).expanduser().is_file():
             thumb_in = Path(thumb_in).expanduser()
             out_thumb = thumb_dir / f"thumbnail{thumb_in.suffix or '.png'}"
             shutil.copy2(thumb_in, out_thumb)
             files_written.append(str(out_thumb))
-        elif inputs.get("thumbnail_concept"):
+            thumbnail_written = True
+        elif cover_brief and cover_source == "text_to_image":
+            from lib.publish_intake import (
+                build_thumbnail_prompt,
+                generate_cover_thumbnail,
+                thumbnail_dimensions,
+            )
+
+            width, height, aspect = thumbnail_dimensions(deliverable)
+            prompt = build_thumbnail_prompt(
+                cover_brief,
+                title=title,
+                style_playbook=style_playbook,
+                deliverable=deliverable,
+            )
+            out_thumb = thumb_dir / "thumbnail.png"
+            artifact, gen_meta, err = generate_cover_thumbnail(
+                prompt,
+                out_thumb,
+                width=width,
+                height=height,
+                aspect_ratio=aspect,
+                preferred_provider=preferred_provider,
+            )
+            if artifact:
+                if artifact.resolve() != out_thumb.resolve():
+                    shutil.copy2(artifact, out_thumb)
+                files_written.append(str(out_thumb))
+                thumbnail_written = True
+                generation_meta = gen_meta
+            else:
+                t2i_error = err
+                cover_source = "auto_frame"
+
+        if not thumbnail_concept and cover_brief:
+            from lib.publish_intake import build_thumbnail_concept
+
+            if generation_meta is None and t2i_error:
+                generation_meta = {"error": t2i_error, "fallback": "auto_frame"}
+            thumbnail_concept = build_thumbnail_concept(
+                cover_brief,
+                title=title,
+                style_playbook=style_playbook,
+                deliverable=deliverable,
+                generation=generation_meta,
+            )
+        elif thumbnail_concept and generation_meta:
+            thumbnail_concept = dict(thumbnail_concept)
+            thumbnail_concept["generation"] = generation_meta
+
+        explicit_thumb = bool(thumb_in and Path(thumb_in).expanduser().is_file())
+        if thumbnail_concept and not explicit_thumb:
             concept = thumb_dir / "concept.json"
-            concept.write_text(json.dumps(inputs["thumbnail_concept"], indent=2), encoding="utf-8")
+            concept.write_text(json.dumps(thumbnail_concept, indent=2), encoding="utf-8")
             files_written.append(str(concept))
 
+        if (
+            not thumbnail_written
+            and cover_brief
+            and cover_source == "auto_frame"
+        ):
+            from lib.publish_intake import default_frame_capture_seconds, extract_frame_thumbnail
+
+            extracted = extract_frame_thumbnail(
+                video_path,
+                thumb_dir,
+                default_frame_capture_seconds(),
+            )
+            if extracted:
+                files_written.append(str(extracted))
+
         timestamp = inputs.get("timestamp") or datetime.now(timezone.utc).isoformat()
+        platform = inputs.get("platform") or (deliverable or {}).get("target_platform") or "local"
         entry: dict[str, Any] = {
-            "platform": inputs.get("platform", "local"),
+            "platform": platform,
             "status": "exported",
             "export_path": str(export_root),
             "timestamp": timestamp,
@@ -261,6 +377,10 @@ class ExportBundle(BaseTool):
                 "chapters": chapters,
             },
         }
+        if deliverable:
+            entry["metadata_used"]["deliverable"] = metadata.get("deliverable")
+        if cover_brief:
+            entry["metadata_used"]["cover_brief"] = metadata.get("cover_brief")
         if inputs.get("visibility"):
             entry["visibility"] = inputs["visibility"]
 

@@ -27,7 +27,10 @@ export async function deleteJSON(url) {
   }
   if (!res.ok) {
     const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    let msg = `${res.status} ${url}`;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) msg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    else if (detail && typeof detail === "object") msg = JSON.stringify(detail);
     throw new Error(msg);
   }
   return data;
@@ -43,7 +46,10 @@ export async function postForm(url, formData) {
   }
   if (!res.ok) {
     const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    let msg = `${res.status} ${url}`;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) msg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    else if (detail && typeof detail === "object") msg = JSON.stringify(detail);
     throw new Error(msg);
   }
   return data;
@@ -63,7 +69,10 @@ export async function postJSON(url, body) {
   }
   if (!res.ok) {
     const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    let msg = `${res.status} ${url}`;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) msg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    else if (detail && typeof detail === "object") msg = JSON.stringify(detail);
     throw new Error(msg);
   }
   return data;
@@ -83,7 +92,10 @@ export async function putJSON(url, body) {
   }
   if (!res.ok) {
     const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    let msg = `${res.status} ${url}`;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) msg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    else if (detail && typeof detail === "object") msg = JSON.stringify(detail);
     throw new Error(msg);
   }
   return data;
@@ -103,7 +115,10 @@ export async function patchJSON(url, body) {
   }
   if (!res.ok) {
     const detail = data?.detail;
-    const msg = typeof detail === "string" ? detail : `${res.status} ${url}`;
+    let msg = `${res.status} ${url}`;
+    if (typeof detail === "string" && detail) msg = detail;
+    else if (Array.isArray(detail)) msg = detail.map((d) => d.msg || JSON.stringify(d)).join("; ");
+    else if (detail && typeof detail === "object") msg = JSON.stringify(detail);
     throw new Error(msg);
   }
   return data;
