@@ -824,6 +824,50 @@ def test_run_final_review_includes_transcript_comparison_section(tmp_path):
     )
     tc = review["checks"]["transcript_comparison"]
     assert any("not provided" in i for i in tc["issues"])
+    assert not any(
+        i.startswith("transcript_comparison skipped:") for i in review["issues_found"]
+    ), "skipped transcript QA must not surface as user-facing render defects"
+
+
+def test_final_review_subtitles_not_false_positive_with_remotion_captions(tmp_path):
+    import subprocess
+
+    mp4 = tmp_path / "out.mp4"
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-f", "lavfi", "-i", "color=c=#000000:s=320x240:d=2",
+            "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p",
+            "-c:a", "aac", "-shortest", str(mp4),
+        ],
+        capture_output=True, check=True, timeout=30,
+    )
+
+    project = tmp_path / "proj"
+    (project / "renders").mkdir(parents=True)
+    render_path = project / "renders" / "out.mp4"
+    render_path.write_bytes(mp4.read_bytes())
+
+    review = VideoCompose()._run_final_review(
+        render_path,
+        edit_decisions={
+            "version": "1.0",
+            "render_runtime": "remotion",
+            "renderer_family": "explainer-data",
+            "subtitles": {"enabled": True, "style": "word-by-word"},
+            "metadata": {
+                "remotion_captions": [
+                    {"word": "你好", "startMs": 0, "endMs": 500},
+                ],
+            },
+            "cuts": [{"id": "c1", "source": "x", "in_seconds": 0, "out_seconds": 2}],
+        },
+    )
+    sub = review["checks"]["subtitle_check"]
+    assert sub["subtitles_present"] is True
+    assert not sub.get("issues")
+    assert not any("Subtitles expected but not found" in i for i in review["issues_found"])
 
 
 def test_hyperframes_root_composition_has_data_start_and_duration(tmp_path):

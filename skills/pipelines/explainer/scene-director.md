@@ -38,7 +38,16 @@ If you encounter a visualization need that no existing skill covers, use the **S
 
 ### Step 3: Decompose into Scenes
 
-Transform each script section into 1-3 visual scenes. Each scene is a distinct visual moment.
+**Video generation unit (mandatory for `generated` / `broll` with `video_selector`):**
+
+Read `meta.json` → `production_inputs.video_gen_clip_duration_seconds` (Backlot 项目设置「单次生视频时长」). Default **10s** if unset; typical range **10–15s**.
+
+- **One storyboard scene = one video generation API call**, sized to this setting — NOT one scene per script section and NOT one scene per reference rapid-cut beat.
+- Split the timeline with `lib/video_gen_units.py`: `total_duration ÷ clip_duration` → N scenes of ~clip seconds (last scene may be shorter).
+- Pack multiple script sections and internal reference beats **inside** each scene's `description` / `metadata.edit_internal_beats`. Subtitle timing still follows `script.json` sections at edit stage.
+- Each scene's `required_assets` should request **`type: "video"`** with a prompt covering the full clip duration.
+
+Transform each **generation unit** into one visual scene (not each script section).
 
 ```json
 {

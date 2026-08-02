@@ -163,6 +163,7 @@ class TestBacklotServerApi:
         ref_keys = {f["key"] for f in ref["bootstrap_fields"]}
         assert "reference_url" in ref_keys
         assert "reference_media_path" in ref_keys
+        assert "video_gen_clip_duration_seconds" in ref_keys
         assert "aspect_ratio" in ref_keys
         assert "quality_tier" in ref_keys
         sample = next(p for p in body if p["id"] == "cinematic")

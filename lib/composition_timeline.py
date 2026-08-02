@@ -204,7 +204,12 @@ def build_composition_timeline(edit: dict[str, Any]) -> dict[str, Any]:
         )
 
     captions = props.get("captions") or []
-    if captions and absolute and captions[0].get("startMs") is not None:
+    if (
+        captions
+        and absolute
+        and captions[0].get("startMs") is not None
+        and not overlay_nodes
+    ):
         caption_pages = _build_caption_pages(captions)
         caption_nodes: list[dict[str, Any]] = []
         for page_index, page in enumerate(caption_pages):
@@ -237,7 +242,7 @@ def build_composition_timeline(edit: dict[str, Any]) -> dict[str, Any]:
                     "nodes": caption_nodes,
                 }
             )
-    elif captions:
+    elif captions and not overlay_nodes and captions[0].get("startMs") is None:
         starts = [float(c.get("start") or 0) for c in captions]
         ends = [float(c.get("end") or 0) for c in captions]
         cap_start = min(starts) if starts else 0.0

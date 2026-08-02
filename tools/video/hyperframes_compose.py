@@ -491,17 +491,21 @@ class HyperFramesCompose(BaseTool):
         # neither the env override nor the default font file exists.
         cjk_font_rel = self._stage_cjk_font(assets_dir)
 
+        project_dir = self._infer_project_dir(workspace, inputs)
+
         # Resolve asset IDs → file paths + copy into workspace.
         resolved_cuts, asset_copies = self._resolve_and_stage_assets(
             edit_decisions.get("cuts", []),
             asset_manifest.get("assets", []),
             workspace,
+            project_dir=project_dir,
         )
 
         audio_refs = self._resolve_audio_refs(
             edit_decisions.get("audio", {}),
             asset_manifest.get("assets", []),
             workspace,
+            project_dir=project_dir,
         )
 
         # Style bridge: playbook → CSS custom properties + DESIGN.md.
@@ -838,11 +842,41 @@ class HyperFramesCompose(BaseTool):
             return 0.0
         return max(float(c.get("out_seconds", 0) or 0) for c in cuts)
 
+    @staticmethod
+    def _infer_project_dir(workspace: Path, inputs: dict[str, Any]) -> Path | None:
+        raw = inputs.get("project_dir")
+        if raw:
+            return Path(raw).resolve()
+        parent = workspace.parent.resolve()
+        if (parent / "artifacts").is_dir():
+            return parent
+        return None
+
+    @staticmethod
+    def _resolve_asset_path(raw: str, project_dir: Path | None) -> Path | None:
+        if not raw:
+            return None
+        p = Path(raw)
+        if p.is_file():
+            return p.resolve()
+        if project_dir is not None:
+            candidate = (project_dir / p).resolve()
+            if candidate.is_file():
+                return candidate
+        cwd_candidate = (Path.cwd() / p).resolve()
+        if cwd_candidate.is_file():
+            return cwd_candidate
+        if project_dir is not None:
+            return (project_dir / p).resolve()
+        return p
+
     def _resolve_and_stage_assets(
         self,
         cuts: list[dict],
         assets: list[dict],
         workspace: Path,
+        *,
+        project_dir: Path | None = None,
     ) -> tuple[list[dict], list[dict[str, str]]]:
         """Resolve asset IDs in cuts[].source, copy files into workspace/assets/.
 
@@ -860,8 +894,11 @@ class HyperFramesCompose(BaseTool):
             resolved_cut = dict(cut)
             if source in asset_lookup:
                 resolved_cut["source"] = asset_lookup[source].get("path", source)
-            src_path = Path(resolved_cut["source"]) if resolved_cut.get("source") else None
-            if src_path and src_path.exists() and not self._is_inside(src_path, workspace):
+            src_path = self._resolve_asset_path(
+                str(resolved_cut.get("source") or ""),
+                project_dir,
+            )
+            if src_path and src_path.is_file() and not self._is_inside(src_path, workspace):
                 dest = assets_dir / src_path.name
                 if not dest.exists() or dest.stat().st_size != src_path.stat().st_size:
                     shutil.copy2(src_path, dest)
@@ -875,6 +912,8 @@ class HyperFramesCompose(BaseTool):
         audio: dict[str, Any],
         assets: list[dict],
         workspace: Path,
+        *,
+        project_dir: Path | None = None,
     ) -> dict[str, Any]:
         """Resolve narration / music asset IDs and stage them."""
         asset_lookup = {a["id"]: a for a in assets if "id" in a}
@@ -885,8 +924,11 @@ class HyperFramesCompose(BaseTool):
             aid = seg.get("asset_id")
             if not aid or aid not in asset_lookup:
                 continue
-            src = Path(asset_lookup[aid].get("path", ""))
-            if not src.exists():
+            src = self._resolve_asset_path(
+                str(asset_lookup[aid].get("path", "")),
+                project_dir,
+            )
+            if not src or not src.is_file():
                 continue
             if not self._is_inside(src, workspace):
                 dest = assets_dir / src.name
@@ -905,8 +947,11 @@ class HyperFramesCompose(BaseTool):
         music = audio.get("music", {})
         m_id = music.get("asset_id")
         if m_id and m_id in asset_lookup:
-            src = Path(asset_lookup[m_id].get("path", ""))
-            if src.exists():
+            src = self._resolve_asset_path(
+                str(asset_lookup[m_id].get("path", "")),
+                project_dir,
+            )
+            if src and src.is_file():
                 if not self._is_inside(src, workspace):
                     dest = assets_dir / src.name
                     if not dest.exists() or dest.stat().st_size != src.stat().st_size:

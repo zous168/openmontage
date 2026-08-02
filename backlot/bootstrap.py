@@ -156,6 +156,15 @@ _DURATION = _f(
     min=1,
     max=7200,
 )
+_VIDEO_GEN_CLIP = _f(
+    "video_gen_clip_duration_seconds",
+    "number",
+    "单次生视频时长（秒）",
+    required=False,
+    hint_zh="每张分镜卡 = 一次 video_selector 调用；通常 10–15 秒",
+    min=5,
+    max=30,
+)
 _TOPIC = _f("topic", "text", "视频主题", hint_zh="要讲什么、为谁做、核心信息")
 _SOURCE = _f(
     "source_media_path",
@@ -247,6 +256,7 @@ PIPELINE_BOOTSTRAP_FIELDS: dict[str, list[dict[str, Any]]] = {
         _TOPIC,
         _PLATFORM,
         _f("target_duration_seconds", "number", "目标时长（秒）", hint_zh="建议 60–180 秒", min=15, max=7200),
+        _VIDEO_GEN_CLIP,
         _REFERENCE_URL,
         _REFERENCE_PATH,
     ],
@@ -254,6 +264,7 @@ PIPELINE_BOOTSTRAP_FIELDS: dict[str, list[dict[str, Any]]] = {
         _TOPIC,
         _PLATFORM,
         _DURATION,
+        _VIDEO_GEN_CLIP,
         _SOURCE_OPTIONAL,
         _REFERENCE_URL,
         _REFERENCE_PATH,
@@ -262,6 +273,7 @@ PIPELINE_BOOTSTRAP_FIELDS: dict[str, list[dict[str, Any]]] = {
         _TOPIC,
         _PLATFORM,
         _f("target_duration_seconds", "number", "目标时长（秒）", hint_zh="动效解说通常 30–120 秒", min=15, max=7200),
+        _VIDEO_GEN_CLIP,
         _REFERENCE_URL,
         _REFERENCE_PATH,
     ],
@@ -320,6 +332,7 @@ PIPELINE_BOOTSTRAP_FIELDS: dict[str, list[dict[str, Any]]] = {
         ),
         _PLATFORM,
         _DURATION,
+        _VIDEO_GEN_CLIP,
     ],
     "framework-smoke": [],
 }

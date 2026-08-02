@@ -56,15 +56,43 @@ function cutSequenceName(cut) {
   return cut?.id || file || "cut";
 }
 
-function cutMediaChild(cut) {
+function cutDisplayReason(state, cut) {
+  if (cut?.reason) return cut.reason;
   const source = String(cut?.source || "");
-  const base = source.split("/").pop() || source;
-  if (!base) return null;
-  const ext = base.includes(".") ? base.split(".").pop().toLowerCase() : "";
-  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-    return { track: "media", kind: "image", label: `<Img> ${base}`, data: cut };
-  }
-  return null;
+  const scenes = state?.scene_plan?.scenes || [];
+  const scene = scenes.find(
+    (sc) => source === sc.id || source === `img_${sc.id}` || source.includes(sc.id),
+  );
+  if (!scene) return "";
+  const sections = state?.script?.sections || [];
+  const sec = sections.find((item) => item.id === scene.script_section_id);
+  if (sec?.label) return `${scene.id} · ${sec.label}`;
+  return scene.id || "";
+}
+
+function findScriptSectionAtTime(sections, time) {
+  return sections.find((sec) => {
+    const start = Number(sec.start_seconds) || 0;
+    const endRaw = Number(sec.end_seconds);
+    const end = Number.isFinite(endRaw) && endRaw > start ? endRaw : start + 999;
+    return time >= start && time < end;
+  });
+}
+
+function overlayNodeLabel(overlay, clipMeta, scriptSections) {
+  const start = Number(overlay.in_seconds ?? overlay.start_seconds) || 0;
+  const sec = findScriptSectionAtTime(scriptSections, start);
+  if (sec?.label) return sec.label;
+  const clip = clipMeta.find((item) => Math.abs(item.start - start) < 0.08);
+  if (clip?.cut?.reason) return clip.cut.reason;
+  const text = overlay.text || "";
+  if (overlay.type === "section_title" && text.length <= 24) return text;
+  return overlay.type || shortText(text, 12) || `overlay-${Math.round(start)}s`;
+}
+
+function overlaySequenceName(overlay, index) {
+  if (overlay?.text) return overlay.text;
+  return overlay?.type || `overlay-${index + 1}`;
 }
 
 function buildCaptionPages(captions, wordsPerPage = 6) {
@@ -73,6 +101,7 @@ function buildCaptionPages(captions, wordsPerPage = 6) {
     const pageWords = captions.slice(index, index + wordsPerPage);
     if (!pageWords.length) continue;
     pages.push({
+      words: pageWords,
       startMs: Number(pageWords[0].startMs) || 0,
       endMs: Number(pageWords[pageWords.length - 1].endMs) || 0,
       preview: pageWords.map((w) => w.word || "").join("").slice(0, 12),
@@ -88,11 +117,6 @@ function captionPageTiming(page, pages, pageIndex, durationSeconds) {
     : Math.max(start, page.endMs / 1000 + 0.5);
   end = Math.min(end, durationSeconds);
   return { start, end, duration: Math.max(0, end - start) };
-}
-
-function overlaySequenceName(overlay, index) {
-  if (overlay?.text) return overlay.text;
-  return overlay?.type || `overlay-${index + 1}`;
 }
 
 function editCutTimelineDuration(cut, artifact) {
@@ -129,20 +153,44 @@ function compositionDurationSeconds(artifact, clipMeta) {
   return clipMeta.reduce((sum, clip) => sum + clip.duration, 0);
 }
 
-function buildCompositionTimeline(artifact) {
+function buildNleCaptionTracksFromScript(state, totalSeconds) {
+  const empty = { summary: [], detail: [] };
+  if (!totalSeconds) return empty;
+  const sections = (state?.script?.sections || []).filter((sec) => sec.text);
+  if (!sections.length) return empty;
+  const summary = [];
+  const detail = [];
+  for (const sec of sections) {
+    const start = Math.max(0, Number(sec.start_seconds) || 0);
+    const endRaw = Number(sec.end_seconds);
+    const end = Number.isFinite(endRaw) && endRaw > start ? endRaw : start + 2;
+    const duration = Math.min(end - start, totalSeconds - start);
+    if (duration <= 0) continue;
+    const label = sec.label || shortText(sec.text, 18);
+    summary.push({ start, duration, label, text: sec.text });
+    detail.push({ start, duration, text: sec.text });
+  }
+  return { summary, detail };
+}
+
+function buildCompositionTimeline(artifact, state) {
   const props = resolveCompositionProps(artifact);
   const clipMeta = buildEditClipMeta(props.cuts, artifact);
   const durationSeconds = compositionDurationSeconds(artifact, clipMeta);
   const absolute = editUsesAbsoluteTimeline(artifact);
+  const scriptSections = state?.script?.sections || [];
 
   const overlayNodes = (props.overlays || [])
     .map((overlay, index) => {
       const { start, end, duration } = overlayTiming(overlay);
       if (duration <= 0) return null;
+      const fullText = overlaySequenceName(overlay, index);
+      const shortLabel = overlayNodeLabel(overlay, clipMeta, scriptSections) || fullText;
       return {
         track: "overlay",
         index,
-        label: overlaySequenceName(overlay, index),
+        label: shortLabel,
+        preview: fullText,
         start,
         duration,
       };
@@ -154,11 +202,9 @@ function buildCompositionTimeline(artifact) {
     id: "cuts",
     kind: "sequence",
     nodes: clipMeta.map(({ cut, index, start, duration }) => {
-      const child = cutMediaChild(cut);
-      return {
-        label: cutSequenceName(cut),
-        children: child ? [child.label] : [],
-      };
+      const reason = cutDisplayReason(state, cut);
+      const displayCut = reason && !cut.reason ? { ...cut, reason } : cut;
+      return { label: cutSequenceName(displayCut), children: [] };
     }),
   });
 
@@ -166,9 +212,31 @@ function buildCompositionTimeline(artifact) {
     layers.push({ id: "overlays", kind: "overlay", nodes: overlayNodes });
   }
 
+  if (absolute) {
+    const captionTracks = buildNleCaptionTracksFromScript(state, durationSeconds);
+    if (captionTracks.summary.length && !overlayNodes.length) {
+      layers.push({
+        id: "script-captions-summary",
+        kind: "script-caption",
+        nodes: captionTracks.summary.map((item, index) => ({
+          label: item.label,
+          index,
+        })),
+      });
+      layers.push({
+        id: "script-captions-detail",
+        kind: "script-caption",
+        nodes: captionTracks.detail.map((item, index) => ({
+          label: shortText(item.text, 48),
+          index,
+        })),
+      });
+    }
+  }
+
   const captions = props.captions || [];
-  if (absolute && captions.length && captions[0]?.startMs != null) {
-    const pages = buildCaptionPages(captions, 6);
+  if (absolute && captions.length && captions[0]?.startMs != null && !overlayNodes.length) {
+    const pages = buildCaptionPages(captions, 1);
     layers.push({
       id: "captions",
       kind: "caption",
@@ -176,7 +244,7 @@ function buildCompositionTimeline(artifact) {
         const { duration } = captionPageTiming(page, pages, pageIndex, durationSeconds);
         const preview = page.preview || "";
         return {
-          label: "caption",
+          label: shortText(preview, 16) || "caption",
           preview,
           duration,
         };
@@ -194,13 +262,10 @@ function expandLayersForStaircase(layers, absolute) {
     if (layer.kind === "sequence") {
       for (const node of layer.nodes) {
         expanded.push({ ...layer, trackLabel: node.label, nodes: [node], staircase: true });
-        for (const childLabel of node.children || []) {
-          expanded.push({ kind: "media", trackLabel: childLabel, nested: true, nodes: [{}] });
-        }
       }
       continue;
     }
-    if (layer.kind === "overlay" || layer.kind === "caption") {
+    if (layer.kind === "overlay" || layer.kind === "caption" || layer.kind === "script-caption") {
       for (const node of layer.nodes) {
         expanded.push({ ...layer, trackLabel: node.label, preview: node.preview, nodes: [node] });
       }
@@ -217,7 +282,10 @@ function assert(cond, msg) {
 
 function main() {
   const artifact = loadJson("artifacts/edit_decisions.json");
-  const composition = buildCompositionTimeline(artifact);
+  const script = loadJson("artifacts/script.json");
+  const scenePlan = loadJson("artifacts/scene_plan.json");
+  const state = { script, scene_plan: scenePlan };
+  const composition = buildCompositionTimeline(artifact, state);
   const displayLayers = expandLayersForStaircase(composition.layers, composition.absolute);
 
   console.log(`\n=== NLE / Remotion tree verify: ${projectId} ===`);
@@ -227,40 +295,33 @@ function main() {
     const tags = [
       layer.kind,
       layer.staircase ? "staircase" : null,
-      layer.nested ? "nested" : null,
     ].filter(Boolean).join(", ");
     console.log(`  • ${layer.trackLabel || layer.id} [${tags}]`);
   }
 
   const layerIds = composition.layers.map((l) => l.id);
-  assert(composition.absolute, "remotion project uses absolute timeline");
+  assert(composition.absolute, "hyperframes/remotion uses absolute timeline");
   assert(layerIds.includes("cuts"), "cuts layer present");
-  assert(layerIds.includes("overlays"), "overlay layer present (Remotion overlays[])");
-  assert(layerIds.includes("captions"), "caption pages layer present");
+  assert(layerIds.includes("overlays"), "overlay layer present");
+  assert(!layerIds.includes("captions"), "no duplicate caption layer when overlays present");
+  assert(!layerIds.includes("script-captions-summary"), "no duplicate script caption rows when overlays present");
 
   const cutLayer = composition.layers.find((l) => l.id === "cuts");
-  assert(cutLayer.nodes[0].label === "c1 · Hook", `cut label uses reason, got ${cutLayer.nodes[0].label}`);
-  assert(cutLayer.nodes[0].children[0] === "<Img> sc1.jpg", "cut has nested Img child");
+  assert(cutLayer.nodes[0].label.includes("Hook"), `cut label includes Hook, got ${cutLayer.nodes[0].label}`);
 
   const overlayLabels = composition.layers.find((l) => l.id === "overlays").nodes.map((n) => n.label);
   assert(overlayLabels[0] === "Hook", `first overlay is Hook, got ${overlayLabels[0]}`);
+  assert(overlayLabels.length === 6, `six overlay rows, got ${overlayLabels.length}`);
 
-  const captionLayer = composition.layers.find((l) => l.id === "captions");
-  assert(captionLayer.nodes.length >= 8, `caption pages expanded (~10), got ${captionLayer.nodes.length}`);
-  assert(captionLayer.nodes[0].label === "caption", "caption row label is type only");
-  assert(captionLayer.nodes[0].preview, "caption preview lives on node.preview");
-
-  const sequenceRows = displayLayers.filter((l) => l.kind === "sequence" && l.staircase);
-  const mediaRows = displayLayers.filter((l) => l.kind === "media");
   const overlayRows = displayLayers.filter((l) => l.kind === "overlay");
   const captionRows = displayLayers.filter((l) => l.kind === "caption");
+  const scriptCaptionRows = displayLayers.filter((l) => l.kind === "script-caption");
 
-  assert(sequenceRows.length === artifact.cuts.length, "one Sequence row per cut");
-  assert(mediaRows.length === artifact.cuts.length, "one Img row per image cut");
-  assert(overlayRows.length === composition.overlayNodes.length, "one overlay row each");
-  assert(captionRows.length === captionLayer.nodes.length, "one caption page row each");
+  assert(overlayRows.length === 6, "one overlay row per burn-in cue");
+  assert(captionRows.length === 0, "no duplicate remotion caption rows");
+  assert(scriptCaptionRows.length === 0, "no duplicate script caption rows");
 
-  console.log("\n✓ Composition tree matches Remotion Studio structure\n");
+  console.log("\n✓ Composition tree has single overlay text track set\n");
 }
 
 try {

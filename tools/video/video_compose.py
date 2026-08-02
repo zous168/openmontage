@@ -2082,6 +2082,61 @@ class VideoCompose(BaseTool):
         cleaned = re.sub(r"[^A-Za-z0-9\-' ]+", " ", text.lower())
         return [t for t in cleaned.split() if t and t != "-"]
 
+    @staticmethod
+    def _project_dir_from_output(output_path: Path) -> Path:
+        """Project root when output lives under ``renders/``."""
+        if output_path.parent.name == "renders":
+            return output_path.parent.parent
+        return output_path.parent
+
+    @classmethod
+    def _edit_remotion_captions(cls, edit_decisions: dict[str, Any] | None) -> list[dict[str, Any]]:
+        if not edit_decisions:
+            return []
+        captions = edit_decisions.get("captions") or []
+        if captions:
+            return captions
+        return (edit_decisions.get("metadata") or {}).get("remotion_captions") or []
+
+    @classmethod
+    def _edit_subtitle_source_exists(
+        cls,
+        ed_subs: dict[str, Any],
+        output_path: Path,
+    ) -> bool:
+        sub_source = ed_subs.get("source")
+        if not sub_source:
+            return False
+        direct = Path(sub_source)
+        if direct.is_file():
+            return True
+        project_dir = cls._project_dir_from_output(output_path)
+        return (project_dir / sub_source).is_file()
+
+    @classmethod
+    def _edit_has_burned_in_captions(
+        cls,
+        edit_decisions: dict[str, Any] | None,
+        output_path: Path,
+    ) -> bool:
+        """True when compose config indicates captions burn via Remotion/SRT."""
+        if not edit_decisions:
+            return False
+        ed_subs = edit_decisions.get("subtitles") or {}
+        if cls._edit_subtitle_source_exists(ed_subs, output_path):
+            return True
+        for cap in cls._edit_remotion_captions(edit_decisions):
+            if not isinstance(cap, dict):
+                continue
+            if cap.get("startMs") is not None or cap.get("word"):
+                return True
+        return False
+
+    @staticmethod
+    def _optional_review_skip(message: str) -> bool:
+        """Skipped optional QA inputs are not render defects."""
+        return message.startswith("transcript_comparison skipped:")
+
     @classmethod
     def _compare_transcript_to_script(
         cls,
@@ -2538,12 +2593,10 @@ class VideoCompose(BaseTool):
                     # they may be burned in (which is fine — not a failure)
                     if (subtitle_check["subtitles_expected"]
                             and not subtitle_check["subtitles_present"]):
-                        # Check if subtitle_path was used (burned in)
-                        sub_source = ed_subs.get("source")
-                        if sub_source and Path(sub_source).exists():
-                            # Burned-in subtitles are not detectable as streams
+                        if self._edit_has_burned_in_captions(edit_decisions, output_path):
                             subtitle_check["subtitles_present"] = True
                             subtitle_check["coverage_ratio"] = 1.0
+                            subtitle_check["burn_method"] = "remotion_or_source"
                         else:
                             subtitle_check["issues"].append(
                                 "Subtitles expected but not found in output and "
@@ -2563,7 +2616,10 @@ class VideoCompose(BaseTool):
             Path(narration_transcript_path) if narration_transcript_path else None,
             script_text,
         )
-        issues.extend(transcript_comparison.get("issues", []))
+        issues.extend(
+            msg for msg in transcript_comparison.get("issues", [])
+            if not self._optional_review_skip(msg)
+        )
 
         # --- 7. Determine overall status ---
         critical_issues = [

@@ -1070,6 +1070,53 @@ aside .panel + .panel { margin-top: 0; }
 .narr.clip:hover { color: var(--text-1); }
 .narr.tc-note { color: var(--text-3); }
 
+.sc-prompt {
+  padding: 6px 3px 0;
+  font-size: calc(10.5px * var(--fs-scale));
+  color: var(--text-3);
+  line-height: 1.4;
+  max-height: 68px;
+  overflow: hidden;
+  position: relative;
+}
+.sc-prompt.clip {
+  cursor: pointer;
+  -webkit-mask-image: linear-gradient(180deg, #000 58%, transparent);
+  mask-image: linear-gradient(180deg, #000 58%, transparent);
+}
+.sc-prompt.clip:hover { color: var(--text-2); }
+.sc-prompt .narr-more {
+  position: absolute;
+  right: 2px;
+  bottom: 0;
+  font-style: normal;
+  color: var(--text-3);
+  font-size: calc(11px * var(--fs-scale));
+}
+.scene-prompt-body {
+  font-size: calc(12.5px * var(--fs-scale));
+  line-height: 1.55;
+  color: var(--text-2);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.asset-manifest-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+.asset-manifest-prompt {
+  padding: 0 10px 10px;
+  font-size: calc(10.5px * var(--fs-scale));
+  line-height: 1.45;
+  color: var(--text-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .wave { display: flex; align-items: flex-end; gap: 1.5px; height: 14px; padding: 6px 3px 0; }
 .wave i { width: 2.5px; background: #3d3d47; border-radius: 1px; }
 .wave.played i { background: #565664; }
@@ -1098,8 +1145,10 @@ aside .panel + .panel { margin-top: 0; }
 /* ---------- modal ---------- */
 .modal-bg {
   position: fixed; inset: 0; background: var(--modal-backdrop); backdrop-filter: blur(10px);
-  display: none; align-items: center; justify-content: center; overflow-y: auto;
-  padding: max(24px, 4vh) 20px; z-index: 50;
+  display: none; align-items: flex-start; justify-content: center;
+  overflow-x: hidden; overflow-y: auto;
+  padding: max(24px, 4vh) 20px max(32px, 6vh); z-index: 50;
+  -webkit-overflow-scrolling: touch;
 }
 .modal-bg.open { display: flex; }
 .modal-page {
@@ -2094,10 +2143,17 @@ a.global-settings-btn { text-decoration: none; }
 .lib-create-panel {
   padding: 0;
   margin-top: 0;
-  overflow: hidden;
+  max-height: min(calc(100dvh - max(48px, 8vh)), 920px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   animation: rise .35s cubic-bezier(.2,.7,.3,1);
 }
 .lib-create-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   padding: 20px 24px 18px;
   border-bottom: 1px solid var(--border-soft);
   background: linear-gradient(
@@ -2491,7 +2547,8 @@ a.backlink:hover { color: var(--text-2); }
 }
 .edit-timeline-scroll {
   overflow-x: auto;
-  overflow-y: visible;
+  overflow-y: auto;
+  max-height: min(52vh, 560px);
 }
 .edit-timeline-head {
   display: flex;
@@ -2710,6 +2767,13 @@ a.backlink:hover { color: var(--text-2); }
 }
 .nle-track-controls--pro.nle-track-controls--audio-row {
   cursor: pointer;
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+}
+.nle-track-controls--pro.nle-track-controls--audio-row .nle-track-head {
+  flex: 1;
+  min-width: 0;
 }
 .nle-track-controls--pro.nle-track-controls--audio-row.is-selected {
   background: rgba(59, 130, 246, .12);
@@ -2932,6 +2996,11 @@ a.backlink:hover { color: var(--text-2); }
 .nle-block--overlay {
   background: linear-gradient(180deg, #6b4fa8, #4a3278);
   border: 1px solid rgba(180, 150, 255, .35);
+}
+.nle-block--overlay .nle-block-label,
+.nle-block--overlay .nle-block-label--wrap {
+  color: #f3ecff;
+  font-weight: 600;
 }
 .nle-block--overlay.is-selected,
 .nle-block--caption-summary.is-selected,
@@ -3375,7 +3444,19 @@ a.backlink:hover { color: var(--text-2); }
   max-height: min(58vh, 560px);
   overflow: auto;
 }
-.final-review-player { margin-top: 10px; }
+.compose-review-inline {
+  margin-top: 4px;
+  display: grid;
+  gap: 14px;
+}
+.compose-review-report,
+.compose-review-warnings {
+  border-top: 1px solid var(--border-soft);
+  padding-top: 12px;
+}
+.compose-review-warnings .approval-items li {
+  border-left-color: var(--amber, #d4a017);
+}
 .final-review-issues { margin-top: 10px; }
 .final-review-issues li.ok { border-left-color: var(--green); }
 .final-review-issues li.crit { border-left-color: var(--red, #e05a5a); }

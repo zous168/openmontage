@@ -15,6 +15,7 @@ from typing import Any, Optional
 from backlot.bootstrap import style_playbook_label_zh
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-overridable)
+from lib.shot_prompt_builder import build_scene_storyboard_prompt, scene_plan_index_from_id
 
 MEDIA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 MEDIA_VIDEO_EXT = {".mp4", ".webm", ".mov"}
@@ -482,6 +483,7 @@ def _asset_entry(project_dir: Path, asset: dict) -> dict:
         "exists": exists,
         "renderable": renderable,
         "prompt": asset.get("prompt"),
+        "generation_summary": asset.get("generation_summary"),
         "model": asset.get("model"),
         "source_tool": asset.get("source_tool"),
         "provider": asset.get("provider"),
@@ -582,6 +584,16 @@ def _build_storyboard(
             generating.pop(sid, None)
 
     cards = []
+    brief = artifacts.get("video_analysis_brief") or {}
+    ref_scenes_by_index: dict[int, dict] = {}
+    for rs in ((brief.get("structure_analysis") or {}).get("scenes") or []):
+        if isinstance(rs, dict) and rs.get("scene_index") is not None:
+            ref_scenes_by_index[int(rs["scene_index"])] = rs
+    ref_keyframes_by_index: dict[int, dict] = {}
+    for kf in (brief.get("keyframes") or []):
+        if isinstance(kf, dict) and kf.get("scene_index") is not None:
+            ref_keyframes_by_index[int(kf["scene_index"])] = kf
+
     for scene in scene_plan["scenes"]:
         if not isinstance(scene, dict):
             continue
@@ -602,10 +614,21 @@ def _build_storyboard(
             else missing[-1] if missing
             else _find_scene_snapshot(project_dir, sid)
         )
+        planned_prompt = ""
+        try:
+            ref_idx = scene_plan_index_from_id(sid)
+            planned_prompt = build_scene_storyboard_prompt(
+                scene,
+                reference_scene=ref_scenes_by_index.get(ref_idx) if ref_idx is not None else None,
+                reference_keyframe=ref_keyframes_by_index.get(ref_idx) if ref_idx is not None else None,
+            ).strip()
+        except Exception:
+            planned_prompt = ""
         cards.append({
             "id": sid,
             "type": scene.get("type"),
             "description": scene.get("description"),
+            "planned_prompt": planned_prompt,
             "start_seconds": scene.get("start_seconds"),
             "end_seconds": scene.get("end_seconds"),
             "duration_seconds": (
@@ -632,10 +655,22 @@ def _build_storyboard(
     if total is None and cards:
         ends = [c["end_seconds"] for c in cards if c["end_seconds"] is not None]
         total = max(ends) if ends else None
+    gen_unit = scene_plan.get("metadata", {}).get("generation_unit_seconds")
+    if gen_unit is None:
+        meta_path = project_dir / "meta.json"
+        production_inputs = {}
+        if meta_path.is_file():
+            try:
+                production_inputs = json.loads(meta_path.read_text(encoding="utf-8")).get("production_inputs") or {}
+            except (json.JSONDecodeError, OSError):
+                production_inputs = {}
+        from lib.video_gen_units import resolve_video_gen_clip_duration
+        gen_unit = resolve_video_gen_clip_duration(production_inputs)
     return {
         "scenes": cards,
         "total_duration_seconds": total,
         "style_playbook": scene_plan.get("style_playbook"),
+        "video_gen_clip_duration_seconds": gen_unit,
     }
 
 

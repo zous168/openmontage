@@ -13,6 +13,7 @@ to every scene description, which made all scenes look the same.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 
@@ -164,3 +165,86 @@ def build_batch_prompts(
             "hero_moment": scene.get("hero_moment", False),
         })
     return results
+
+
+def scene_plan_index_from_id(scene_id: str | None) -> int | None:
+    """Map scene_plan ids like sc1 / scene-3 to zero-based reference indices."""
+    if not scene_id:
+        return None
+    sid = str(scene_id).strip()
+    m = re.match(r"^sc(\d+)$", sid, re.IGNORECASE)
+    if m:
+        return int(m.group(1)) - 1
+    m = re.search(r"(\d+)\s*$", sid)
+    if m:
+        return int(m.group(1)) - 1
+    return None
+
+
+def _dedupe_prompt_parts(parts: list[str]) -> str:
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for raw in parts:
+        p = str(raw or "").strip().strip(".")
+        if not p:
+            continue
+        key = p.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(p)
+    return ". ".join(ordered)
+
+
+def build_scene_storyboard_prompt(
+    scene: dict[str, Any],
+    *,
+    reference_scene: dict[str, Any] | None = None,
+    reference_keyframe: dict[str, Any] | None = None,
+    style_context: dict[str, Any] | None = None,
+) -> str:
+    """Storyboard prompt from scene_plan, optionally enriched by reference analysis."""
+    parts: list[str] = []
+
+    intent = str(scene.get("shot_intent") or "").strip()
+    description = str(scene.get("description") or "").strip()
+    if intent:
+        parts.append(f"Intent: {intent}")
+    elif description and len(description) >= 8:
+        parts.append(description)
+
+    ref_visual = ""
+    if reference_scene:
+        ref_visual = str(reference_scene.get("description") or "").strip()
+    kf_note = str((reference_keyframe or {}).get("description") or "").strip()
+    if kf_note:
+        if ref_visual and kf_note.casefold() not in ref_visual.casefold():
+            ref_visual = f"{ref_visual}. Keyframe: {kf_note}"
+        elif not ref_visual:
+            ref_visual = kf_note
+    if ref_visual:
+        parts.append(ref_visual)
+
+    for asset in scene.get("required_assets") or []:
+        if not isinstance(asset, dict):
+            continue
+        asset_desc = str(asset.get("description") or "").strip()
+        if asset_desc:
+            parts.append(asset_desc)
+
+    overlay = str(scene.get("overlay_notes") or "").strip()
+    if overlay:
+        parts.append(f'On-screen text: "{overlay}"')
+
+    shot = build_shot_prompt(scene, style_context).strip()
+    if shot:
+        parts.append(shot)
+
+    framing = str(scene.get("framing") or "").strip()
+    movement = str(scene.get("movement") or "").strip()
+    if framing:
+        parts.append(framing)
+    if movement:
+        parts.append(movement)
+
+    return _dedupe_prompt_parts(parts)

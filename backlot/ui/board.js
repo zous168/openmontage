@@ -31,6 +31,7 @@ let selectedEditCutIndex = 0;
 let selectedEditNode = { track: "cut", index: 0 };
 let editPlayheadSeconds = 0;
 let editPreviewPlaying = false;
+let editNarrationPlaying = false;
 let editPreviewRafId = null;
 let editNleRuntime = null;
 let editPreviewLastCutKey = null;
@@ -209,6 +210,7 @@ function toggleDrawer(stageName) {
     selectedEditNode = { track: "cut", index: 0 };
     editPlayheadSeconds = 0;
     editPreviewPlaying = false;
+    editNarrationPlaying = false;
     stopEditPreviewClock();
   }
   selectedStage = selectedStage === stageName ? null : stageName;
@@ -221,6 +223,7 @@ function selectEditNode(track, index, startAt, { keepPlaying = false } = {}) {
   if (startAt != null) editPlayheadSeconds = startAt;
   if (!keepPlaying) {
     editPreviewPlaying = false;
+    editNarrationPlaying = false;
     stopEditPreviewClock();
     ensureEditPreviewAudio().pause();
   }
@@ -247,14 +250,13 @@ function ensureEditPreviewAudio() {
     editPreviewAudio.className = "edit-nle-preview-audio";
     editPreviewAudio.preload = "metadata";
     document.body.append(editPreviewAudio);
-    editPreviewAudio.addEventListener("timeupdate", () => {
-      if (!editPreviewPlaying || !editNleRuntime) return;
-      editPlayheadSeconds = Math.min(editPreviewAudio.currentTime, editNleRuntime.totalSeconds);
-      syncEditPlayheadUI();
-    });
     editPreviewAudio.addEventListener("ended", () => {
-      editPreviewPlaying = false;
-      stopEditPreviewClock();
+      if (editNarrationPlaying) {
+        editNarrationPlaying = false;
+      } else if (editPreviewPlaying) {
+        editPreviewPlaying = false;
+        stopEditPreviewClock();
+      }
       syncEditPlayheadUI(true);
     });
   }
@@ -388,16 +390,23 @@ function syncEditPlayheadUI(refreshTransport = false) {
   const playhead = document.querySelector(".edit-nle-editor .nle-playhead");
   if (playhead) playhead.style.left = `${pct}%`;
   const timeText = `${fmtTimelineClock(editPlayheadSeconds)} / ${fmtTimelineClock(totalSeconds)}`;
-  document.querySelectorAll(".edit-nle-editor .edit-nle-transport-time").forEach((timeEl) => {
+  document.querySelectorAll(".edit-decisions-inline .edit-nle-transport-time").forEach((timeEl) => {
     timeEl.textContent = timeText;
   });
   if (refreshTransport) {
-    const playTitle = editPreviewPlaying ? t("editPreviewPause") : t("editPreviewPlay");
-    document.querySelectorAll(".edit-nle-editor .nle-play-btn").forEach((btn) => {
+    const playTitle = editPreviewPlaying ? t("editPreviewPause") : t("editPreviewPlayTimeline");
+    document.querySelectorAll(".edit-decisions-inline .nle-play-btn").forEach((btn) => {
       btn.classList.toggle("is-playing", editPreviewPlaying);
       btn.innerHTML = editPreviewPlaying ? NLE_TRANSPORT_SVG.pause : NLE_TRANSPORT_SVG.play;
       btn.title = playTitle;
       btn.setAttribute("aria-label", playTitle);
+    });
+    const narrTitle = editNarrationPlaying ? t("editNarrationPause") : t("editNarrationPlay");
+    document.querySelectorAll(".edit-decisions-inline .nle-block-play-btn--narr").forEach((btn) => {
+      btn.classList.toggle("is-playing", editNarrationPlaying);
+      btn.innerHTML = editNarrationPlaying ? NLE_TRANSPORT_SVG.pause : NLE_TRANSPORT_SVG.play;
+      btn.title = narrTitle;
+      btn.setAttribute("aria-label", narrTitle);
     });
   }
   const active = cutAtPlayhead(clipMeta, editPlayheadSeconds)
@@ -438,21 +447,77 @@ function startEditPreviewClock(totalSeconds) {
   editPreviewRafId = requestAnimationFrame(tick);
 }
 
+function resetEditNarrationPlaybackState() {
+  editNarrationPlaying = false;
+}
+
+function pauseEditNarrationPlayback() {
+  resetEditNarrationPlaybackState();
+  if (!editPreviewPlaying) ensureEditPreviewAudio().pause();
+  syncEditPlayheadUI(true);
+}
+
 function pauseEditPreviewPlayback() {
   editPreviewPlaying = false;
+  resetEditNarrationPlaybackState();
   stopEditPreviewClock();
   ensureEditPreviewAudio().pause();
   syncEditPlayheadUI(true);
 }
 
-function startEditPreviewPlayback(totalSeconds) {
-  editPreviewPlaying = true;
+/** Play narration audio only — does not drive timeline playhead or video preview. */
+function startEditNarrationPlayback() {
+  pauseEditPreviewPlayback();
+  editNarrationPlaying = true;
   const audioEl = ensureEditPreviewAudio();
-  const narrSrc = editNleRuntime?.artifact?.audio?.narration?.src;
+  const narrSrc = resolveNarrationSrc(editNleRuntime?.s, editNleRuntime?.artifact);
   if (narrSrc && editNleRuntime?.s) {
     audioEl.src = mediaURL(editNleRuntime.s.project_id, narrSrc);
     audioEl.currentTime = editPlayheadSeconds;
-    audioEl.play().catch(() => startEditPreviewClock(totalSeconds));
+    audioEl.play().catch(() => {
+      editNarrationPlaying = false;
+      syncEditPlayheadUI(true);
+    });
+  } else {
+    editNarrationPlaying = false;
+  }
+  syncEditPlayheadUI(true);
+}
+
+function toggleEditNarrationPlayback() {
+  if (editNarrationPlaying) pauseEditNarrationPlayback();
+  else startEditNarrationPlayback();
+}
+
+/** Drive playhead + preview from narration while timeline transport is playing. */
+function startEditPreviewAudioSyncLoop(totalSeconds, audioEl) {
+  stopEditPreviewClock();
+  const tick = () => {
+    if (!editPreviewPlaying) return;
+    if (audioEl && !audioEl.paused && !audioEl.ended) {
+      editPlayheadSeconds = Math.min(audioEl.currentTime, totalSeconds);
+      if (editPlayheadSeconds >= totalSeconds - 0.02) {
+        pauseEditPreviewPlayback();
+        return;
+      }
+      syncEditPlayheadUI();
+    }
+    editPreviewRafId = requestAnimationFrame(tick);
+  };
+  editPreviewRafId = requestAnimationFrame(tick);
+}
+
+function startEditPreviewPlayback(totalSeconds) {
+  resetEditNarrationPlaybackState();
+  editPreviewPlaying = true;
+  const audioEl = ensureEditPreviewAudio();
+  const narrSrc = resolveNarrationSrc(editNleRuntime?.s, editNleRuntime?.artifact);
+  if (narrSrc && editNleRuntime?.s) {
+    audioEl.src = mediaURL(editNleRuntime.s.project_id, narrSrc);
+    audioEl.currentTime = editPlayheadSeconds;
+    audioEl.play()
+      .then(() => startEditPreviewAudioSyncLoop(totalSeconds, audioEl))
+      .catch(() => startEditPreviewClock(totalSeconds));
   } else {
     startEditPreviewClock(totalSeconds);
   }
@@ -511,8 +576,8 @@ function renderNleMonitorPlayButton(totalSeconds) {
   const btn = el("button", {
     type: "button",
     class: `nle-transport-btn nle-transport-btn--play nle-play-btn${playing ? " is-playing" : ""}`,
-    title: playing ? t("editPreviewPause") : t("editPreviewPlay"),
-    "aria-label": playing ? t("editPreviewPause") : t("editPreviewPlay"),
+    title: playing ? t("editPreviewPause") : t("editPreviewPlayTimeline"),
+    "aria-label": playing ? t("editPreviewPause") : t("editPreviewPlayTimeline"),
     onclick: (event) => {
       event.stopPropagation();
       toggleEditPreviewPlay(totalSeconds);
@@ -524,7 +589,7 @@ function renderNleMonitorPlayButton(totalSeconds) {
 
 function renderEditNleTransportBar(clipMeta, totalSeconds) {
   const step = 1;
-  const controls = el("div", { class: "nle-transport-group", role: "group", "aria-label": t("editPreviewPlay") },
+  const controls = el("div", { class: "nle-transport-group", role: "group", "aria-label": t("editPreviewPlayTimeline") },
     nleTransportButton("nle-transport-btn--jump", t("editTransportStart"), NLE_TRANSPORT_SVG.toStart,
       () => seekEditPlayhead(0, totalSeconds)),
     nleTransportButton("nle-transport-btn--step", t("editTransportBack"), NLE_TRANSPORT_SVG.stepBack,
@@ -552,30 +617,6 @@ function renderEditNleTransportBar(clipMeta, totalSeconds) {
     ].join(" · ")));
   }
   return bar;
-}
-
-function playSelectedEditAudio(totalSeconds) {
-  if (!editNleRuntime?.artifact?.audio?.narration?.src) return;
-  startEditPreviewPlayback(totalSeconds);
-}
-
-function renderNleAudioPlayButton(totalSeconds, node = null) {
-  const btn = el("button", {
-    type: "button",
-    class: `nle-block-play-btn nle-play-btn${editPreviewPlaying ? " is-playing" : ""}`,
-    title: editPreviewPlaying ? t("editPreviewPause") : t("editPreviewPlay"),
-    "aria-label": editPreviewPlaying ? t("editPreviewPause") : t("editPreviewPlay"),
-    onclick: (event) => {
-      event.stopPropagation();
-      if (node) {
-        selectedEditNode = { track: node.track, index: node.index };
-        editPreviewLastCutKey = null;
-      }
-      toggleEditPreviewPlay(totalSeconds);
-    },
-  });
-  btn.innerHTML = editPreviewPlaying ? NLE_TRANSPORT_SVG.pause : NLE_TRANSPORT_SVG.play;
-  return btn;
 }
 
 function cutAtPlayhead(clipMeta, seconds) {
@@ -633,7 +674,7 @@ function renderEditPreviewPanel(s, artifact, clipMeta, captionTracks, totalSecon
     stageChildren.push(el("div", { class: "edit-nle-preview-overlay" }, overlayLabel));
   }
 
-  const narrSrc = artifact.audio?.narration?.src;
+  const narrSrc = resolveNarrationSrc(s, artifact);
   const audioEl = ensureEditPreviewAudio();
   if (narrSrc) {
     audioEl.src = mediaURL(s.project_id, narrSrc);
@@ -1057,12 +1098,22 @@ function buildAssetTilePreview(s, asset) {
     return el("div", { class: "asset-manifest-spec" },
       asset.generation_summary || asset.prompt || path || t("summaryMediaFileHint"));
   }
-  return buildMediaPreview(s, {
+  const preview = buildMediaPreview(s, {
     path: asset.path,
     type: asset.type,
     exists: asset.exists !== false,
     renderable: asset.renderable ?? (isImageMedia(asset) || isVideoMedia(asset)),
   }, { variant: "compact" });
+  const prompt = asset.prompt || asset.generation_summary;
+  if (prompt) {
+    return el("div", { class: "asset-manifest-preview-stack" },
+      preview,
+      el("div", {
+        class: "asset-manifest-prompt",
+        title: prompt,
+      }, prompt));
+  }
+  return preview;
 }
 
 function assetManifestTile(s, asset) {
@@ -1123,6 +1174,21 @@ function findManifestAsset(s, source) {
   return null;
 }
 
+/** Resolve narration file path from edit_decisions (src or segment asset_id → manifest). */
+function resolveNarrationSrc(s, artifact) {
+  const narration = artifact?.audio?.narration;
+  if (!narration) return null;
+  if (narration.src) return narration.src;
+  for (const seg of narration.segments || []) {
+    if (seg.src) return seg.src;
+    if (seg.asset_id) {
+      const asset = findManifestAsset(s, seg.asset_id);
+      if (asset?.path) return asset.path;
+    }
+  }
+  return null;
+}
+
 function editUsesAbsoluteTimeline(artifact) {
   const rt = artifact?.render_runtime || "ffmpeg";
   return rt === "remotion" || rt === "hyperframes";
@@ -1164,16 +1230,34 @@ function cutSequenceName(cut) {
   return cut?.id || file || "cut";
 }
 
-function cutMediaChild(cut) {
+function cutDisplayReason(s, cut) {
+  if (cut?.reason) return cut.reason;
   const source = String(cut?.source || "");
-  const base = source.split("/").pop() || source;
+  const scenes = s?.artifacts?.scene_plan?.scenes || [];
+  const scene = scenes.find(
+    (sc) => source === sc.id || source === `img_${sc.id}` || source.includes(sc.id),
+  );
+  if (!scene) return "";
+  const sections = s?.artifacts?.script?.sections || [];
+  const sec = sections.find((item) => item.id === scene.script_section_id);
+  if (sec?.label) return `${scene.id} · ${sec.label}`;
+  return scene.id || "";
+}
+
+function cutMediaChild(cut, s = null) {
+  let source = String(cut?.source || "");
+  const asset = s ? findManifestAsset(s, source) : null;
+  if (asset?.path) source = asset.path;
+  const base = source.split("/").pop() || source.split("\\").pop() || source;
   if (!base) return null;
   const ext = base.includes(".") ? base.split(".").pop().toLowerCase() : "";
-  if (["jpg", "jpeg", "png", "webp", "gif"].includes(ext)) {
-    return { track: "media", kind: "image", label: `<Img> ${base}`, data: cut };
+  const imageExt = ["jpg", "jpeg", "png", "webp", "gif"];
+  const videoExt = ["mp4", "webm", "mov", "m4v"];
+  if (asset?.type === "image" || imageExt.includes(ext)) {
+    return { track: "media", kind: "image", label: `<Img> ${base}`, data: cut, asset };
   }
-  if (["mp4", "webm", "mov", "m4v"].includes(ext)) {
-    return { track: "media", kind: "video", label: `<Video> ${base}`, data: cut };
+  if (asset?.type === "video" || videoExt.includes(ext)) {
+    return { track: "media", kind: "video", label: `<Video> ${base}`, data: cut, asset };
   }
   return null;
 }
@@ -1226,11 +1310,14 @@ function buildCompositionTimeline(artifact, s) {
   const clipMeta = buildEditClipMeta(props.cuts, artifact);
   const durationSeconds = compositionDurationSeconds(artifact, clipMeta);
   const absolute = editUsesAbsoluteTimeline(artifact);
+  const scriptSections = s?.artifacts?.script?.sections || [];
 
   const overlayNodes = (props.overlays || [])
     .map((overlay, index) => {
       const { start, end, duration } = overlayTiming(overlay);
       if (duration <= 0) return null;
+      const fullText = overlaySequenceName(overlay, index);
+      const shortLabel = overlayNodeLabel(overlay, clipMeta, scriptSections) || fullText;
       return {
         track: "overlay",
         index,
@@ -1238,7 +1325,8 @@ function buildCompositionTimeline(artifact, s) {
         start,
         end,
         duration,
-        label: overlaySequenceName(overlay, index),
+        label: shortLabel,
+        preview: fullText,
         data: overlay,
       };
     })
@@ -1251,10 +1339,12 @@ function buildCompositionTimeline(artifact, s) {
     layer: 1,
     kind: "sequence",
     nodes: clipMeta.map(({ cut, index, start, duration }) => {
-      const child = cutMediaChild(cut);
+      const child = cutMediaChild(cut, s);
       const children = child
         ? [{ ...child, index: 0, start, end: start + duration, duration }]
         : [];
+      const reason = cutDisplayReason(s, cut);
+      const displayCut = reason && !cut.reason ? { ...cut, reason } : cut;
       return {
         track: "cut",
         index,
@@ -1262,8 +1352,8 @@ function buildCompositionTimeline(artifact, s) {
         start,
         end: start + duration,
         duration,
-        label: cutSequenceName(cut),
-        reason: cut.reason,
+        label: cutSequenceName(displayCut),
+        reason: reason || cut.reason,
         data: cut,
         children,
       };
@@ -1280,15 +1370,15 @@ function buildCompositionTimeline(artifact, s) {
   }
 
   const remotionCaptions = props.captions || [];
-  if (absolute && remotionCaptions.length && remotionCaptions[0]?.startMs != null) {
-    const captionPages = buildCaptionPages(remotionCaptions, 6);
+  if (absolute && remotionCaptions.length && remotionCaptions[0]?.startMs != null && !overlayNodes.length) {
+    const captionPages = buildCaptionPages(remotionCaptions, 1);
     const captionNodes = captionPages
       .map((page, pageIndex) => {
         const { start, end, duration } = captionPageTiming(
           page, captionPages, pageIndex, durationSeconds,
         );
         if (duration <= 0) return null;
-        const preview = page.preview || "";
+        const preview = page.preview || page.words?.map((w) => w.word || "").join("") || "";
         return {
           track: "caption",
           index: pageIndex,
@@ -1296,7 +1386,7 @@ function buildCompositionTimeline(artifact, s) {
           start,
           end,
           duration,
-          label: "caption",
+          label: shortText(preview, 16) || "caption",
           preview,
           data: page,
         };
@@ -1346,7 +1436,11 @@ function buildCompositionTimeline(artifact, s) {
       const cutIdx = layers.findIndex((layer) => layer.id === "cuts");
       layers.splice(cutIdx, 0, summaryLayer, detailLayer);
     }
-  } else if (remotionCaptions.length) {
+  } else if (
+    remotionCaptions.length
+    && !overlayNodes.length
+    && remotionCaptions[0]?.startMs == null
+  ) {
     const starts = remotionCaptions.map((cap) => Number(cap.start) || 0);
     const ends = remotionCaptions.map((cap) => Number(cap.end) || 0);
     const capStart = Math.min(...starts);
@@ -1581,6 +1675,22 @@ function nleTrackTypeIcon(type) {
   return node;
 }
 
+function nleNarrationBlockPlayButton() {
+  const playing = editNarrationPlaying;
+  const btn = el("button", {
+    type: "button",
+    class: `nle-block-play-btn nle-block-play-btn--narr${playing ? " is-playing" : ""}`,
+    title: playing ? t("editNarrationPause") : t("editNarrationPlay"),
+    "aria-label": playing ? t("editNarrationPause") : t("editNarrationPlay"),
+    onclick: (event) => {
+      event.stopPropagation();
+      toggleEditNarrationPlayback();
+    },
+  });
+  btn.innerHTML = playing ? NLE_TRANSPORT_SVG.pause : NLE_TRANSPORT_SVG.play;
+  return btn;
+}
+
 function nleTrackControlsPro({
   trackType,
   label = "",
@@ -1793,6 +1903,7 @@ function seekEditPlayhead(seconds, totalSeconds, { keepPlaying = false } = {}) {
     if (audioEl.src) audioEl.currentTime = editPlayheadSeconds;
   } else {
     editPreviewPlaying = false;
+    editNarrationPlaying = false;
     stopEditPreviewClock();
     audioEl.pause();
   }
@@ -1831,6 +1942,7 @@ function makeNleBlockClickHandler(node, totalSeconds, { playOnClick = false } = 
       startEditPreviewPlayback(totalSeconds);
     } else {
       editPreviewPlaying = false;
+      editNarrationPlaying = false;
       stopEditPreviewClock();
       ensureEditPreviewAudio().pause();
       render();
@@ -1885,6 +1997,17 @@ function expandLayersForStaircase(layers, absolute) {
       }
       continue;
     }
+    if (layer.kind === "script-caption") {
+      for (const node of layer.nodes) {
+        expanded.push({
+          ...layer,
+          id: `${layer.id}-${node.index}`,
+          nodes: [node],
+          trackLabel: node.label,
+        });
+      }
+      continue;
+    }
     expanded.push(layer);
   }
   return expanded;
@@ -1930,8 +2053,11 @@ function renderNleTimelineNode(s, composition, layer, node, totalSeconds) {
       compact,
       onClick,
     });
-    if (compact && cut.reason) {
-      block.append(el("span", { class: "nle-block-reason" }, cut.reason));
+    if (compact) {
+      const badge = cut.reason || cutDisplayReason(s, cut) || node.reason || node.label;
+      if (badge) {
+        block.append(el("span", { class: "nle-block-reason" }, badge));
+      }
     } else if (!compact) {
       block.append(
         nleFilmstrip(s, asset, node.duration),
@@ -1958,23 +2084,25 @@ function renderNleTimelineNode(s, composition, layer, node, totalSeconds) {
 
   if (layer.kind === "overlay") {
     return attachPlayback(nleTimelineBlock({
-      className: `nle-block--overlay${layer.overlayRow ? " nle-block--overlay-row" : ""}${selected ? " is-selected" : ""}`,
+      className: `nle-block--overlay nle-block--overlay-stair${layer.overlayRow ? " nle-block--overlay-row" : ""}${selected ? " is-selected" : ""}`,
       start: node.start,
       duration: node.duration,
       total: totalSeconds,
-      title: node.label,
+      title: node.preview || node.label,
+      wrap: true,
       onClick,
     }));
   }
 
   if (layer.kind === "caption") {
-    const blockTitle = node.preview || node.data?.preview || "";
+    const blockTitle = node.preview || node.data?.preview || node.label || "";
     return attachPlayback(nleTimelineBlock({
       className: `nle-block--caption-summary${layer.captionRow ? " nle-block--caption-row" : ""}${selected ? " is-selected" : ""}`,
       start: node.start,
       duration: node.duration,
       total: totalSeconds,
       title: blockTitle,
+      wrap: true,
       onClick,
     }));
   }
@@ -1994,6 +2122,7 @@ function renderNleTimelineNode(s, composition, layer, node, totalSeconds) {
 
   if (layer.kind === "audio") {
     const isNarr = node.track === "narr";
+    const onClick = makeNleBlockClickHandler(node, totalSeconds);
     const block = nleTimelineBlock({
       className: `nle-block--audio${node.track === "music" ? " nle-block--music" : ""}${node.track === "sfx" ? " nle-block--sfx" : ""}${selected ? " is-selected" : ""}`,
       start: node.start,
@@ -2001,19 +2130,19 @@ function renderNleTimelineNode(s, composition, layer, node, totalSeconds) {
       total: totalSeconds,
       title: isNarr ? "" : node.label,
       compact: isNarr,
-      onClick: makeNleBlockClickHandler(node, totalSeconds, { playOnClick: isNarr }),
+      onClick: isNarr ? undefined : onClick,
     });
     const wave = nleWaveformEl(`${node.id}-${node.start}`, "audio");
     if (isNarr) {
       block.classList.add("nle-block--audio-narr");
-      const inner = el("div", { class: "nle-block-audio-inner" });
-      while (block.firstChild) inner.appendChild(block.firstChild);
+      const inner = el("div", { class: "nle-block-audio-inner nle-block--clickable" });
+      inner.addEventListener("click", onClick);
       inner.append(wave);
-      block.append(renderNleAudioPlayButton(totalSeconds, node), inner);
+      block.append(nleNarrationBlockPlayButton(), inner);
     } else {
       block.append(wave);
     }
-    return attachPlayback(block);
+    return block;
   }
 
   return null;
@@ -2039,7 +2168,7 @@ function renderNleTimeline(s, artifact, composition) {
       setEditPlayheadFromPointer(event, laneEl, totalSeconds);
     });
     laneEl.addEventListener("dblclick", (event) => {
-      if (event.target.closest(".nle-block--clickable")) return;
+      if (event.target.closest(".nle-block--clickable, .nle-block-play-btn")) return;
       seekAndPlayFromPointer(event, laneEl, totalSeconds);
     });
   };
@@ -2221,21 +2350,101 @@ function renderOutputTile(s, output, index) {
   );
 }
 
-function renderFinalReviewBody(s, artifact) {
-  const media = resolveMediaRef(s, { output_path: artifact.output_path, type: "video" });
-  const issues = artifact.issues_found || [];
-  const statusClass = artifact.status === "pass" ? "ok" : artifact.status === "fail" ? "crit" : "";
-  return el("div", { class: "final-review-inline" },
+function humanizeReviewStatus(status) {
+  const map = {
+    pass: t("finalReviewStatusPass"),
+    revise: t("finalReviewStatusRevise"),
+    fail: t("finalReviewStatusFail"),
+  };
+  return map[status] || status || "—";
+}
+
+function humanizeRecommendedAction(action) {
+  const map = {
+    present_to_user: t("finalReviewActionPresent"),
+    re_render: t("finalReviewActionRerender"),
+    revise_edit: t("finalReviewActionReviseEdit"),
+    revise_assets: t("finalReviewActionReviseAssets"),
+    block: t("finalReviewActionBlock"),
+    re_author: t("finalReviewActionReAuthor"),
+  };
+  return map[action] || action || "—";
+}
+
+function finalReviewCheckFacts(checks) {
+  if (!checks || typeof checks !== "object") return [];
+  const facts = [];
+  const tech = checks.technical_probe;
+  if (tech?.resolution) facts.push(reviewFact(t("finalReviewCheckResolution"), tech.resolution));
+  if (tech?.has_audio != null) {
+    facts.push(reviewFact(
+      t("finalReviewCheckAudio"),
+      tech.has_audio ? t("finalReviewYes") : t("finalReviewNo"),
+    ));
+  }
+  const visual = checks.visual_spotcheck;
+  if (visual?.black_frames_detected) {
+    facts.push(reviewFact(t("finalReviewCheckBlackFrames"), t("finalReviewDetected")));
+  }
+  const subtitle = checks.subtitle_check;
+  if (subtitle?.subtitles_expected) {
+    facts.push(reviewFact(
+      t("finalReviewCheckSubtitles"),
+      subtitle.subtitles_present ? t("finalReviewYes") : t("finalReviewNo"),
+    ));
+  }
+  return facts.filter(Boolean);
+}
+
+function renderFinalReviewReport(finalReview) {
+  if (!finalReview) return null;
+  const issues = finalReview.issues_found || [];
+  const statusClass = finalReview.status === "pass" ? "ok" : finalReview.status === "fail" ? "crit" : "";
+  return el("section", { class: "compose-review-report" },
+    el("div", { class: "drawer-section-label" }, t("finalReviewTitle")),
     reviewFacts([
-      reviewFact(t("reviewStatus"), artifact.status || "—"),
-      reviewFact(t("recommendedAction"), artifact.recommended_action || "—"),
+      reviewFact(t("reviewStatus"), humanizeReviewStatus(finalReview.status)),
+      reviewFact(t("recommendedAction"), humanizeRecommendedAction(finalReview.recommended_action)),
       reviewFact(t("reviewIssues"), issues.length ? `${issues.length} ${t("reviewIssueUnit")}` : t("none")),
+      ...finalReviewCheckFacts(finalReview.checks),
     ]),
-    media.path ? el("div", { class: "final-review-player" }, buildMediaPreview(s, media, { variant: "full" })) : null,
     issues.length
       ? el("ul", { class: "approval-items final-review-issues" },
         issues.map((issue) => el("li", { class: statusClass }, shortText(issue, 320))))
       : null,
+  );
+}
+
+function renderComposeReviewBody(s, renderReport, finalReview) {
+  const outputs = renderReport?.outputs || [];
+  const warnings = [
+    ...(renderReport?.warnings || []),
+    ...(renderReport?.verification_notes || []),
+  ];
+  const nodes = [];
+  if (outputs.length) {
+    nodes.push(el("div", { class: "render-report-inline" },
+      ...outputs.map((output, index) => renderOutputTile(s, output, index)),
+    ));
+  }
+  const report = renderFinalReviewReport(finalReview);
+  if (report) nodes.push(report);
+  if (warnings.length) {
+    nodes.push(
+      el("section", { class: "compose-review-warnings" },
+        el("div", { class: "drawer-section-label" }, t("finalReviewRenderWarnings")),
+        el("ul", { class: "approval-items" },
+          warnings.map((note) => el("li", {}, shortText(note, 320))),
+        ),
+      ),
+    );
+  }
+  return el("div", { class: "compose-review-inline" }, ...nodes);
+}
+
+function renderFinalReviewBody(s, artifact) {
+  return el("div", { class: "final-review-inline" },
+    renderFinalReviewReport(artifact),
   );
 }
 
@@ -2763,10 +2972,11 @@ function artifactReviewContent(name, artifact, s) {
   }
   if (name === "render_report") {
     const outputs = artifact.outputs || [];
+    const duration = outputs[0]?.duration_seconds ?? artifact.duration_seconds;
     return [
       reviewFacts([
         reviewFact(t("outputs"), outputs.length),
-        reviewFact(t("duration"), artifact.duration_seconds != null ? fmtDuration(artifact.duration_seconds) : null),
+        reviewFact(t("duration"), duration != null ? fmtDuration(duration) : null),
       ]),
       renderRenderReportBody(s, artifact),
     ].filter(Boolean);
@@ -2829,14 +3039,38 @@ function renderApprovalReview(s) {
   const review = awaiting.review || {};
   const reviewSummary = reviewSummaryText(review);
 
-  const artifacts = entries.map(([name, artifact]) => el("article", {
-    class: "approval-artifact",
-    "data-artifact": name,
-  },
-    el("div", { class: "approval-artifact-kicker" }, humanize(name)),
-    el("h2", {}, artifactReviewTitle(name, artifact, s)),
-    ...artifactReviewContent(name, artifact, s),
-  ));
+  let artifacts;
+  if (awaiting.name === "compose") {
+    const renderReport = s.artifacts.render_report;
+    const finalReview = s.artifacts.final_review;
+    if (renderReport || finalReview) {
+      const outputs = renderReport?.outputs || [];
+      const duration = outputs[0]?.duration_seconds;
+      artifacts = [el("article", {
+        class: "approval-artifact approval-artifact--compose",
+        "data-artifact": "compose_result",
+      },
+        el("div", { class: "approval-artifact-kicker" }, t("composeResultKicker")),
+        el("h2", {}, t("composeResultTitle")),
+        reviewFacts([
+          reviewFact(t("outputs"), outputs.length || null),
+          reviewFact(t("duration"), duration != null ? fmtDuration(duration) : null),
+        ]),
+        renderComposeReviewBody(s, renderReport, finalReview),
+      )];
+    } else {
+      artifacts = [];
+    }
+  } else {
+    artifacts = entries.map(([name, artifact]) => el("article", {
+      class: "approval-artifact",
+      "data-artifact": name,
+    },
+      el("div", { class: "approval-artifact-kicker" }, humanize(name)),
+      el("h2", {}, artifactReviewTitle(name, artifact, s)),
+      ...artifactReviewContent(name, artifact, s),
+    ));
+  }
 
   if (!artifacts.length) {
     artifacts.push(el("div", { class: "approval-missing", role: "alert" },
@@ -2909,10 +3143,44 @@ function openNarrModal(card) {
   modal.classList.add("open");
 }
 
+function sceneGenerationPrompt(card) {
+  const visual = card.visual;
+  if (visual?.prompt) return String(visual.prompt).trim();
+  for (let i = (card.takes || []).length - 1; i >= 0; i--) {
+    const take = card.takes[i];
+    if (take?.prompt) return String(take.prompt).trim();
+  }
+  if (card.planned_prompt) return String(card.planned_prompt).trim();
+  if (visual?.generation_summary) return String(visual.generation_summary).trim();
+  for (let i = (card.takes || []).length - 1; i >= 0; i--) {
+    const take = card.takes[i];
+    if (take?.generation_summary) return String(take.generation_summary).trim();
+  }
+  return "";
+}
+
+function openScenePromptModal(card, promptText) {
+  const prompt = String(promptText || sceneGenerationPrompt(card)).trim();
+  if (!prompt) return;
+  modal.innerHTML = "";
+  const meta = [sceneLabel(card.id), card.section_label, fmtDuration(card.duration_seconds)]
+    .filter(Boolean).join(" · ");
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
+    el("div", { class: "modal-page" },
+      el("div", { class: "script-card", style: "cursor:default" },
+        el("div", { class: "sp-meta" }, meta),
+        el("div", { class: "scene-prompt-body" }, prompt),
+      )),
+  );
+  modal.classList.add("open");
+}
+
 function openSceneVideoModal(s, card, visual) {
   modal.innerHTML = "";
   const meta = [sceneLabel(card.id), card.section_label, fmtDuration(card.duration_seconds)]
     .filter(Boolean).join(" · ");
+  const prompt = sceneGenerationPrompt(card);
   modal.append(
     el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
     el("div", { class: "modal-page modal-page-viewer" },
@@ -2926,12 +3194,46 @@ function openSceneVideoModal(s, card, visual) {
           preload: "auto",
           playsinline: "",
         }),
+        prompt
+          ? el("div", { class: "scene-prompt-body", style: "margin:12px 0 0;padding:0 4px" }, prompt)
+          : null,
         visual.path ? el("code", { class: "doc-viewer-path doc-viewer-path--head" }, visual.path) : null,
       ),
     ),
   );
   modal.classList.add("open");
   modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function openSceneImageModal(s, card, visual) {
+  modal.innerHTML = "";
+  const meta = [sceneLabel(card.id), card.section_label, fmtDuration(card.duration_seconds)]
+    .filter(Boolean).join(" · ");
+  const prompt = sceneGenerationPrompt(card);
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
+    el("div", { class: "modal-page modal-page-viewer" },
+      el("div", { class: "scene-video-modal" },
+        el("div", { class: "scene-video-meta" }, meta),
+        el("img", {
+          class: "scene-video-full",
+          src: mediaURL(s.project_id, visual.path),
+          alt: "",
+          style: "object-fit:contain;max-height:70vh;width:100%",
+        }),
+        prompt
+          ? el("div", { class: "scene-prompt-body", style: "margin:12px 0 0;padding:0 4px" }, prompt)
+          : null,
+        visual.path ? el("code", { class: "doc-viewer-path doc-viewer-path--head" }, visual.path) : null,
+      ),
+    ),
+  );
+  modal.classList.add("open");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
 }
@@ -3248,6 +3550,9 @@ function sceneCard(s, card) {
       };
       thumb = el("div", { class: "thumb approved" }, img,
         v.snapshot ? el("span", { class: "badge" }, "snapshot") : (badge ? el("span", { class: "badge" }, badge) : null));
+      thumb.style.cursor = "pointer";
+      thumb.title = t("clickReadPrompt");
+      thumb.onclick = () => openSceneImageModal(s, card, v);
     }
   } else if (card.type === "animation") {
     // Bespoke/atelier scene with no snapshot yet — name it as such rather
@@ -3317,6 +3622,22 @@ function sceneCard(s, card) {
   } else if (card.shot_intent || card.description) {
     wrap.append(el("div", { class: "narr tc-note" }, (card.shot_intent || card.description || "").slice(0, 110)));
   }
+
+  const prompt = sceneGenerationPrompt(card);
+  if (prompt) {
+    const longPrompt = prompt.length > 90;
+    wrap.append(el("div", {
+      class: `sc-prompt${longPrompt ? " clip" : ""}`,
+      title: t("clickReadPrompt"),
+      onclick: (e) => {
+        e.stopPropagation();
+        openScenePromptModal(card, prompt);
+      },
+    },
+      prompt,
+      longPrompt ? el("span", { class: "narr-more" }, "⤢") : null));
+  }
+
   const narrAudio = card.audio.find((a) => a.exists && (a.type === "narration" || a.type === "audio"));
   if (narrAudio) {
     const wave = el("div", { class: "wave", style: "cursor:pointer", title: t("playNarration") });
