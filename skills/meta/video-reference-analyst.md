@@ -60,6 +60,11 @@ This video uses [AI-generated video clips / still images with pan-zoom / a mix].
 **What makes it work:** [2-3 specific things — the hook technique, the pacing,
 the visual transitions, the narration style]
 
+**Fidelity notes:** [DNA lock excerpt — subject + scene anchors in one line]
+[Temporal density — real-time vs compressed feel; dead-frame risk if any]
+[Audio — lip-sync/dialogue present? micro-acoustics worth cloning?]
+[Segments — N × 13s generation prompts written to brief]
+
 Now let me check what I can do with your current setup..."
 ```
 
@@ -91,6 +96,175 @@ enrich the VideoAnalysisBrief with:
 Update the brief's `content_analysis`, `style_profile`, and `replication_guidance`
 fields with your visual observations. This is where the analysis becomes truly
 comprehensive — the tools provide structure; your vision provides understanding.
+
+### High-Fidelity Reverse-Engineering Standards (MANDATORY for vision enrichment)
+
+When examining keyframes and writing scene-level data, treat the reference as a
+**time-coded specification**, not a mood board. Downstream video-gen and
+scene-director stages consume your output as executable prompts. The goal is to
+prevent the three classic AI video failures: **time compression (fast-forward)**,
+**action freeze (dead frames)**, and **audio-visual desync**.
+
+**OpenMontage policy boundary:** High-fidelity reverse prompts describe *how the
+reference works* (structure, timing, craft). The user's *version* still needs
+creative differentiation in `replication_guidance.creative_differentiation_seeds`
+and proposals (Step 4) — do not skip differentiation unless the user explicitly
+requests a near-clone.
+
+#### A. Global DNA Lock (Character & Scene consistency)
+
+Extract once from the reference and store under
+`replication_guidance.playbook_customizations.dna_lock`:
+
+- **Subject DNA:** bone structure, skin tone, hair (length, texture, color),
+  wardrobe (material, color, fit, wear patterns), distinguishing marks
+- **Scene DNA:** core layout, anchor props, light direction, color temperature,
+  dominant palette, camera distance baseline
+- **Lighting DNA:** key/fill/rim direction, contrast, LUT/grade feel
+- **Control tokens (append to every segment prompt):**
+  `real-time physics, constant speed, no time-lapse, no dead frames,
+  maintain exact character and scene consistency`
+
+Segment 1 **establishes** the lock. Every later segment in the sidecar (see G)
+must open with `[INHERIT DNA LOCK]` and state continuity from the previous
+segment's last frame and audio tail — no re-describing subject/scene from scratch
+(prevents drift).
+
+#### B. Object Physical Anchoring
+
+For every handheld, worn, or table prop, record in scene descriptions:
+
+| Field | Example |
+|-------|---------|
+| Absolute size | `12cm ceramic cup` |
+| Screen share | `~8% of frame width` |
+| Material / reflectance | `matte black ceramic / glossy metal` |
+| Contact | `fingers wrap lower third of cup body` |
+| Shadow | `cast lower-left, ~45° from key light` |
+
+Never use generic nouns alone (`a cup`, `a phone`) when the reference shows a
+specific object — ambiguity causes cross-clip object drift.
+
+#### C. Temporal density — second-level action & micro-dynamics
+
+Break each shot into **second-bounded beats** with explicit duration:
+
+```
+[00:00-00:03] weight shifts left over 3s, chest rises/falls with breath,
+              fingers tap table once per second
+```
+
+**Anti-fast-forward:** every displacement gesture must carry `duration: Xs` and
+physics tokens (`real-time physics`, `constant velocity`, `no temporal compression`).
+
+**Anti-dead-frame:** in any still interval >0.5s, inject ≥1 micro-dynamic from:
+breathing (2–3mm chest rise), natural blink (0.2–0.4 Hz), finger micro-adjustment,
+fabric sway, light flicker, background foliage motion.
+
+Action count must match wall-clock seconds — do not compress multiple seconds of
+motion into one phrase.
+
+#### D. Post-production & compositing (PiP, stickers, transitions)
+
+List overlays as a **separate layer** in the Scene aspect — never merge into
+background description. Use normalized coordinates (origin top-left):
+
+```
+[00:05.0-00:09.5] PiP @ [75%, 70%, 20%, 25%] — rounded rect, 2px white stroke,
+light drop shadow, content: [describe], 0.5s fade in, 4.0s hold, 0.5s fade out
+```
+
+Mark cuts and transitions with frame-accurate timestamps:
+
+- Hard cut: `[Cut @ MM:SS:FF]`
+- Dissolve / wipe: `[Transition: CrossDissolve @ MM:SS:FF, duration: 1.0s]`
+
+Record edge treatment (radius px, border, shadow blur/offset) and blend mode when
+visible.
+
+#### E. Audio, micro-acoustics & lip-sync
+
+In `narration_transcript.segments`, align **verbatim** speech to timestamps.
+Add per-scene dialogue in `structure_analysis.scenes[].narration_text` and
+micro-acoustic notes at the end of `description` or in `on_screen_text` when
+the event is graphic-only:
+
+- Pre-speech inhale, lip smacks, swallow, breathy voice, fabric rustle
+- Room tone / RT60 / early reflections (`exact room impulse response` when strong)
+- Declare for dialogue shots: `lip-sync perfectly, viseme timing matches phonemes`
+
+Cross-segment audio must state: `audio seamlessly continues from previous segment,
+zero pitch/timbre discontinuity, identical noise floor`.
+
+#### F. Scene-centric analysis (no separate copy track)
+
+Everything observed in the reference lives under **`structure_analysis.scenes[]`**:
+
+| Field | What it records |
+|-------|-----------------|
+| `description` | Visual analysis + structured beats as prose |
+| `on_screen_text` | Burn-in subtitles, lower thirds, on-screen graphics (verbatim if visible) |
+| `narration_text` | Spoken dialogue/narration in this scene (empty if reference has none) |
+| `beats[]` | Optional second-level timed visual/motion actions (`start_seconds`, `end_seconds`, `kind`, `description`) |
+
+When ASR/Whisper produces spoken audio, also populate `narration_transcript` at brief root.
+
+**Do not** create `copy_track`, `copy`, or other production-side文案 layers — analysis vocabulary only.
+
+Optional shared AI video-gen defaults → brief root `generation` (`prompt_profile`, `delivery`, `environment`, …).
+
+**Reverse-engineered prompts (mandatory deliverable)** → brief root `generation_spec`:
+
+- Split reference duration into **13s segments** (per `反推视频提示词.md`; shorter refs = one segment).
+- Each segment MUST include `assembled_prompt` — the final provider-ready UGC six-block string.
+- Build with `lib.generation_spec.attach_generation_spec_to_brief()` before checkpointing
+  `reference_analysis`. Do not leave assembly to scene_plan only.
+
+Per-scene raw material still lives in `structure_analysis.scenes[].beats[]`; `generation_spec`
+is the **compiled 反推结果** downstream stages read first.
+
+#### G. Persist in VideoAnalysisBrief (schema-valid, consumed by pipeline)
+
+Use **existing** artifact fields — do not rely on orphan keys nothing reads.
+
+**DNA lock** → `replication_guidance.playbook_customizations.dna_lock`:
+
+```json
+"replication_guidance": {
+  "playbook_customizations": {
+    "dna_lock": {
+      "subject": "...",
+      "scene": "...",
+      "lighting": "...",
+      "control_tokens": "real-time physics, constant speed, ..."
+    }
+  }
+}
+```
+
+**Per-scene reverse spec** → enrich each `structure_analysis.scenes[]` entry:
+
+| Field | Content |
+|-------|---------|
+| `description` | Full 5-aspect + second-level beats as structured prose |
+| `on_screen_text` | Visible on-screen text in this scene |
+| `narration_text` | Spoken content in this scene |
+| `beats[]` | Timed visual/motion micro-actions |
+| `shot_language` | Lens, movement, lighting, DoF |
+| `motion_type` | From tool or vision re-classification |
+
+Optional root `generation` block for shared video-gen defaults (see section F).
+
+Downstream consumption (already wired):
+
+- `backlot/state.py` → `build_scene_storyboard_prompt()` reads `dna_lock`,
+  `style_profile`, and rich reference scenes for each storyboard card (UI preview draft only)
+- `scene-director` → structural plan + timed beats in `description` / `required_assets`
+- `asset-director` → **final `video_selector` prompts**; six-block table + Appendix A in
+  `skills/pipelines/explainer/asset-director.md` (enforcement gate — do not duplicate here)
+
+When presenting the user summary (Step 1), include a **compact** DNA lock excerpt,
+one sample scene beat block, and note that full 13s segments live in the sidecar.
 
 ### 5-Aspect Structured Output (MANDATORY)
 
@@ -385,6 +559,10 @@ violation.
 
 **Context to carry into the pipeline:**
 - VideoAnalysisBrief as grounding context in the research/proposal stage
+- `replication_guidance.playbook_customizations.dna_lock` and
+  `video_analysis_brief.generation_spec` when high-fidelity reverse prompts
+  were produced — scene-director and asset-director must honor timing, DNA lock,
+  and micro-dynamics from these artifacts
 - User's chosen variant as the approved direction
 - Sample feedback incorporated into the brief
 - All creative differentiation decisions recorded in the decision_log

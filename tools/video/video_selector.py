@@ -85,6 +85,16 @@ class VideoSelector(BaseTool):
                 "default": "16:9",
                 "description": "Video aspect ratio. Passed through to the selected provider.",
             },
+            "prompt_profile": {
+                "type": "string",
+                "enum": ["default", "ugc_native"],
+                "default": "default",
+                "description": (
+                    "When ugc_native, prompt is validated against UGC/reference fidelity rules "
+                    "(skills/pipelines/explainer/asset-director.md) before any provider is called. "
+                    "Asset-director MUST set this for reference-driven / native phone footage."
+                ),
+            },
             "duration": {
                 "type": "string",
                 "description": "Duration hint (e.g., '5', '10'). Passed through to the selected provider.",
@@ -291,7 +301,37 @@ class VideoSelector(BaseTool):
                 },
             )
 
-        # Normal generation — use scored selection
+        profile = str(inputs.get("prompt_profile", "default"))
+        if profile in {"ugc_native", "ugc_native_executable"}:
+            from lib.video_prompt_validator import (
+                validate_executable_video_prompt,
+                validate_ugc_video_prompt,
+            )
+
+            prompt_text = str(inputs.get("prompt", ""))
+            if profile == "ugc_native_executable":
+                validation_errors = validate_executable_video_prompt(
+                    prompt_text,
+                    aspect_ratio=str(inputs.get("aspect_ratio") or "") or None,
+                )
+            else:
+                validation_errors = validate_ugc_video_prompt(
+                    prompt_text,
+                    aspect_ratio=str(inputs.get("aspect_ratio") or "") or None,
+                )
+            if validation_errors:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Video prompt validation failed. Fix the prompt per "
+                        "skills/creative/video-gen-prompting.md before calling video_selector."
+                    ),
+                    data={
+                        "prompt_profile": profile,
+                        "validation_errors": validation_errors,
+                    },
+                )
+
         task_context = self._prepare_task_context(inputs)
         tool, score = self._select_best_tool(inputs, candidates, task_context)
         if tool is None:

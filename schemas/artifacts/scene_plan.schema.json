@@ -28,6 +28,10 @@
           "transition_in": { "type": "string" },
           "transition_out": { "type": "string" },
           "overlay_notes": { "type": "string" },
+          "analysis_prompt": {
+            "type": "string",
+            "description": "Full reverse-engineered analysis prompt for review; not sent to video APIs"
+          },
           "shot_language": {
             "type": "object",
             "description": "Structured cinematography vocabulary for this scene",
@@ -101,10 +105,31 @@
               "properties": {
                 "type": { "type": "string" },
                 "description": { "type": "string" },
-                "source": { "type": "string", "enum": ["generate", "source", "provided", "record"] }
+                "source": { "type": "string", "enum": ["generate", "source", "provided", "record"] },
+                "prompt_profile": { "type": "string" },
+                "analysis_prompt": { "type": "string" },
+                "duration": {
+                  "type": "string",
+                  "description": "Video API duration hint (e.g. '10')"
+                },
+                "editorial_duration_seconds": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Target trim length in final edit (may be shorter than API duration)"
+                }
               },
               "required": ["type", "description", "source"]
             }
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Per-scene generation/edit hints",
+            "properties": {
+              "generation_request_duration_seconds": { "type": "number", "minimum": 0 },
+              "editorial_duration_seconds": { "type": "number", "minimum": 0 },
+              "edit_internal_beats": { "type": "array" }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": false

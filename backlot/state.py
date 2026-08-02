@@ -15,7 +15,13 @@ from typing import Any, Optional
 from backlot.bootstrap import style_playbook_label_zh
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-overridable)
-from lib.shot_prompt_builder import build_scene_storyboard_prompt, scene_plan_index_from_id
+from lib.generation_spec import canonical_video_prompt_from_scene
+from lib.shot_prompt_builder import (
+    build_scene_storyboard_prompt,
+    extract_dna_lock_from_brief,
+    scene_plan_index_from_id,
+    style_context_from_brief,
+)
 
 MEDIA_IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"}
 MEDIA_VIDEO_EXT = {".mp4", ".webm", ".mov"}
@@ -585,6 +591,8 @@ def _build_storyboard(
 
     cards = []
     brief = artifacts.get("video_analysis_brief") or {}
+    dna_lock = extract_dna_lock_from_brief(brief)
+    brief_style_context = style_context_from_brief(brief)
     ref_scenes_by_index: dict[int, dict] = {}
     for rs in ((brief.get("structure_analysis") or {}).get("scenes") or []):
         if isinstance(rs, dict) and rs.get("scene_index") is not None:
@@ -614,21 +622,26 @@ def _build_storyboard(
             else missing[-1] if missing
             else _find_scene_snapshot(project_dir, sid)
         )
-        planned_prompt = ""
+        generation_prompt = ""
         try:
-            ref_idx = scene_plan_index_from_id(sid)
-            planned_prompt = build_scene_storyboard_prompt(
-                scene,
-                reference_scene=ref_scenes_by_index.get(ref_idx) if ref_idx is not None else None,
-                reference_keyframe=ref_keyframes_by_index.get(ref_idx) if ref_idx is not None else None,
-            ).strip()
+            generation_prompt = canonical_video_prompt_from_scene(scene) or ""
+            if not generation_prompt:
+                ref_idx = scene_plan_index_from_id(sid)
+                generation_prompt = build_scene_storyboard_prompt(
+                    scene,
+                    reference_scene=ref_scenes_by_index.get(ref_idx) if ref_idx is not None else None,
+                    reference_keyframe=ref_keyframes_by_index.get(ref_idx) if ref_idx is not None else None,
+                    style_context=brief_style_context,
+                    dna_lock=dna_lock,
+                ).strip()
         except Exception:
-            planned_prompt = ""
+            generation_prompt = ""
         cards.append({
             "id": sid,
             "type": scene.get("type"),
             "description": scene.get("description"),
-            "planned_prompt": planned_prompt,
+            "generation_prompt": generation_prompt,
+            "planned_prompt": generation_prompt,
             "start_seconds": scene.get("start_seconds"),
             "end_seconds": scene.get("end_seconds"),
             "duration_seconds": (

@@ -117,11 +117,6 @@ function renderSlate(s) {
         type: "button",
         onclick: openBoardSettings,
       }, t("projectSettings")),
-      el("a", {
-        class: "board-settings-btn board-global-settings-btn",
-        href: "/?app-settings=1",
-        title: t("globalSettings"),
-      }, t("globalSettings")),
       renderThemeToggleInBoard(),
       liveEl,
       s.cost ? cost : null,
@@ -2872,6 +2867,80 @@ function publishCoverPreview(s) {
   );
 }
 
+function renderVideoAnalysisBriefBody(artifact) {
+  if (!artifact || typeof artifact !== "object") return null;
+  const custom = ((artifact.replication_guidance || {}).playbook_customizations) || {};
+  const dna = custom.dna_lock || artifact.global_dna_lock || {};
+  const scenes = (artifact.structure_analysis || {}).scenes || [];
+  const replicate = (artifact.replication_guidance || {}).key_elements_to_replicate || [];
+  const blocks = [];
+
+  const dnaBits = [
+    dna.subject ? el("p", { class: "ref-dna-line" }, el("b", {}, `${t("refDnaLock")} · `), dna.subject) : null,
+    dna.scene ? el("p", { class: "ref-dna-line" }, dna.scene) : null,
+    dna.lighting ? el("p", { class: "ref-dna-line ref-dna-line--muted" }, dna.lighting) : null,
+    dna.control_tokens
+      ? el("p", { class: "ref-dna-tokens" }, dna.control_tokens)
+      : null,
+  ].filter(Boolean);
+  if (dnaBits.length) {
+    blocks.push(el("div", { class: "ref-analysis-block" }, ...dnaBits));
+  }
+
+  if (replicate.length) {
+    blocks.push(el("div", { class: "ref-analysis-block" },
+      el("div", { class: "ref-analysis-kicker" }, t("refReplicateElements")),
+      el("ul", { class: "ref-analysis-list" },
+        ...replicate.slice(0, 8).map((item) => el("li", {}, shortText(item, 200)))),
+    ));
+  }
+
+  if (scenes.length) {
+    const rows = scenes.map((scene) => {
+      const start = Number(scene.start_time) || 0;
+      const end = Number(scene.end_time) || start;
+      const timing = `${fmtDuration(start)} – ${fmtDuration(end)}`;
+      const bits = [
+        scene.description ? el("p", { class: "ref-scene-desc" }, scene.description) : null,
+        scene.on_screen_text
+          ? el("p", { class: "ref-scene-meta" }, el("b", {}, `${t("refOverlays")}: `), scene.on_screen_text)
+          : null,
+        scene.narration_text
+          ? el("p", { class: "ref-scene-meta" }, el("b", {}, `${t("refSceneNarration")}: `), scene.narration_text)
+          : null,
+        scene.motion_type
+          ? el("p", { class: "ref-scene-meta" }, el("b", {}, `${t("refMotionProfile")}: `), String(scene.motion_type).replaceAll("_", " "))
+          : null,
+      ].filter(Boolean);
+      if (!bits.length) return null;
+      return el("article", { class: "ref-scene-row" },
+        el("div", { class: "ref-scene-head" },
+          el("span", { class: "ref-scene-idx" }, `#${(scene.scene_index ?? 0) + 1}`),
+          el("span", { class: "ref-scene-time" }, timing)),
+        ...bits);
+    }).filter(Boolean);
+    blocks.push(el("div", { class: "ref-analysis-block" },
+      el("div", { class: "ref-analysis-kicker" }, t("refSceneBreakdown")),
+      rows.length
+        ? el("div", { class: "ref-scene-list" }, ...rows)
+        : el("p", { class: "hint" }, t("refNoSceneDetail"))));
+  }
+
+  return blocks.length ? el("div", { class: "ref-analysis-body" }, ...blocks) : null;
+}
+
+function renderReferenceAnalysisCard(s) {
+  const brief = s.artifacts?.video_analysis_brief;
+  if (!brief || typeof brief !== "object") return null;
+  const source = brief.source || {};
+  const scenes = (brief.structure_analysis || {}).scenes || [];
+  const dur = source.duration_seconds != null ? fmtDuration(source.duration_seconds) : "—";
+  const meta = t("refAnalysisMeta", { n: scenes.length || brief.structure_analysis?.total_scenes || 0, dur });
+  const body = renderVideoAnalysisBriefBody(brief);
+  if (!body) return null;
+  return wrapArtifactBlock(s, "video_analysis_brief", "reference_analysis", body, meta);
+}
+
 function artifactReviewContent(name, artifact, s) {
   if (name === "brief") {
     return [
@@ -2997,6 +3066,7 @@ function artifactReviewContent(name, artifact, s) {
   if (name === "video_analysis_brief") {
     const source = artifact.source || {};
     const content = artifact.content_analysis || {};
+    const detail = renderVideoAnalysisBriefBody(artifact);
     return [
       content.summary ? el("p", { class: "approval-lead" }, shortText(content.summary, 220)) : null,
       reviewFacts([
@@ -3004,6 +3074,7 @@ function artifactReviewContent(name, artifact, s) {
         reviewFact(t("scenesField"), (artifact.structure_analysis || {}).total_scenes),
         reviewFact("来源", source.title || source.url || source.local_path),
       ]),
+      detail,
     ].filter(Boolean);
   }
   return genericArtifactSummary(artifact);
@@ -3144,13 +3215,29 @@ function openNarrModal(card) {
 }
 
 function sceneGenerationPrompt(card) {
+  const primary = String(card.generation_prompt || card.planned_prompt || "").trim();
+  if (primary) return primary;
+  for (const asset of card.required_assets || []) {
+    if (asset?.type === "video" && asset?.source === "generate" && asset.description) {
+      const d = String(asset.description).trim();
+      if (d.includes("Aspect ratio:") || d.startsWith("[INHERIT DNA LOCK]")) return d;
+    }
+  }
   const visual = card.visual;
+  if (visual?.prompt && visual.source_tool !== "frame_sampler") {
+    return String(visual.prompt).trim();
+  }
+  for (let i = (card.takes || []).length - 1; i >= 0; i--) {
+    const take = card.takes[i];
+    if (take?.prompt && take.source_tool !== "frame_sampler") {
+      return String(take.prompt).trim();
+    }
+  }
   if (visual?.prompt) return String(visual.prompt).trim();
   for (let i = (card.takes || []).length - 1; i >= 0; i--) {
     const take = card.takes[i];
     if (take?.prompt) return String(take.prompt).trim();
   }
-  if (card.planned_prompt) return String(card.planned_prompt).trim();
   if (visual?.generation_summary) return String(visual.generation_summary).trim();
   for (let i = (card.takes || []).length - 1; i >= 0; i--) {
     const take = card.takes[i];
@@ -3167,10 +3254,11 @@ function openScenePromptModal(card, promptText) {
     .filter(Boolean).join(" · ");
   modal.append(
     el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
-    el("div", { class: "modal-page" },
-      el("div", { class: "script-card", style: "cursor:default" },
+    el("div", { class: "modal-page modal-page-summary modal-page-prompt" },
+      el("div", { class: "script-card script-card--prompt", style: "cursor:default" },
         el("div", { class: "sp-meta" }, meta),
-        el("div", { class: "scene-prompt-body" }, prompt),
+        el("div", { class: "sp-cue" }, "生成提示词 · video_selector"),
+        el("div", { class: "scene-prompt-body scene-prompt-body--scroll" }, prompt),
       )),
   );
   modal.classList.add("open");
@@ -3507,7 +3595,12 @@ function sceneLabel(id) {
 function sceneCard(s, card) {
   const dur = card.duration_seconds;
   const width = Math.max(132, Math.min(300, 70 + (dur || 3) * 26));
-  const wrap = el("div", { class: "scene-card", style: `width:${width}px` });
+  const wrap = el("div", {
+    class: "scene-card",
+    style: `width:${width}px;--scene-thumb-aspect:${deliverableAspect(s)}`,
+  });
+  const track = el("div", { class: "scene-card-track" });
+  const details = el("div", { class: "scene-card-details" });
 
   const slate = el("div", { class: "sc-slate" },
     el("span", { class: "num" }, sceneLabel(card.id)),
@@ -3515,7 +3608,7 @@ function sceneCard(s, card) {
     card.hero_moment ? el("span", { class: "hero" }, t("hero")) : null,
     el("span", { class: "dur" }, fmtDuration(dur)),
   );
-  wrap.append(slate);
+  track.append(slate);
 
   // visual slot
   let thumb;
@@ -3583,15 +3676,15 @@ function sceneCard(s, card) {
         el("div", { class: "spec-desc" }, card.description || ""),
         el("div", { class: "spec-shot" }, [card.framing, card.movement].filter(Boolean).join(" · ").slice(0, 70))));
   }
-  wrap.append(thumb);
+  track.append(thumb);
 
   // shot language chips
   const sl = card.shot_language;
   if (sl) {
-    wrap.append(el("div", { class: "shotchips", style: "display:flex;flex-wrap:wrap;gap:4px;padding:7px 2px 0" },
+    track.append(el("div", { class: "shotchips" },
       [sl.shot_size, sl.camera_movement, sl.lens_mm ? `${sl.lens_mm}mm` : null, sl.lighting_key]
         .filter(Boolean)
-        .map((t) => el("span", { style: "font-family:var(--mono);font-size:calc(8.5px * var(--fs-scale));letter-spacing:.04em;color:#62626c;border:1px solid #212129;border-radius:3px;padding:1px 5px" }, String(t).replaceAll("_", " ")))));
+        .map((chip) => el("span", { class: "shotchip" }, String(chip).replaceAll("_", " ")))));
   }
 
   // takes drawer
@@ -3608,25 +3701,25 @@ function sceneCard(s, card) {
       takes.append(tk);
     });
     takes.append(el("span", { class: "tk-label" }, t("takes", { n: card.takes.length })));
-    wrap.append(takes);
+    track.append(takes);
   }
 
   // narration + audio — clickable to read in full (F: narration text cut off)
   if (card.narration) {
     const long = card.narration.length > 90;
-    wrap.append(el("div", {
+    details.append(el("div", {
       class: `narr${long ? " clip" : ""}`,
       title: t("clickReadNarration"),
       onclick: () => openNarrModal(card),
     }, card.narration, long ? el("span", { class: "narr-more" }, "⤢") : null));
   } else if (card.shot_intent || card.description) {
-    wrap.append(el("div", { class: "narr tc-note" }, (card.shot_intent || card.description || "").slice(0, 110)));
+    details.append(el("div", { class: "narr tc-note" }, (card.shot_intent || card.description || "").slice(0, 110)));
   }
 
   const prompt = sceneGenerationPrompt(card);
   if (prompt) {
-    const longPrompt = prompt.length > 90;
-    wrap.append(el("div", {
+    const longPrompt = prompt.length > 120;
+    details.append(el("div", {
       class: `sc-prompt${longPrompt ? " clip" : ""}`,
       title: t("clickReadPrompt"),
       onclick: (e) => {
@@ -3647,8 +3740,11 @@ function sceneCard(s, card) {
       player.src = mediaURL(s.project_id, narrAudio.path);
       player.play();
     };
-    wrap.append(wave);
+    details.append(wave);
   }
+
+  wrap.append(track);
+  if (details.childNodes.length) wrap.append(details);
   return wrap;
 }
 
@@ -4009,6 +4105,9 @@ function render() {
   const main = el("div", { class: "main-col" });
   const sourceMedia = renderSourceMedia(s);
   if (sourceMedia) main.append(sourceMedia);
+
+  const refAnalysis = renderReferenceAnalysisCard(s);
+  if (refAnalysis) main.append(refAnalysis);
 
   const approvalReview = renderApprovalReview(s);
   if (approvalReview) main.append(approvalReview);

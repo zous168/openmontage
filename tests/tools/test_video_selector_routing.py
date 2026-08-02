@@ -279,3 +279,31 @@ def test_estimate_cost_zero_when_no_providers():
     sel = VideoSelector()
     sel._providers = lambda: []  # type: ignore[assignment]
     assert sel.estimate_cost({"prompt": "x"}) == 0.0
+
+
+def test_video_selector_rejects_invalid_ugc_native_prompt():
+    selector = VideoSelector()
+    result = selector.execute(
+        {
+            "prompt": "A cat sitting.",
+            "prompt_profile": "ugc_native",
+            "aspect_ratio": "9:16",
+        }
+    )
+    assert result.success is False
+    assert result.data is not None
+    assert result.data.get("validation_errors")
+
+
+def test_video_selector_skips_validation_for_default_profile():
+    selector = VideoSelector()
+    result = selector.execute(
+        {
+            "prompt": "A cat sitting.",
+            "prompt_profile": "default",
+            "aspect_ratio": "16:9",
+        }
+    )
+    if result.success is False and result.data:
+        assert "validation_errors" not in result.data
+

@@ -136,7 +136,7 @@ Structure your review as:
 | idea | Hook uniqueness, research depth, angle diversity |
 | script | Timing accuracy, narrative arc, enhancement cue density |
 | scene_plan | Full coverage, visual variety, asset feasibility, slideshow risk score |
-| assets | File existence, style consistency, budget adherence |
+| assets | File existence, style consistency, budget adherence, UGC video prompt compliance (when brief exists) |
 | edit | Timeline coverage, audio sync, subtitle presence, delivery promise compliance |
 | compose | Playability, duration accuracy, audio quality, pre-compose validation pass |
 | publish | SEO quality, metadata completeness, export packaging |
@@ -166,6 +166,15 @@ Run at **every stage** when a VideoAnalysisBrief exists (reference-driven produc
 4. **Cost alignment:** Is the cost estimate still accurate, or has scope crept?
    - If actual spend exceeds estimate by >30% without user re-approval → **CRITICAL**
    - If new assets were added beyond the approved proposal → **SUGGESTION**
+
+5. **UGC video prompt compliance (assets stage only):** For each video asset from
+   `video_selector` when a VideoAnalysisBrief exists:
+   - `assets[].prompt` must be present and match the six-block UGC spec in
+     `skills/pipelines/explainer/asset-director.md`
+   - Must include `real-time physics` and `constant speed`; must include `[MM:SS` timed beats
+   - Must not contain "same as above" / shorthand inheritance
+   - `generation_summary` should note `prompt_profile: ugc_native`
+   - Missing or non-compliant prompt → **CRITICAL** (re-run assets with validated prompt)
 
 ### Severity:
 - Factual errors about the reference video: **CRITICAL**

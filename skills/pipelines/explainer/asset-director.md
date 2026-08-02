@@ -30,6 +30,8 @@ Quick routing for common explainer needs:
 |-------|----------|---------|
 | Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
 | Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | What to produce |
+| Reference-driven (when present) | `state.artifacts["video_analysis_brief"]` | DNA lock, `generation`, per-scene analysis + beats |
+| Deliverable | `projects/<id>/meta.json` → `production_inputs` (aspect ratio via `lib.deliverable_spec.resolve_deliverable`) | Aspect ratio locked at generation time |
 | Playbook | Active style playbook | Image prompts, diagram style, audio preferences |
 | Tools | `tts_selector`, `image_selector`, `video_selector`, `diagram_gen`, `code_snippet`, `music_gen` — selectors auto-discover all available providers from the registry | Generation capabilities |
 | Cost tracker | `tools/cost_tracker.py` | Budget governance |
@@ -116,7 +118,8 @@ or ignores intended pauses, do not batch the remaining sections. Revise the
 
 Process asset tasks grouped by tool for efficiency:
 
-**Images (`image_selector`)**:
+**Images (`image_selector`)** — explainer illustrations / diagrams-as-image:
+
 1. Build the prompt from the scene's actual purpose:
    - scene-specific shot/lighting/texture cues from `shot_language`, `shot_intent`, and `texture_keywords`
    - an adapted visual anchor from the playbook or custom identity
@@ -126,6 +129,102 @@ Process asset tasks grouped by tool for efficiency:
 3. Include consistency anchors (same character/world/palette family), but do NOT reuse the exact same phrasing for every image
 4. Generate and verify the file exists
 5. If the result doesn't match expectations, refine the prompt and regenerate (max 2 retries)
+
+> **Scope split:** Flat-motion / educational `image_selector` jobs use the playbook +
+> five-aspect CHAI review below. **Reference-driven UGC / native phone footage** that
+> will feed `video_selector` (or I2V keyframes meant to match reference motion) MUST
+> follow **Video generation (`video_selector`)** and **Appendix A** instead — do not
+> apply commercial explainer illustration defaults to those shots.
+
+**Video generation (`video_selector`)** — reference-driven / UGC native fidelity:
+
+> **This is the enforcement gate.** Final per-shot prompts are assembled HERE, at
+> tool call time — not in scene-director. Every call gets a **complete, standalone**
+> prompt. Silent omission and cross-shot shorthand ("same as above", "inherit previous prompt") are
+> **forbidden**.
+>
+> **Tool-level enforcement:** When this block applies, you **MUST** pass
+> `"prompt_profile": "ugc_native"` on every `video_selector` call. The selector
+> **rejects** non-compliant prompts before any video model runs. Fix validation errors
+> and retry — do not bypass by omitting `prompt_profile` or calling a provider directly.
+
+**When this block applies (mandatory `prompt_profile: ugc_native`):**
+
+- Scene `required_assets` specifies `tool: video_selector`, or `motion_type` /
+  scene type is `generated` / `broll` / `image_animation` with motion required
+- OR `video_analysis_brief` exists (reference-driven pipeline)
+- **Does NOT apply** to `diagram_gen`, Remotion `.tsx` animations, TTS, or flat
+  motion-graphics `image_selector` jobs (use `"prompt_profile": "default"` or omit)
+
+**Before each `video_selector` call (blocking workflow):**
+
+1. **Gather inputs** for this scene:
+   - Matching row in `scene_plan.scenes[]`
+   - **If `required_assets[].description` already contains the reverse-engineered UGC prompt**
+     (`Aspect ratio:` or `[INHERIT DNA LOCK]`), use it verbatim as `final_prompt` — do not
+     rewrite into generic English summaries
+   - `video_analysis_brief.replication_guidance.playbook_customizations.dna_lock`
+   - Matching `structure_analysis.scenes[]` entry (second-level beats, overlays, narration)
+   - Otherwise call `lib.generation_spec.prompt_for_time_range()` or
+     `segment_prompt_from_brief()` (reads `generation` + scene `beats[]`); UGC six-block validation
+     applies only when `prompt_profile` is `ugc_native`
+   - **Aspect ratio** from `meta.json` → `resolve_deliverable(production_inputs)["aspect_ratio"]`
+   - Optional draft from `lib/shot_prompt_builder.build_scene_storyboard_prompt()` — treat as
+     input only; you MUST expand to a full compliant prompt below
+
+2. **Write the FINAL prompt** — every shot MUST include **all six** blocks, spelled out
+   in full (no references to other shots):
+
+   | # | Block | Requirement |
+   |---|--------|-------------|
+   | 1 | **Aspect ratio** | Explicit ratio (e.g. `9:16 vertical`, `16:9 horizontal`) from deliverable spec |
+   | 2 | **Scene clutter / lighting / noise floor** | Foreground/midground clutter, light direction + quality, sensor/floor noise, room ambience — not a sterile set |
+   | 3 | **Form strategy** | Capture mode: e.g. smartphone handheld UGC, selfie arm-length, table POV — state it explicitly |
+   | 4 | **Second-level timed actions** | `[MM:SS-MM:SS]` beats with duration; micro-dynamics in gaps (breath, blink, finger adjust, fabric sway) |
+   | 5 | **Physics / speed control** | `real-time physics`, `constant speed`, `no time-lapse`, `no dead frames`; DNA / consistency tokens from brief |
+   | 6 | **Native imperfections** | Handheld micro-shake, focus breathing, uneven exposure, natural skin texture, visible grain — NOT beauty-polished |
+
+3. **Run Appendix A** prohibition checklist — any hit requires rewrite before calling the tool.
+
+4. **Run Pre/Post Self-Review** (below) using the six-block table + Appendix A, not the
+   generic educational-image checklist alone.
+
+5. **Pre-validate locally (recommended):**
+
+```python
+from lib.video_prompt_validator import validate_ugc_video_prompt
+errors = validate_ugc_video_prompt(final_prompt, aspect_ratio="9:16")
+assert not errors, errors
+```
+
+6. **Call `video_selector`** — required input shape when this block applies:
+
+```json
+{
+  "prompt": "<full post-caption prompt with all six blocks>",
+  "prompt_profile": "ugc_native",
+  "aspect_ratio": "9:16",
+  "operation": "text_to_video",
+  "duration": "13"
+}
+```
+
+   If validation fails, the tool returns `validation_errors` — expand the prompt and retry.
+   **Do not** call `seedance_video`, `kling_official_video`, or any other video provider
+   directly to skip validation.
+
+7. **Record** the exact `prompt` sent on the asset manifest entry (`assets[].prompt`) plus
+   `source_tool: "video_selector"` and `prompt_profile: ugc_native` in `generation_summary`
+   for audit.
+
+**Multi-segment reference videos (>13s dense motion):**
+
+- Prefer `lib.generation_spec.segment_prompt_from_brief()` as the spine —
+  call `segment_prompt_from_brief()` or use `assembled_prompt` when cached.
+- Still re-validate all six blocks and Appendix A per call — do not assume the sidecar is
+  complete without your pass.
+- Segment 2+ must declare DNA inheritance and seamless continuation from the prior segment
+  (character, scene, noise floor, audio continuity) when the brief requires it.
 
 **Diagrams (`diagram_gen`)**:
 1. Convert the scene description into valid Mermaid syntax
@@ -200,7 +299,9 @@ Assemble all generated assets into the manifest:
 
 ### Pre/Post Self-Review for Generation Prompts
 
-> Before sending a prompt to any generation tool — `image_selector`, `diagram_gen`, `video_selector`, even `code_snippet` styling prompts — run a three-step self-review modeled on the CHAI oversight loop ("Building a Precise Video Language with Human-AI Oversight", arXiv 2604.21718v2). Cost is small (no extra tool calls); benefit is large (avoids wasted generations). This applies just as strongly to `diagram_gen` Mermaid prompts and `image_selector` illustration prompts as it does to video generation — bad explainer visuals fail in the same way: missing subject, missing framing, vague "make it look educational."
+> Before sending a prompt to any generation tool — `image_selector`, `diagram_gen`, `video_selector`, even `code_snippet` styling prompts — run a three-step self-review modeled on the CHAI oversight loop ("Building a Precise Video Language with Human-AI Oversight", arXiv 2604.21718v2). Cost is small (no extra tool calls); benefit is large (avoids wasted generations).
+>
+> **Routing:** For **`video_selector`** (reference-driven / UGC native), Step 2 critique MUST use the **six-block table + Appendix A** in Step 4 above — not the generic five-aspect explainer checklist alone. For `diagram_gen`, flat-motion `image_selector`, and `code_snippet`, use the five-aspect checklist below.
 >
 > **Step 1 — Pre-caption pass.** Write the prompt the way you'd write it today. Do not over-edit; aim for a complete first draft.
 >
@@ -287,6 +388,52 @@ This is especially important for:
 - **Remotion component patterns** — new composition techniques emerge as the framework evolves
 
 Do not rely on stale knowledge. When in doubt, search first.
+
+---
+
+## Appendix A — UGC / reference video generation prohibitions (binding)
+
+**Applies only when calling `video_selector`** (and UGC-fidelity `image_selector` keyframes
+that must match reference motion). Does **not** apply to Remotion scenes, diagrams, or
+flat-motion explainer illustrations.
+
+### Ultimate enforcement (non-negotiable)
+
+- Do **not** omit any segment of visual detail — every segment fully specified
+- Do **not** simplify handheld bumpiness — do not smooth out handheld shake
+- Do **not** remove native noise — preserve sensor grain and room noise floor
+- Do **not** ship incomplete segment replication — incomplete replication is a blocking failure
+- Do **not** use "same as above" or "inherit previous prompt" without re-stating all six blocks
+- **Must** execute the six-block table in full before every `video_selector` call
+
+### Strictly forbidden in prompts and acceptable output targets
+
+**Visual / render style — do NOT produce or prompt for:**
+
+- AI-generated virtual humans, CGI, 3D modeling, anime / 2D stylization
+- Heavy beauty filter / skin smoothing, flawless fake pale skin, plastic fake skin
+- Perfect symmetrical composition, sterile empty scenes, ultra-clean sharpening
+- Professional cinema lighting, even perfect softbox fill, studio / commercial blockbuster look
+- Photo-retouch / studio glamour aesthetic, influencer hyper-saturated filters
+- Zero-noise pristine frames, germ-free tidy sets, dreamlike bokeh backgrounds
+- Gimbal-smooth / steadicam-stable camera (unless reference explicitly shows it — default is handheld native)
+- Exquisite modeled hair strands, "Doubao AI" plastic texture look
+
+**Motion / continuity — do NOT allow:**
+
+- Segment face drift, scene swaps mid-clip, prop add/remove vs locked DNA
+- Sudden lighting jumps, quality/style breaks between segments
+- Stiff posed mannequin acting, aspect ratio inconsistency across shots
+- Lip-sync mismatch, physically impossible object interaction
+
+**Audio (when the provider supports embedded audio prompts) — do NOT prompt for:**
+
+- Robotic / mechanical AI voice, flat emotionless delivery
+- Foreign accent when reference is native speaker, stiff announcer delivery
+- Pitch/timbre discontinuity across segments when continuity is required
+
+When in doubt, describe **positive native alternatives** (handheld phone capture, visible grain,
+natural skin texture, cluttered real environment, real-time physics) instead of negative lists alone.
 
 ---
 

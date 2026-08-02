@@ -196,15 +196,95 @@ def _dedupe_prompt_parts(parts: list[str]) -> str:
     return ". ".join(ordered)
 
 
+_DEFAULT_CONTROL_TOKENS = (
+    "real-time physics, constant speed, no time-lapse, no dead frames, "
+    "maintain exact character and scene consistency"
+)
+
+
+def extract_dna_lock_from_brief(brief: dict[str, Any] | None) -> dict[str, str]:
+    """Read DNA lock from brief (playbook_customizations or legacy top-level)."""
+    if not isinstance(brief, dict):
+        return {}
+    custom = ((brief.get("replication_guidance") or {}).get("playbook_customizations") or {})
+    lock = custom.get("dna_lock") if isinstance(custom.get("dna_lock"), dict) else {}
+    if not lock:
+        legacy = brief.get("global_dna_lock")
+        lock = legacy if isinstance(legacy, dict) else {}
+    out: dict[str, str] = {}
+    for key in ("subject", "scene", "lighting", "control_tokens"):
+        val = str(lock.get(key) or "").strip()
+        if val:
+            out[key] = val
+    if "control_tokens" not in out:
+        out["control_tokens"] = _DEFAULT_CONTROL_TOKENS
+    return out
+
+
+def style_context_from_brief(brief: dict[str, Any] | None) -> dict[str, Any]:
+    """Map style_profile + replication hints into shot_prompt_builder context."""
+    if not isinstance(brief, dict):
+        return {}
+    style = brief.get("style_profile") or {}
+    replication = brief.get("replication_guidance") or {}
+    palette = style.get("color_palette") or {}
+    mood = palette.get("overall_mood") or style.get("production_quality") or ""
+    colors = palette.get("primary_colors") or []
+    visual_bits = []
+    if colors:
+        visual_bits.append(", ".join(str(c) for c in colors[:4]))
+    if style.get("typography_observed"):
+        visual_bits.append(str(style["typography_observed"]))
+    if style.get("music_style"):
+        visual_bits.append(str(style["music_style"]))
+    visual_line = " · ".join(visual_bits) if visual_bits else ""
+    return {
+        "visual_language": {"aesthetic": visual_line} if visual_line else {},
+        "mood": mood,
+        "generation_prefix": replication.get("suggested_playbook") or style.get("closest_playbook") or "",
+    }
+
+
+def _reference_scene_rich_text(reference_scene: dict[str, Any]) -> str:
+    """Merge reference scene fields produced by high-fidelity reverse engineering."""
+    chunks: list[str] = []
+    description = str(reference_scene.get("description") or "").strip()
+    if description:
+        chunks.append(description)
+    on_screen = str(reference_scene.get("on_screen_text") or "").strip()
+    if on_screen:
+        chunks.append(f"Overlays/VFX: {on_screen}")
+    narration = str(reference_scene.get("narration_text") or "").strip()
+    if narration:
+        chunks.append(f'Dialogue/narration: "{narration}"')
+    motion_type = str(reference_scene.get("motion_type") or "").strip()
+    if motion_type and motion_type != "unknown":
+        chunks.append(f"Reference motion type: {motion_type.replace('_', ' ')}")
+    return ". ".join(chunks)
+
+
 def build_scene_storyboard_prompt(
     scene: dict[str, Any],
     *,
     reference_scene: dict[str, Any] | None = None,
     reference_keyframe: dict[str, Any] | None = None,
     style_context: dict[str, Any] | None = None,
+    dna_lock: dict[str, str] | None = None,
 ) -> str:
     """Storyboard prompt from scene_plan, optionally enriched by reference analysis."""
     parts: list[str] = []
+
+    lock = dna_lock or {}
+    subject_dna = str(lock.get("subject") or "").strip()
+    scene_dna = str(lock.get("scene") or "").strip()
+    lighting_dna = str(lock.get("lighting") or "").strip()
+    control_tokens = str(lock.get("control_tokens") or _DEFAULT_CONTROL_TOKENS).strip()
+    if subject_dna:
+        parts.append(f"Subject DNA: {subject_dna}")
+    if scene_dna:
+        parts.append(f"Scene DNA: {scene_dna}")
+    if lighting_dna:
+        parts.append(f"Lighting DNA: {lighting_dna}")
 
     intent = str(scene.get("shot_intent") or "").strip()
     description = str(scene.get("description") or "").strip()
@@ -215,7 +295,7 @@ def build_scene_storyboard_prompt(
 
     ref_visual = ""
     if reference_scene:
-        ref_visual = str(reference_scene.get("description") or "").strip()
+        ref_visual = _reference_scene_rich_text(reference_scene)
     kf_note = str((reference_keyframe or {}).get("description") or "").strip()
     if kf_note:
         if ref_visual and kf_note.casefold() not in ref_visual.casefold():
@@ -246,5 +326,7 @@ def build_scene_storyboard_prompt(
         parts.append(framing)
     if movement:
         parts.append(movement)
+    if control_tokens:
+        parts.append(control_tokens)
 
     return _dedupe_prompt_parts(parts)

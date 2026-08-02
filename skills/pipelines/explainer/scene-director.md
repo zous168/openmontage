@@ -47,6 +47,21 @@ Read `meta.json` → `production_inputs.video_gen_clip_duration_seconds` (Backlo
 - Pack multiple script sections and internal reference beats **inside** each scene's `description` / `metadata.edit_internal_beats`. Subtitle timing still follows `script.json` sections at edit stage.
 - Each scene's `required_assets` should request **`type: "video"`** with a prompt covering the full clip duration.
 
+**Reference-driven projects (`video_analysis_brief.json` present):**
+
+When `state.artifacts["reference_analysis"]["video_analysis_brief"]` exists (or `artifacts/video_analysis_brief.json` on disk), **do not invent generic English video prompts**. The reverse-engineered prompt is the source of truth.
+
+For each generation unit `[start_seconds, end_seconds)`:
+
+1. Call `lib.generation_spec.prompt_for_time_range(brief, start_seconds, end_seconds, establish_dna=(start_seconds == 0))`.
+2. Write the returned UGC six-block string into `required_assets[].description` for every `type: "video"`, `source: "generate"` asset.
+3. Keep the scene's human-readable `description` in Chinese for editors; the **provider prompt lives in `required_assets[].description`**.
+4. Set `metadata.reference_prompt_source` to document that prompts were assembled from `video_analysis_brief.generation` + filtered `beats[]`.
+5. First clip (`start_seconds == 0`): `establish_dna=True` — full DNA lock + environment.
+6. Continuation clips (`start_seconds > 0`): `establish_dna=False` — prompt must begin with `[INHERIT DNA LOCK]` and include continuity note.
+
+Do **not** defer reverse-engineered prompts to asset-director only — scene_plan must already carry them so human review of 分镜 sees the actual generation spec.
+
 Transform each **generation unit** into one visual scene (not each script section).
 
 ```json
@@ -176,6 +191,16 @@ If the video includes narration, the script **must** be written to fit the video
 > 5. **Camera** — playback speed → lens distortion → height → angle → focus/DoF → steadiness → movement. Mark N/A for native-Remotion scenes; specify fully for `generated`/`broll`/`image_animation` scenes.
 >
 > See `skills/creative/video-gen-prompting.md` for the primitive vocabulary.
+
+> **Final video prompts (reference-driven).** When `video_analysis_brief.json` is present,
+> `required_assets[].description` for `type: "video"` **is** the provider-ready reverse-engineered
+> prompt (via `lib.generation_spec.prompt_for_time_range`). Human-readable `description` stays
+> Chinese for editors; do not replace asset prompts with generic summaries.
+>
+> **Final video prompts (explainer default).** For non-reference projects, scene-plan fields are
+> **inputs**, not the strings sent to `video_selector`. The asset-director assembles the complete
+> per-shot prompt at generation time (six-block table + Appendix A in `asset-director.md`). Do not use
+> cross-scene shorthand ("same as above") here — provide enough structured beats for assets to expand.
 
 > **Overlays callout.** Overlays (titles, subtitles, HUD, watermarks, framing graphics, lower-thirds, section_title bars, stat_reveal chips, hero_title overlays, provider chips) are NOT part of the scene's foreground/midground/background depth axis. List them separately in scene metadata (`overlays: [...]`) with content and placement. Never describe an overlay as "in the foreground" — that confuses both downstream tools and any video-understanding model that re-analyzes the output.
 

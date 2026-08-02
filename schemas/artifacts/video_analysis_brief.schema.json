@@ -75,7 +75,19 @@
               "start_time": { "type": "number" },
               "end_time": { "type": "number" },
               "description": { "type": "string" },
-              "narration_text": { "type": "string" },
+              "narration_text": {
+                "type": "string",
+                "description": "Spoken dialogue or narration observed in this scene (empty if none)"
+              },
+              "on_screen_text": {
+                "type": "string",
+                "description": "Visible text in frame: burn-in subtitles, lower thirds, graphics (empty if none)"
+              },
+              "beats": {
+                "type": "array",
+                "description": "Second-level timed visual/motion actions within this scene",
+                "items": { "$ref": "#/$defs/timeline_beat" }
+              },
               "visual_type": {
                 "type": "string",
                 "enum": ["talking_head", "b_roll", "screen_recording", "animation",
@@ -95,7 +107,6 @@
                 "type": "array",
                 "items": { "type": "string" }
               },
-              "on_screen_text": { "type": "string" },
               "energy_level": {
                 "type": "string",
                 "enum": ["low", "medium", "high", "peak"]
@@ -204,8 +215,107 @@
           "items": { "type": "string" },
           "description": "3-5 ways the output should DIFFER from the reference to avoid being a copy"
         },
-        "playbook_customizations": { "type": "object" }
+        "playbook_customizations": {
+          "type": "object",
+          "properties": {
+            "dna_lock": {
+              "type": "object",
+              "properties": {
+                "subject": { "type": "string" },
+                "scene": { "type": "string" },
+                "lighting": { "type": "string" },
+                "control_tokens": { "type": "string" }
+              }
+            }
+          }
+        }
       }
+    },
+    "generation": {
+      "type": "object",
+      "description": "Optional shared AI video-gen defaults (prompt_profile, delivery, environment). Per-scene detail lives in scenes[].",
+      "properties": {
+        "prompt_profile": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "delivery": {
+          "type": "object",
+          "properties": {
+            "aspect_ratio": { "type": "string" },
+            "orientation": { "type": "string", "enum": ["vertical", "horizontal", "square"] },
+            "capture_mode": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "environment": {
+          "type": "object",
+          "properties": {
+            "setting": { "type": "string" },
+            "lighting": { "type": "string" },
+            "clutter_and_props": { "type": "string" },
+            "ambient_floor": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "capture_character": {
+          "type": "object",
+          "properties": {
+            "notes": { "type": "string" },
+            "polish_level": {
+              "type": "string",
+              "enum": ["raw_native", "prosumer", "studio_clean", "cinematic_graded"]
+            }
+          },
+          "additionalProperties": false
+        },
+        "control_tokens": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "generation_spec": {
+      "type": "object",
+      "description": "Reverse-engineered AI video prompts per reference (反推视频提示词). One assembled_prompt per generation segment.",
+      "properties": {
+        "prompt_profile": { "type": "string" },
+        "segmentation": {
+          "type": "object",
+          "properties": {
+            "chunk_seconds": { "type": "number" },
+            "rule": { "type": "string" },
+            "source": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["segment_index", "start_seconds", "end_seconds", "assembled_prompt"],
+            "properties": {
+              "segment_index": { "type": "integer", "minimum": 0 },
+              "start_seconds": { "type": "number", "minimum": 0 },
+              "end_seconds": { "type": "number", "minimum": 0 },
+              "dna_inheritance": {
+                "type": "string",
+                "enum": ["establish", "inherit"]
+              },
+              "assembled_prompt": {
+                "type": "string",
+                "description": "Final provider-ready reverse-engineered prompt for this segment"
+              },
+              "timeline": {
+                "type": "array",
+                "items": { "$ref": "#/$defs/timeline_beat" }
+              },
+              "control_tokens": { "type": "string" }
+            },
+            "additionalProperties": true
+          }
+        }
+      },
+      "additionalProperties": true
     },
     "keyframes": {
       "type": "array",
@@ -218,6 +328,40 @@
           "description": { "type": "string" }
         }
       }
+    }
+  },
+  "$defs": {
+    "timeline_beat": {
+      "type": "object",
+      "required": ["start_seconds", "end_seconds", "description"],
+      "properties": {
+        "start_seconds": { "type": "number", "minimum": 0 },
+        "end_seconds": { "type": "number", "minimum": 0 },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "action", "micro_motion", "cut", "transition", "overlay", "camera",
+            "vfx", "dialogue", "speech", "hold", "object_interaction"
+          ]
+        },
+        "description": { "type": "string" },
+        "shot_language": { "type": "object", "additionalProperties": true },
+        "overlay_spec": {
+          "type": "object",
+          "properties": {
+            "x_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "y_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "width_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "height_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+            "animation_in": { "type": "string" },
+            "animation_out": { "type": "string" },
+            "edge_treatment": { "type": "string" },
+            "content": { "type": "string" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   }
 }

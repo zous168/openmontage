@@ -25,7 +25,11 @@ The user chose this pipeline because they have an **inspiration video** and want
    source. Use the URL or the on-disk reference file under `projects/<id>/`.
 
 3. Write a schema-valid **`video_analysis_brief`** artifact and checkpoint for stage
-   `reference_analysis`.
+   `reference_analysis`. Enrichment MUST include:
+   - `replication_guidance.playbook_customizations.dna_lock` (subject/scene/lighting)
+   - Per-scene analysis in `structure_analysis.scenes[]` (`description`, `on_screen_text`,
+     `narration_text`, optional `beats[]`)
+   - Optional root `generation` for shared video-gen defaults when motion replication applies
 
 4. Present the conversational 5-aspect summary to the user **before** marking the
    stage complete. Do not skip capability audit or critical questions from the meta skill.
@@ -35,7 +39,7 @@ The user chose this pipeline because they have an **inspiration video** and want
 
 ## Output
 
-- `artifacts/video_analysis_brief.json` (canonical)
+- `artifacts/video_analysis_brief.json` (canonical — scene-centric analysis artifact)
 - `checkpoint_reference_analysis.json` with status appropriate to policy
 
 Downstream stages (`research`, `proposal`, …) consume this brief. Do **not** collapse

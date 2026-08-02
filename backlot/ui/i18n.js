@@ -392,6 +392,19 @@ const STRINGS = {
   intent: "意图 — {text}",
   clickReadPrompt: "点击查看完整提示词",
 
+  // 参考分析 / 反推
+  refAnalysisTitle: "参考视频反推",
+  refAnalysisMeta: "{n} 镜 · {dur}",
+  refDnaLock: "DNA 特征锁",
+  refSceneBreakdown: "逐镜反推",
+  refCopyTrack: "文案轨",
+  refGenerationSpec: "生视频规格",
+  refReplicateElements: "值得复刻的要素",
+  refMotionProfile: "运动类型",
+  refOverlays: "后期 / 贴纸",
+  refSceneNarration: "口播",
+  refNoSceneDetail: "尚无逐镜反推内容 — Agent 需在参考分析阶段写入 scene description。",
+
   // 成片
   rendersTitle: "成片",
   renderVersions: "{n} 个版本",

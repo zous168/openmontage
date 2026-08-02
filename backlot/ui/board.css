@@ -401,6 +401,9 @@ a.backlink.wordmark:hover { color: var(--text-2); }
 :root[data-theme="light"] .stage.done .sub {
   color: #8a7858;
 }
+:root[data-theme="light"] .filmstrip {
+  scrollbar-color: #c5ad78 transparent;
+}
 :root[data-theme="light"] .script-card {
   background:
     linear-gradient(178deg, rgba(255,250,226,.28), transparent 38%),
@@ -421,15 +424,6 @@ a.backlink.wordmark:hover { color: var(--text-2); }
   background: rgba(242,253,238,.66);
   color: #3f8f5a;
   border-color: #3f8f5a;
-}
-:root[data-theme="light"] .filmstrip {
-  background:
-    radial-gradient(circle 3.5px, #ceb982 97%, transparent) 0 6px / 26px 10px repeat-x,
-    radial-gradient(circle 3.5px, #ceb982 97%, transparent) 0 calc(100% - 16px) / 26px 10px repeat-x,
-    linear-gradient(180deg, rgba(255,246,222,.72), rgba(237,220,181,.6));
-  border-radius: 14px;
-  border: 1px solid rgba(214,193,142,.84);
-  scrollbar-color: #c5ad78 transparent;
 }
 :root[data-theme="light"] .scene-card .sc-slate {
   color: #9a845e;
@@ -944,23 +938,56 @@ aside .panel + .panel { margin-top: 0; }
 @keyframes blink { 50% { opacity: .45; } }
 
 /* ---------- filmstrip ---------- */
-/* filmstrip thumbs at fixed height (duration drives width) */
-.filmstrip .thumb { height: 148px; aspect-ratio: auto; }
+.filmstrip .scene-card-track .thumb {
+  height: min(200px, 38vw);
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: var(--scene-thumb-aspect, 9 / 16);
+  margin: 0 auto;
+  align-self: center;
+  background: #08080a;
+}
+.filmstrip .scene-card-track .thumb img,
+.filmstrip .scene-card-track .thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background: #08080a;
+}
 .filmstrip {
-  display: flex; gap: 12px; overflow-x: auto; overflow-y: visible;
-  padding: 26px 4px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 8px 4px 4px;
   scroll-padding-inline: 8px;
   -webkit-overflow-scrolling: touch;
-  scrollbar-width: thin; scrollbar-color: #26262e transparent;
-  background:
-    radial-gradient(circle 3.5px, #2e2e36 97%, transparent) 0 6px / 26px 10px repeat-x,
-    radial-gradient(circle 3.5px, #2e2e36 97%, transparent) 0 calc(100% - 16px) / 26px 10px repeat-x;
+  scrollbar-width: thin;
+  scrollbar-color: #26262e transparent;
 }
-.strip-outer { position: relative; overflow: visible; padding-bottom: 4px; }
-.strip-outer::after {
-  content: ""; position: absolute; top: 26px; right: 0; bottom: 12px; width: 36px;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--bg));
+.strip-outer { position: relative; overflow: visible; }
+.scene-card {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.scene-card-track {
+  padding: 0 0 2px;
+}
+.scene-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 0 2px;
+}
+.scene-card-details > * {
+  min-width: 0;
+  max-width: 100%;
 }
 .scene-video-modal { padding: 18px 20px 22px; }
 .scene-video-meta {
@@ -970,7 +997,21 @@ aside .panel + .panel { margin-top: 0; }
   display: block; width: 100%; max-height: min(78vh, 820px); margin: 0 auto;
   border-radius: var(--radius-md); background: #08080a; object-fit: contain;
 }
-.scene-card { flex: none; display: flex; flex-direction: column; position: relative; }
+.shotchips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 7px 2px 0;
+}
+.shotchip {
+  font-family: var(--mono);
+  font-size: calc(8.5px * var(--fs-scale));
+  letter-spacing: .04em;
+  color: #62626c;
+  border: 1px solid #212129;
+  border-radius: 3px;
+  padding: 1px 5px;
+}
 .scene-card .sc-slate {
   display: flex; align-items: baseline; gap: 8px;
   font-family: var(--mono); font-size: calc(10px * var(--fs-scale)); letter-spacing: .05em;
@@ -987,10 +1028,10 @@ aside .panel + .panel { margin-top: 0; }
   border: 1px solid var(--border);
 }
 .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* Storyboard videos keep the full frame (letterboxed) — cover cropped portrait clips. */
-.filmstrip .thumb img { object-fit: cover; }
-.filmstrip .thumb video {
-  width: 100%; height: 100%; object-fit: contain; display: block; background: #08080a;
+.filmstrip .scene-card-track .thumb img { object-fit: contain; }
+/* Storyboard videos keep the full frame (letterboxed) for portrait deliverables. */
+.filmstrip .scene-card-track .thumb video {
+  object-fit: contain;
 }
 .thumb video { width: 100%; height: 100%; object-fit: cover; display: block; }
 .thumb.approved { cursor: pointer; }
@@ -1071,13 +1112,15 @@ aside .panel + .panel { margin-top: 0; }
 .narr.tc-note { color: var(--text-3); }
 
 .sc-prompt {
-  padding: 6px 3px 0;
+  padding: 0 2px;
   font-size: calc(10.5px * var(--fs-scale));
   color: var(--text-3);
-  line-height: 1.4;
-  max-height: 68px;
+  line-height: 1.45;
+  max-height: 72px;
   overflow: hidden;
   position: relative;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .sc-prompt.clip {
   cursor: pointer;
@@ -1087,11 +1130,24 @@ aside .panel + .panel { margin-top: 0; }
 .sc-prompt.clip:hover { color: var(--text-2); }
 .sc-prompt .narr-more {
   position: absolute;
-  right: 2px;
+  right: 0;
   bottom: 0;
   font-style: normal;
   color: var(--text-3);
   font-size: calc(11px * var(--fs-scale));
+}
+.scene-prompt-body--scroll {
+  max-height: min(72vh, 780px);
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+.modal-page-prompt {
+  max-width: min(680px, 96vw);
+}
+.script-card--prompt {
+  margin: 0;
+  max-width: none;
 }
 .scene-prompt-body {
   font-size: calc(12.5px * var(--fs-scale));
@@ -1111,10 +1167,10 @@ aside .panel + .panel { margin-top: 0; }
   font-size: calc(10.5px * var(--fs-scale));
   line-height: 1.45;
   color: var(--text-3);
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .wave { display: flex; align-items: flex-end; gap: 1.5px; height: 14px; padding: 6px 3px 0; }
@@ -2407,8 +2463,8 @@ a.backlink:hover { color: var(--text-2); }
 }
 .scene-plan-inline {
   margin-top: 4px;
-  max-height: min(52vh, 520px);
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
 }
 .scene-plan-list { display: grid; gap: 10px; }
 .scene-plan-row {
@@ -3721,3 +3777,38 @@ body:not(.first) .approval-review { animation: none; }
   .approval-review-foot button { width: 100%; }
   .approval-status { white-space: normal; }
 }
+
+/* Reference video reverse-engineering (video_analysis_brief) */
+.ref-analysis-body { display: flex; flex-direction: column; gap: 14px; margin-top: 4px; }
+.ref-analysis-block { display: flex; flex-direction: column; gap: 8px; }
+.ref-analysis-kicker {
+  font-family: var(--mono);
+  font-size: calc(10px * var(--fs-scale));
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+}
+.ref-dna-line { margin: 0; font-size: calc(12.5px * var(--fs-scale)); line-height: 1.55; color: var(--text-1); }
+.ref-dna-line--muted { color: var(--text-2); }
+.ref-dna-tokens {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: calc(10.5px * var(--fs-scale));
+  line-height: 1.5;
+  color: var(--text-3);
+}
+.ref-analysis-list { margin: 0; padding-left: 18px; color: var(--text-2); font-size: calc(12px * var(--fs-scale)); }
+.ref-scene-list { display: flex; flex-direction: column; gap: 10px; }
+.ref-scene-row {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--surface-2);
+}
+.ref-scene-head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 6px; }
+.ref-scene-idx { font-family: var(--mono); font-size: calc(10px * var(--fs-scale)); color: var(--accent); }
+.ref-scene-time { font-family: var(--mono); font-size: calc(10px * var(--fs-scale)); color: var(--text-3); }
+.ref-scene-desc { margin: 0 0 6px; font-size: calc(12px * var(--fs-scale)); line-height: 1.55; color: var(--text-1); white-space: pre-wrap; }
+.ref-scene-meta { margin: 0 0 4px; font-size: calc(11.5px * var(--fs-scale)); line-height: 1.45; color: var(--text-2); }
+.ref-sidecar-path { margin: 0; font-size: calc(11.5px * var(--fs-scale)); color: var(--text-2); }
+.ref-sidecar-path code { font-size: calc(10.5px * var(--fs-scale)); }
