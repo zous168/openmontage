@@ -1,0 +1,17 @@
+{
+	"extends": "../tsconfig.settings.json",
+	"compilerOptions": {
+		"rootDir": "src",
+		"outDir": "dist",
+		"jsx": "react-jsx",
+		"skipLibCheck": true,
+		"strict": true,
+		"noUncheckedIndexedAccess": true,
+		"lib": [
+			"dom"
+		]
+	},
+	"exclude": [
+		"dist"
+	]
+}

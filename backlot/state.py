@@ -15,7 +15,7 @@ from typing import Any, Optional
 from backlot.bootstrap import style_playbook_label_zh
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT  # single source of truth (env-overridable)
-from lib.generation_spec import canonical_video_prompt_from_scene
+from lib.generation_spec import canonical_generation_prompt_from_scene
 from lib.shot_prompt_builder import (
     build_scene_storyboard_prompt,
     extract_dna_lock_from_brief,
@@ -624,7 +624,7 @@ def _build_storyboard(
         )
         generation_prompt = ""
         try:
-            generation_prompt = canonical_video_prompt_from_scene(scene) or ""
+            generation_prompt = canonical_generation_prompt_from_scene(scene) or ""
             if not generation_prompt:
                 ref_idx = scene_plan_index_from_id(sid)
                 generation_prompt = build_scene_storyboard_prompt(

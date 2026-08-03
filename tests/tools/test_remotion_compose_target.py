@@ -80,10 +80,11 @@ def test_remotion_render_passes_compose_target_dimensions(tool, tmp_path, monkey
             "output_path": str(out),
         }
     )
-    assert "--width" in seen["cmd"]
-    assert "1080" in seen["cmd"]
-    assert "1920" in seen["cmd"]
-    assert any("--public-dir=" in arg for arg in seen["cmd"])
+    # Both render paths (render.mjs equals-form args and the legacy npx CLI)
+    # must carry the compose-target dimensions.
+    assert any(str(a).startswith("--width") and "1080" in str(a) for a in seen["cmd"])
+    assert any(str(a).startswith("--height") and "1920" in str(a) for a in seen["cmd"])
+    assert any("--public-dir=" in str(arg) for arg in seen["cmd"])
 
 
 def test_prepare_remotion_props_relativizes_absolute_windows_path(tmp_path):

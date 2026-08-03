@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -51,6 +52,13 @@ from backlot.bootstrap import (
 )
 from backlot import API_VERSION
 from backlot.edit_preview import build_edit_preview_info, start_edit_preview
+from backlot.nle_edit import (
+    DraftStaleError,
+    apply_draft,
+    read_draft,
+    read_draft_props,
+    write_draft,
+)
 from lib.composition_timeline import build_composition_timeline
 from backlot.state import PROJECTS_DIR, REPO_ROOT, _is_demo_project, list_projects, load_board_state, summarize_project
 
@@ -153,6 +161,12 @@ class EditPreviewStartBody(BaseModel):
     runtime: str = Field(min_length=1, max_length=32)
     mode: str = Field(default="studio", max_length=16)
     scaffold: bool = False
+
+
+class NleEditBody(BaseModel):
+    cuts: list[dict[str, Any]]
+    overlays: Optional[list[dict[str, Any]]] = None
+    decision_note: str = Field(default="", max_length=400)
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -569,6 +583,50 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    @app.get("/api/project/{project_id}/nle-edit/draft-props")
+    async def nle_draft_props(project_id: str, request: Request, response: Response) -> dict:
+        """Live preview props for the NLE preview iframe (cross-origin polled)."""
+        project_dir = _safe_project_dir(project_id)
+        # Cross-origin only for the NLE preview iframe, which is served from
+        # the local preview-server port (localhost:34xx) — never a wildcard.
+        origin = request.headers.get("origin") or ""
+        if re.match(r"^http://localhost:34\d+$", origin):
+            response.headers["Access-Control-Allow-Origin"] = origin
+        try:
+            return await asyncio.to_thread(read_draft_props, project_dir)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/project/{project_id}/nle-edit/preview")
+    async def nle_edit_preview(project_id: str, payload: NleEditBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        result = await asyncio.to_thread(write_draft, project_dir, payload.cuts, payload.overlays)
+        hub.publish(project_id)
+        return result
+
+    @app.post("/api/project/{project_id}/nle-edit/apply")
+    async def nle_edit_apply(project_id: str, payload: NleEditBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            # Applied content comes from the persisted draft file, not the
+            # request body (see apply_draft).
+            result = await asyncio.to_thread(
+                apply_draft,
+                project_dir,
+                decision_note=payload.decision_note,
+            )
+        except DraftStaleError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        hub.publish(project_id)
+        return result
+
+    @app.get("/api/project/{project_id}/nle-edit/draft")
+    async def nle_edit_draft(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        return await asyncio.to_thread(read_draft, project_dir)
 
     @app.get("/api/project/{project_id}/events")
     async def project_events(project_id: str, request: Request) -> StreamingResponse:

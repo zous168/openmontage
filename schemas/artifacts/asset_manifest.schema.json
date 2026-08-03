@@ -12,6 +12,21 @@
       "items": {
         "type": "object",
         "required": ["id", "type", "path", "source_tool", "scene_id"],
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "type": { "enum": ["image", "video"] },
+                "source_tool": {
+                  "not": { "enum": ["ffmpeg", "video_trimmer", "frame_sampler", "character_rig_renderer"] }
+                }
+              },
+              "required": ["type", "source_tool"]
+            },
+            "then": { "required": ["prompt"] }
+          }
+        ],
         "properties": {
           "id": { "type": "string" },
           "type": {
@@ -21,7 +36,11 @@
           "path": { "type": "string", "description": "Relative path within the pipeline project directory" },
           "source_tool": { "type": "string" },
           "scene_id": { "type": "string" },
-          "prompt": { "type": "string", "description": "Generation prompt if AI-generated" },
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Exact prompt sent to the generation tool (or search term for stock). Required for `image`/`video` assets unless produced by a derivation tool (`video_trimmer`, `frame_sampler`, `ffmpeg`, `character_rig_renderer`)."
+          },
           "seed": { "type": "integer", "description": "Seed if applicable" },
           "model": { "type": "string", "description": "Model used for generation" },
           "cost_usd": { "type": "number", "minimum": 0 },

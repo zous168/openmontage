@@ -227,17 +227,28 @@ class VideoCompose(BaseTool):
     ]
 
     def _remotion_available(self) -> bool:
-        """Check if Remotion rendering is available (requires npx + composer project + node_modules)."""
+        """Check if Remotion rendering is available (requires node + composer project + node_modules)."""
         import shutil as _shutil
 
-        if not _shutil.which("npx"):
+        if not _shutil.which("node"):
             return False
         composer_dir = Path(__file__).resolve().parent.parent.parent / "remotion-composer"
         if not composer_dir.exists() or not (composer_dir / "package.json").exists():
             return False
         # Check that node_modules are actually installed — without this,
-        # npx remotion render will fail even though the project exists.
+        # the render script will fail even though the project exists.
         if not (composer_dir / "node_modules").exists():
+            return False
+        # With npm workspaces the @remotion packages live at the repo root;
+        # npm may also create an EMPTY composer/node_modules/@remotion dir
+        # after a workspace install, so an existence check alone is not
+        # enough — require a real package entry (e.g. @remotion/renderer).
+        remotion_dir = (
+            composer_dir.parent / "node_modules" / "@remotion"
+            if (composer_dir.parent / "node_modules" / "@remotion").exists()
+            else composer_dir / "node_modules" / "@remotion"
+        )
+        if not (remotion_dir / "renderer").exists():
             return False
         return True
 
@@ -829,6 +840,10 @@ class VideoCompose(BaseTool):
         output_path = Path(inputs.get("output_path", "renders/output.mp4")).resolve()
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # NOTE: atelier/bespoke intentionally keeps the npx CLI path — it needs
+        # --scale/--crf/--concurrency flags that render.mjs does not carry yet.
+        # npx resolves the vendored CLI via the repo-root node_modules/.bin.
+        # TODO(vendor): migrate to render.mjs once it supports these flags.
         cmd = ["npx", "remotion", "render", str(effective_entry), str(comp_id), str(output_path)]
 
         props_path = bespoke.get("props_path")
@@ -1825,6 +1840,11 @@ class VideoCompose(BaseTool):
             return src
 
         dest = src.parent / f"{src.stem}_remotion48k.wav"
+        # Idempotent cache: reuse an existing normalized file that is at
+        # least as fresh as the source. The NLE preview polls draft props
+        # every ~1.5s, so re-transcoding on every poll would be a disaster.
+        if dest.exists() and dest.stat().st_mtime >= src.stat().st_mtime:
+            return dest
         try:
             subprocess.run(
                 ["ffmpeg", "-y", "-i", str(src), "-ar", "48000", "-ac", "2", str(dest)],
@@ -1879,18 +1899,24 @@ class VideoCompose(BaseTool):
         return project_dir
 
     def _remotion_render(self, inputs: dict[str, Any]) -> ToolResult:
-        """Render via Remotion (requires Node.js + npx).
+        """Render via Remotion (requires Node.js + the vendored @remotion packages).
 
         Handles compositions with still images, animated scenes, component
         types, and transitions using React-based frame-accurate rendering.
         Accepts edit_decisions (with resolved file paths) or raw composition_data.
+
+        Renders through remotion-composer/scripts/render.mjs, which calls
+        @remotion/renderer.renderMedia() programmatically instead of the old
+        `npx remotion render` subprocess. Set OPENMONTAGE_REMOTION_NPX=1 to
+        fall back to the legacy npx CLI path (grey-scale rollback).
         """
+        import os as _os
         import shutil
 
-        if not shutil.which("npx"):
+        if not shutil.which("node"):
             return ToolResult(
                 success=False,
-                error="npx not found. Install Node.js to use Remotion rendering.",
+                error="node not found. Install Node.js to use Remotion rendering.",
             )
 
         composition_data = inputs.get("edit_decisions") or inputs.get("composition_data")
@@ -1953,56 +1979,90 @@ class VideoCompose(BaseTool):
         renderer_family = (composition_data or {}).get("renderer_family", "explainer-data")
         composition_id = self._get_composition_id(renderer_family)
 
-        cmd = [
-            "npx", "remotion", "render",
-            str(composer_dir / "src" / "index.tsx"),
-            composition_id,
-            str(output_path),
-            # Use the `--props=<path>` equals form rather than two separate
-            # args. On Windows, passing `--props` and the path separately makes
-            # Remotion mis-parse the value (quote escaping differs), failing
-            # with "neither valid JSON nor a file path". The equals form is the
-            # API Remotion recommends for file paths and is cross-platform safe.
-            f"--props={props_path}",
-        ]
+        render_script = composer_dir / "scripts" / "render.mjs"
+        use_npx = _os.environ.get("OPENMONTAGE_REMOTION_NPX") == "1"
+        if use_npx or not render_script.is_file():
+            # Legacy path: npx remotion render ... (rollback / pre-vendor setup)
+            cmd = [
+                "npx", "remotion", "render",
+                str(composer_dir / "src" / "index.tsx"),
+                composition_id,
+                str(output_path),
+                # Use the `--props=<path>` equals form rather than two separate
+                # args. On Windows, passing `--props` and the path separately
+                # makes Remotion mis-parse the value (quote escaping differs),
+                # failing with "neither valid JSON nor a file path".
+                f"--props={props_path}",
+            ]
+            if project_dir is not None and project_dir.is_dir():
+                cmd.append(f"--public-dir={project_dir.resolve().as_posix()}")
 
-        if project_dir is not None and project_dir.is_dir():
-            cmd.append(f"--public-dir={project_dir.resolve().as_posix()}")
+            # Output dimensions: metadata.compose_target > profile > composition default.
+            profile_name = inputs.get("profile")
+            out_w, out_h = self._remotion_output_size(composition_data, profile_name)
+            if out_w and out_h:
+                cmd.extend(["--width", str(out_w), "--height", str(out_h)])
+            elif profile_name:
+                try:
+                    from lib.media_profiles import get_profile
 
-        # Output dimensions: metadata.compose_target > profile > composition default.
-        profile_name = inputs.get("profile")
-        out_w, out_h = self._remotion_output_size(composition_data, profile_name)
-        if out_w and out_h:
-            cmd.extend(["--width", str(out_w), "--height", str(out_h)])
-        elif profile_name:
-            try:
-                from lib.media_profiles import get_profile
+                    p = get_profile(profile_name)
+                    cmd.extend(["--width", str(p.width), "--height", str(p.height)])
+                except (ImportError, ValueError):
+                    pass
 
-                p = get_profile(profile_name)
-                cmd.extend(["--width", str(p.width), "--height", str(p.height)])
-            except (ImportError, ValueError):
-                pass
+            # Optional creator-facing render timeout. Remotion's `--timeout` (ms)
+            # governs headless-browser setup and delayRender(); pass it through
+            # and give the subprocess enough headroom so run_command() does not
+            # kill Remotion before its own timeout fires.
+            remotion_timeout_ms = inputs.get("remotion_timeout_ms")
+            subprocess_timeout = 600
+            if remotion_timeout_ms:
+                try:
+                    ms = int(remotion_timeout_ms)
+                    cmd.append(f"--timeout={ms}")
+                    subprocess_timeout = max(subprocess_timeout, ms // 1000 + 60)
+                except (TypeError, ValueError):
+                    pass
+        else:
+            # Programmatic render: node scripts/render.mjs with equals-form args
+            # (same contract as the CLI path — see render.mjs).
+            profile_name = inputs.get("profile")
+            out_w, out_h = self._remotion_output_size(composition_data, profile_name)
+            if not out_w and not out_h and profile_name:
+                try:
+                    from lib.media_profiles import get_profile
 
-        # Optional creator-facing render timeout. Remotion's `--timeout` (ms)
-        # governs headless-browser setup and delayRender(); on slow machines or
-        # restricted networks the default 30s browser setup times out with an
-        # opaque failure. Pass it through and give the subprocess enough headroom
-        # so run_command() does not kill Remotion before its own timeout fires.
-        remotion_timeout_ms = inputs.get("remotion_timeout_ms")
-        subprocess_timeout = 600
-        if remotion_timeout_ms:
-            try:
-                ms = int(remotion_timeout_ms)
-                cmd.append(f"--timeout={ms}")
-                subprocess_timeout = max(subprocess_timeout, ms // 1000 + 60)
-            except (TypeError, ValueError):
-                pass
+                    p = get_profile(profile_name)
+                    out_w, out_h = p.width, p.height
+                except (ImportError, ValueError):
+                    pass
+            cmd = [
+                shutil.which("node"),
+                str(render_script),
+                f"--entry={composer_dir / 'src' / 'index.tsx'}",
+                f"--composition={composition_id}",
+                f"--output={output_path}",
+                f"--props={props_path}",
+            ]
+            if project_dir is not None and project_dir.is_dir():
+                cmd.append(f"--public-dir={project_dir.resolve().as_posix()}")
+            if out_w and out_h:
+                cmd.extend([f"--width={out_w}", f"--height={out_h}"])
+            remotion_timeout_ms = inputs.get("remotion_timeout_ms")
+            subprocess_timeout = 600
+            if remotion_timeout_ms:
+                try:
+                    ms = int(remotion_timeout_ms)
+                    cmd.append(f"--timeout={ms}")
+                    subprocess_timeout = max(subprocess_timeout, ms // 1000 + 60)
+                except (TypeError, ValueError):
+                    pass
 
         try:
-            # Invoke from inside the composer dir so npx can resolve the
-            # local remotion binary via node_modules/.bin. Without this,
-            # Windows npx cannot locate the CLI and returns "could not
-            # determine executable to run".
+            # Invoke from inside the composer dir so node resolves the
+            # vendored @remotion packages (workspaces hoist to the repo
+            # root, which is an ancestor of the composer dir).
             self.run_command(cmd, timeout=subprocess_timeout, cwd=composer_dir)
         except subprocess.CalledProcessError as e:
             from lib.error_digest import summarize_error_text

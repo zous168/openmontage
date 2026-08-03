@@ -45,7 +45,7 @@ def load_playbook(name: str, styles_dir: Optional[Path] = None) -> dict[str, Any
     if not path.exists():
         raise FileNotFoundError(f"Playbook not found: {path}")
 
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         playbook = yaml.safe_load(f)
 
     validate_playbook(playbook)

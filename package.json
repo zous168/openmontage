@@ -1,0 +1,25 @@
+{
+  "name": "openmontage",
+  "private": true,
+  "version": "1.0.0",
+  "description": "OpenMontage — npm workspaces root (remotion-composer + vendored remotion core)",
+  "workspaces": [
+    "remotion-composer",
+    "vendor/remotion/packages/*"
+  ],
+  "scripts": {
+    "build:vendor": "node scripts/build-vendor.mjs",
+    "install:all": "npm install && node scripts/build-vendor.mjs"
+  },
+  "devDependencies": {
+    "@types/bun": "1.3.3",
+    "@types/node": "20.12.14",
+    "@types/react": "19.2.7",
+    "@types/react-dom": "19.2.3",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20.11",
+    "npm": ">=9"
+  }
+}

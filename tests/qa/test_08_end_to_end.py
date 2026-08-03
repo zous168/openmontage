@@ -367,6 +367,7 @@ for i, (sid, label, start, end, _) in enumerate(SECTIONS):
         "path": img_path,
         "source_tool": "image_selector",
         "scene_id": scene_id,
+        "prompt": f"explainer image for scene {scene_id}",
     })
 
 clean_assets.append({

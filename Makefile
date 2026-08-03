@@ -55,8 +55,10 @@ setup: ensure-venv
 	@echo "==> Installing Python dependencies..."
 	$(PIP) install -r requirements.txt
 	@echo ""
-	@echo "==> Installing Remotion composer..."
-	cd remotion-composer && npm install
+	@echo "==> Installing workspace packages (root)..."
+	npm install
+	@echo "==> Building vendored Remotion core (dist is committed; rebuild optional)..."
+	node scripts/build-vendor.mjs || echo "  [skip] build-vendor failed — vendored dist/ is committed, first install only needs npm"
 	@echo ""
 	@echo "==> Installing free offline TTS (Piper)..."
 	$(PIP) install piper-tts || echo "  [skip] piper-tts install failed — TTS will use cloud providers instead"

@@ -190,7 +190,11 @@ def _build_remotion_studio_cmd(
     public_dir: Path,
 ) -> list[str]:
     """Prefer `node …/remotion-cli.js` over `npx` to avoid Windows console flashes."""
+    # npm workspaces hoist @remotion/cli to the repo root; fall back there
+    # when the composer-local path is gone (post-workspaces layout).
     cli_js = COMPOSER_DIR / "node_modules" / "@remotion" / "cli" / "remotion-cli.js"
+    if not cli_js.is_file():
+        cli_js = REPO_ROOT / "node_modules" / "@remotion" / "cli" / "remotion-cli.js"
     flags = [
         f"--port={port}",
         f"--props={props_path.as_posix()}",
@@ -259,6 +263,8 @@ def build_edit_preview_info(project_dir: Path) -> dict[str, Any]:
     if composition_id:
         studio_url = f"{studio_url}/{composition_id}"
 
+    nle_port = _project_port(project_id, 3400)
+
     return {
         "render_runtime": runtime,
         "remotion": {
@@ -269,6 +275,12 @@ def build_edit_preview_info(project_dir: Path) -> dict[str, Any]:
             "port": remotion_port,
             "running": _port_open(remotion_port),
             "studio_url": studio_url,
+            "nle_preview_url": (
+                f"http://localhost:{nle_port}/?projectId={project_id}"
+                if _port_open(nle_port)
+                else None
+            ),
+            "nle_preview_running": _port_open(nle_port),
         },
         "hyperframes": {
             "available": npx_ok,
@@ -298,6 +310,9 @@ def start_edit_preview(
     edit = _read_json(project_dir / "artifacts" / "edit_decisions.json") or {}
     if not edit.get("cuts"):
         raise ValueError("edit_decisions 尚无剪切片段，无法打开高级预览")
+
+    if runtime == "remotion" and mode == "nle":
+        return start_nle_preview(project_dir)
 
     if runtime == "remotion":
         if not shutil.which("npx") and not shutil.which("npx.cmd"):
@@ -382,3 +397,49 @@ def start_edit_preview(
         }
 
     raise ValueError(f"不支持的预览 runtime：{runtime}")
+
+
+def start_nle_preview(project_dir: Path) -> dict[str, Any]:
+    """Start the NLE live-preview server (webpack-bundled Player iframe).
+
+    The preview iframe polls GET /nle-edit/draft-props, so the server only
+    bundles src/preview.tsx once; no props are baked into the bundle.
+    """
+    project_id = project_dir.name
+    if not _resolve_node_safe():
+        raise RuntimeError("未找到 node，无法启动 NLE 预览")
+    script = COMPOSER_DIR / "scripts" / "preview-server.mjs"
+    if not script.is_file():
+        raise RuntimeError(f"缺少 NLE 预览脚本：{script}")
+
+    port = _project_port(project_id, 3400)
+    if _port_open(port):
+        _stop_listener(port)
+
+    cmd = [_resolve_node(), str(script), f"--port={port}", f"--public-dir={project_dir}"]
+    _spawn_detached(cmd, cwd=COMPOSER_DIR)
+    if not _wait_for_port(port, timeout=120.0):
+        raise RuntimeError(f"NLE 预览服务在 {port} 端口启动超时")
+
+    url = f"http://localhost:{port}/?projectId={project_id}"
+    _PREVIEW_SESSIONS[f"{project_id}:nle"] = {
+        "runtime": "remotion",
+        "mode": "nle",
+        "port": port,
+        "url": url,
+    }
+    return {
+        "runtime": "remotion",
+        "mode": "nle",
+        "url": url,
+        "port": port,
+        "hint": "NLE 实时预览已启动——在时间线上拖拽 cut 后点「预览草稿」。",
+    }
+
+
+def _resolve_node_safe() -> bool:
+    try:
+        _resolve_node()
+        return True
+    except RuntimeError:
+        return False

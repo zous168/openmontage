@@ -763,3 +763,37 @@ class TestProjectSummary:
         s = load_board_state(p)
         assert s["style_playbook"] == "clean-professional"
         assert s["style_playbook_label_zh"] == "干净专业"
+
+
+class TestStoryboardImagePromptProvenance(TestStoryboardVisualSelection):
+    """Image scenes must surface the EXACT recorded prompt (the text sent
+    to the model), not a reconstructed approximation."""
+
+    def _image_project(self, projects_root):
+        exact = ("扁平矢量科普插画：一束白色光束穿过三棱镜分解成彩虹，"
+                 "深蓝夜空背景，现代教育插画风格")
+        p = self._project_with_scenes(
+            projects_root,
+            [{
+                "id": "sc1", "type": "generated", "description": "棱镜彩虹插画",
+                "start_seconds": 0, "end_seconds": 6,
+                "required_assets": [
+                    {"type": "image", "description": exact, "source": "generate",
+                     "prompt_profile": "default"},
+                ],
+            }],
+            [{
+                "id": "a1", "type": "image", "path": "assets/images/prism.png",
+                "scene_id": "sc1", "source_tool": "image_selector", "prompt": exact,
+            }],
+        )
+        (p / "assets" / "images").mkdir(parents=True, exist_ok=True)
+        (p / "assets" / "images" / "prism.png").write_bytes(b"\x89PNG")
+        return p, exact
+
+    def test_image_scene_generation_prompt_is_exact_recorded_prompt(self, projects_root):
+        p, exact = self._image_project(projects_root)
+        s = load_board_state(p)
+        card = next(c for c in s["storyboard"]["scenes"] if c["id"] == "sc1")
+        assert card["generation_prompt"] == exact
+        assert card["generation_prompt"] != card["description"]

@@ -35,6 +35,9 @@ let editNarrationPlaying = false;
 let editPreviewRafId = null;
 let editNleRuntime = null;
 let editPreviewLastCutKey = null;
+let nleDraft = null;       // {cuts, overlays} — in-memory timeline edit (not yet applied)
+let nleDirty = false;      // true when nleDraft differs from canonical edit_decisions
+let nleDraftRestored = false; // one-shot guard for restoring drafts after reload
 let editPreviewAudio = null;
 
 function renderThemeToggleInBoard() {
@@ -707,6 +710,7 @@ async function openEditPreview(runtime, mode, { scaffold = false } = {}) {
 }
 
 function editPreviewTitle(runtime, mode) {
+  if (mode === "nle") return t("editNleLivePreview");
   if (runtime === "remotion") return t("editOpenRemotionStudio");
   if (mode === "play") return t("editOpenHyperFramesPlayer");
   return t("editOpenHyperFramesStudio");
@@ -2059,6 +2063,14 @@ function renderNleTimelineNode(s, composition, layer, node, totalSeconds) {
         nleWaveformEl(`${fileName}-${node.index}`, "video"),
       );
     }
+    // Interactive NLE editing — absolute timelines (remotion/hyperframes)
+    // map 1:1 to cut.in_seconds/out_seconds, so drag/resize edits them.
+    // NOTE: on absolute timelines every sequence row is a compact staircase
+    // row, so the binding must NOT be gated on !compact (that would make
+    // drag editing dead code).
+    if (composition.absolute && renderRuntimeIsEditable(s)) {
+      bindNleDragEdit(block, cut, totalSeconds);
+    }
     return attachPlayback(block);
   }
 
@@ -2238,6 +2250,220 @@ function renderNleTimeline(s, artifact, composition) {
   );
 }
 
+/* ------------------------------------------------------------------ *
+ * Interactive NLE editing — drag/resize cut blocks on the timeline,   *
+ * preview the draft live, then apply through the governed API.        *
+ * ------------------------------------------------------------------ */
+
+function renderRuntimeIsEditable(s) {
+  const rt = (s.artifacts?.edit_decisions || {}).render_runtime;
+  return rt === "remotion" || rt === "hyperframes";
+}
+
+function nleInitDraft() {
+  if (nleDraft) return nleDraft;
+  const canonical = state?.artifacts?.edit_decisions || {};
+  nleDraft = {
+    cuts: structuredClone(canonical.cuts || []),
+    overlays: canonical.overlays != null ? structuredClone(canonical.overlays) : null,
+  };
+  return nleDraft;
+}
+
+function updateNleBlockVisual(block, cut, totalSeconds) {
+  const inSec = Number(cut.in_seconds) || 0;
+  const outSec = Number(cut.out_seconds) || inSec + 1;
+  const dur = Math.max(outSec - inSec, 0.001);
+  block.style.left = `${(inSec / totalSeconds) * 100}%`;
+  block.style.width = `${(dur / totalSeconds) * 100}%`;
+  const meta = block.querySelector(".nle-block-meta");
+  if (meta) meta.textContent = fmtTimelineClock(dur);
+}
+
+function bindNleDragEdit(block, cut, totalSeconds) {
+  const leftHandle = el("span", { class: "nle-block-handle nle-block-handle--left", title: t("editNleResize") });
+  const rightHandle = el("span", { class: "nle-block-handle nle-block-handle--right", title: t("editNleResize") });
+  block.append(leftHandle, rightHandle);
+  block.classList.add("nle-block--editable");
+
+  const startDrag = (mode, downEv) => {
+    if (downEv.button !== 0) return;
+    const isHandle = mode !== "move";
+    if (isHandle) {
+      // Handles have no click semantics of their own; suppress selection.
+      downEv.preventDefault();
+      downEv.stopPropagation();
+    }
+    // Body drags must NOT preventDefault — the block's click (selection)
+    // must keep working for plain clicks. We gate the actual drag behind a
+    // 3px movement threshold so clicks never mark the timeline dirty.
+    const laneEl = block.closest(".nle-lane");
+    const laneWidth = laneEl ? laneEl.offsetWidth : block.parentElement.offsetWidth;
+    if (!laneWidth) return;
+
+    const draft = nleInitDraft();
+    const cutId = cut.id ?? cut.source;
+    const draftCut = draft.cuts.find((c) => (c.id ?? c.source) === cutId) || draft.cuts[0];
+    if (!draftCut) return;
+    const startX = downEv.clientX;
+    const startY = downEv.clientY;
+    const startIn = Number(draftCut.in_seconds) || 0;
+    const startOut = Number(draftCut.out_seconds) || startIn + 1;
+    const MIN_DUR = 0.4;
+    let moved = false;
+
+    const onMove = (ev) => {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!moved && Math.hypot(dx, dy) < 3) return; // below click threshold
+      if (!moved) {
+        moved = true;
+        block.classList.add("nle-block--dragging");
+      }
+      const dxSec = (dx / laneWidth) * totalSeconds;
+      if (mode === "resize-left") {
+        const newIn = Math.min(Math.max(0, startIn + dxSec), startOut - MIN_DUR);
+        draftCut.in_seconds = Math.round(newIn * 10) / 10;
+      } else if (mode === "resize-right") {
+        const newOut = Math.max(startOut + dxSec, startIn + MIN_DUR);
+        draftCut.out_seconds = Math.round(newOut * 10) / 10;
+      } else {
+        const newIn = Math.max(0, startIn + dxSec);
+        draftCut.in_seconds = Math.round(newIn * 10) / 10;
+        draftCut.out_seconds = Math.round((newIn + (startOut - startIn)) * 10) / 10;
+      }
+      updateNleBlockVisual(block, draftCut, totalSeconds);
+    };
+    const onUp = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!moved) return; // plain click: selection handled by the click event
+      block.classList.remove("nle-block--dragging");
+      nleDirty = true;
+      render();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  leftHandle.addEventListener("pointerdown", (e) => startDrag("resize-left", e));
+  rightHandle.addEventListener("pointerdown", (e) => startDrag("resize-right", e));
+  block.addEventListener("pointerdown", (e) => startDrag("move", e));
+}
+
+function renderEditNleToolbar(s, artifact) {
+  if (!renderRuntimeIsEditable(s)) {
+    return el("div", { class: "nle-edit-toolbar nle-edit-toolbar--locked" },
+      el("span", { class: "edit-runtime-note" }, t("editNleFfmpegLocked")));
+  }
+  const dirty = Boolean(nleDraft) && nleDirty;
+  return el("div", { class: "nle-edit-toolbar" },
+    el("div", { class: "nle-edit-toolbar-status" },
+      dirty ? el("span", { class: "nle-edit-dirty" }, t("editNleDirty")) : null),
+    el("div", { class: "nle-edit-toolbar-actions" },
+      el("button", { type: "button", class: "edit-advanced-btn",
+        onclick: () => toggleNlePreview(s) }, t("editNleLivePreview")),
+      el("button", { type: "button", class: "edit-advanced-btn",
+        disabled: !dirty, onclick: () => previewNleDraft(s) }, t("editNlePreviewDraft")),
+      el("button", { type: "button", class: "edit-advanced-btn edit-advanced-btn--primary",
+        disabled: !dirty, onclick: () => applyNleDraft(s) }, t("editNleApply")),
+      el("button", { type: "button", class: "edit-advanced-btn edit-advanced-btn--ghost",
+        disabled: !dirty, onclick: discardNleDraft }, t("editNleDiscard")),
+    ),
+  );
+}
+
+async function toggleNlePreview(s) {
+  try {
+    const info = await (await fetch(`/api/project/${encodedProjectId}/edit-preview`)).json();
+    const url = info.remotion?.nle_preview_url;
+    if (url) {
+      openEditPreviewModal({ url, runtime: "remotion", mode: "nle" }, "remotion", "nle");
+      return;
+    }
+    const result = await postJSON(`/api/project/${encodedProjectId}/edit-preview/start`, {
+      runtime: "remotion",
+      mode: "nle",
+    });
+    if (result.url) {
+      openEditPreviewModal(result, "remotion", "nle");
+    } else {
+      closeModal();
+    }
+  } catch (err) {
+    closeModal();
+    window.alert(err.message || String(err));
+  }
+}
+
+async function previewNleDraft(s) {
+  if (!nleDraft) return;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/nle-edit/preview`, {
+      cuts: nleDraft.cuts,
+      overlays: nleDraft.overlays,
+    });
+    await toggleNlePreview(s);
+  } catch (err) {
+    window.alert(err.message || String(err));
+  }
+}
+
+async function applyNleDraft(s) {
+  if (!nleDraft) return;
+  const summary = nleDraft.cuts
+    .map((c) => `${c.id || c.source}: ${fmtTimelineClock(Number(c.in_seconds) || 0)} – ${fmtTimelineClock(Number(c.out_seconds) || 0)}`)
+    .join("\n");
+  if (!window.confirm(`${t("editNleApplyConfirm")}\n\n${summary}`)) return;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/nle-edit/apply`, {
+      cuts: nleDraft.cuts,
+      overlays: nleDraft.overlays,
+      decision_note: "用户在 Backlot NLE 时间线上确认的剪辑调整",
+    });
+    nleDraft = null;
+    nleDirty = false;
+    render(); // immediate refresh; SSE also fires (heartbeat up to 15s)
+  } catch (err) {
+    // 409 = draft stale: canonical edit_decisions changed underneath us.
+    nleDraft = null;
+    nleDirty = false;
+    window.alert(err.message || String(err));
+    render();
+  }
+}
+
+function discardNleDraft() {
+  nleDraft = null;
+  nleDirty = false;
+  render();
+}
+
+/**
+ * After a page reload the in-memory draft is gone but the server-side draft
+ * (renders/.nle_draft.json) may still exist — restore it so the timeline and
+ * the preview iframe stay consistent. Runs at most once per session.
+ */
+async function restoreNleDraftFromServer() {
+  try {
+    const res = await fetch(`/api/project/${encodedProjectId}/nle-edit/draft`);
+    if (!res.ok) return;
+    const d = await res.json();
+    if (d.has_draft && !d.stale) {
+      nleDraft = { cuts: d.cuts || [], overlays: d.overlays != null ? d.overlays : null };
+      nleDirty = true;
+      render();
+    } else if (d.has_draft && d.stale) {
+      // Canonical edit_decisions changed underneath the draft — drop it.
+      nleDraft = null;
+      nleDirty = false;
+      render();
+    }
+  } catch {
+    // Restoring the draft is best-effort; the board works without it.
+  }
+}
+
 function renderEditRuntimeBar(s, artifact) {
   const runtime = artifact.render_runtime || "ffmpeg";
   const bar = el("div", { class: "edit-runtime-bar" },
@@ -2271,31 +2497,42 @@ function renderEditRuntimeBar(s, artifact) {
 }
 
 function renderEditDecisionsBody(s, artifact) {
-  const cuts = artifact.cuts || [];
-  const summary = editAudioSummary(artifact);
+  // NLE draft overlays the canonical edit_decisions while editing; canonical
+  // data is only replaced through the governed apply flow (nle-edit/apply).
+  const display = nleDraft
+    ? { ...artifact, cuts: nleDraft.cuts, overlays: nleDraft.overlays ?? artifact.overlays }
+    : artifact;
+  const cuts = display.cuts || [];
+  const summary = editAudioSummary(display);
   if (!cuts.length) {
     return el("div", { class: "edit-decisions-inline" }, summary);
   }
 
-  const composition = buildCompositionTimeline(artifact, s);
+  const composition = buildCompositionTimeline(display, s);
   const { clipMeta, durationSeconds: totalSeconds } = composition;
-  const captionTracks = buildNleCaptionTracks(s, artifact, totalSeconds);
-  const safeIndex = Math.min(Math.max(0, selectedEditCutIndex), (artifact.cuts || []).length - 1);
+  const captionTracks = buildNleCaptionTracks(s, display, totalSeconds);
+  const safeIndex = Math.min(Math.max(0, selectedEditCutIndex), (display.cuts || []).length - 1);
   if (safeIndex !== selectedEditCutIndex) selectedEditCutIndex = safeIndex;
 
-  setEditNleRuntime({ s, artifact, composition, clipMeta, captionTracks, totalSeconds });
+  setEditNleRuntime({ s, artifact: display, composition, clipMeta, captionTracks, totalSeconds });
   ensureEditNlePlaybackKeys();
+
+  if (!nleDraftRestored) {
+    nleDraftRestored = true;
+    restoreNleDraftFromServer();
+  }
 
   return el("div", { class: "edit-decisions-inline" },
     summary,
-    renderEditRuntimeBar(s, artifact),
+    renderEditRuntimeBar(s, display),
+    renderEditNleToolbar(s, display),
     el("section", { class: "edit-timeline-section edit-nle-editor" },
       el("div", { class: "edit-timeline-head" },
         el("div", { class: "drawer-section-label" }, t("editTimelineTitle")),
       ),
-      renderEditPreviewPanel(s, artifact, clipMeta, captionTracks, totalSeconds),
+      renderEditPreviewPanel(s, display, clipMeta, captionTracks, totalSeconds),
       el("div", { class: "edit-timeline-scroll" },
-        renderNleTimeline(s, artifact, composition),
+        renderNleTimeline(s, display, composition),
       ),
       el("p", { class: "edit-timeline-hint" }, t("editTimelineSelectHint")),
     ),
@@ -3218,8 +3455,9 @@ function sceneGenerationPrompt(card) {
   const primary = String(card.generation_prompt || card.planned_prompt || "").trim();
   if (primary) return primary;
   for (const asset of card.required_assets || []) {
-    if (asset?.type === "video" && asset?.source === "generate" && asset.description) {
+    if (["video", "image"].includes(asset?.type) && asset?.source === "generate" && asset.description) {
       const d = String(asset.description).trim();
+      if (asset.type === "image") return d;
       if (d.includes("Aspect ratio:") || d.startsWith("[INHERIT DNA LOCK]")) return d;
     }
   }
@@ -3257,7 +3495,7 @@ function openScenePromptModal(card, promptText) {
     el("div", { class: "modal-page modal-page-summary modal-page-prompt" },
       el("div", { class: "script-card script-card--prompt", style: "cursor:default" },
         el("div", { class: "sp-meta" }, meta),
-        el("div", { class: "sp-cue" }, "生成提示词 · video_selector"),
+        el("div", { class: "sp-cue" }, "生成提示词 · " + (card.visual?.source_tool || "scene_plan")),
         el("div", { class: "scene-prompt-body scene-prompt-body--scroll" }, prompt),
       )),
   );

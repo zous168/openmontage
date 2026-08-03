@@ -2986,6 +2986,63 @@ a.backlink:hover { color: var(--text-2); }
   min-width: 28px;
 }
 .nle-block--clickable { cursor: pointer; }
+
+/* Interactive NLE editing — drag / resize handles */
+.nle-block--editable { cursor: grab; }
+.nle-block--editable:active { cursor: grabbing; }
+.nle-block--dragging {
+  opacity: .92;
+  box-shadow: 0 0 0 2px var(--accent, #22d3ee);
+  z-index: 5;
+}
+.nle-block-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+  background: rgba(255, 255, 255, .22);
+  opacity: 0;
+  transition: opacity .12s ease;
+}
+.nle-block-handle--left { left: 0; border-radius: 4px 0 0 4px; }
+.nle-block-handle--right { right: 0; border-radius: 0 4px 4px 0; }
+.nle-block--editable:hover .nle-block-handle { opacity: 1; }
+
+.nle-edit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 8px;
+  flex-wrap: wrap;
+}
+.nle-edit-toolbar--locked { opacity: .7; }
+.nle-edit-toolbar-status {
+  margin-right: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nle-edit-toolbar-actions { display: flex; gap: 6px; align-items: center; }
+.nle-edit-dirty {
+  font-size: calc(11px * var(--fs-scale));
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, .45);
+  border-radius: 10px;
+  padding: 1px 8px;
+  background: rgba(245, 158, 11, .08);
+}
+.edit-advanced-btn--primary {
+  background: var(--accent, #22d3ee);
+  color: #062a2e;
+  font-weight: 600;
+}
+.edit-advanced-btn:disabled {
+  opacity: .45;
+  cursor: not-allowed;
+}
+
 .nle-block--caption-summary {
   background: linear-gradient(180deg, #c67a45, #9a5528);
   border: 1px solid rgba(255, 180, 120, .35);

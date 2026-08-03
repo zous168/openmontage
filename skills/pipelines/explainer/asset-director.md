@@ -129,6 +129,7 @@ Process asset tasks grouped by tool for efficiency:
 3. Include consistency anchors (same character/world/palette family), but do NOT reuse the exact same phrasing for every image
 4. Generate and verify the file exists
 5. If the result doesn't match expectations, refine the prompt and regenerate (max 2 retries)
+6. **记录**：将实际发送给 `image_selector` / 图片提供方的**最终提示词原文**写入 asset manifest 的 `assets[].prompt`（`source_tool` 为图片工具即必须）。schema 已强制：`image`/`video` 资产无 `prompt` 无法通过 assets 阶段 checkpoint。stock 图片（pexels/pixabay）记录实际搜索词。不得只写 `generation_summary` 代替 `prompt`。
 
 > **Scope split:** Flat-motion / educational `image_selector` jobs use the playbook +
 > five-aspect CHAI review below. **Reference-driven UGC / native phone footage** that
@@ -217,6 +218,9 @@ assert not errors, errors
    `source_tool: "video_selector"` and `prompt_profile: ugc_native` in `generation_summary`
    for audit.
 
+   `assets[].prompt` 对 `image`/`video` 资产已为 schema 必填项（派生工具除外）——缺失即
+   checkpoint 校验失败，是硬性 gate，不是可选项。
+
 **Multi-segment reference videos (>13s dense motion):**
 
 - Prefer `lib.generation_spec.segment_prompt_from_brief()` as the spine —
@@ -275,6 +279,7 @@ Assemble all generated assets into the manifest:
       "path": "assets/images/scene-3-diagram.png",
       "source_tool": "diagram_gen",
       "scene_id": "scene-3",
+      "prompt": "Flat isometric illustration of a vector database, blue-green palette per playbook",
       "cost_usd": 0.00
     },
     {

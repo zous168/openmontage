@@ -167,3 +167,70 @@ def test_cinematic_segment_assembles():
     prompt = assemble_segment_prompt(segment, prompt_profile="cinematic")
     assert "16:9" in prompt
     assert "real-time physics" in prompt
+
+
+# ------------------------------------------------------------------
+# canonical_generation_prompt_from_scene (image/video prompt provenance)
+# ------------------------------------------------------------------
+
+def _scene_with(assets):
+    return {"id": "sc1", "type": "generated", "description": "a scene",
+            "start_seconds": 0, "end_seconds": 6, "required_assets": assets}
+
+
+def test_canonical_generation_prompt_returns_image_description_verbatim():
+    exact = "扁平矢量插画：一束白光穿过三棱镜分解成彩虹，深蓝夜空背景"
+    scene = _scene_with([
+        {"type": "image", "description": exact, "source": "generate", "prompt_profile": "default"},
+    ])
+    from lib.generation_spec import canonical_generation_prompt_from_scene
+    assert canonical_generation_prompt_from_scene(scene) == exact
+
+
+def test_canonical_generation_prompt_video_behavior_matches_old_function():
+    from lib.generation_spec import (
+        canonical_generation_prompt_from_scene,
+        canonical_video_prompt_from_scene,
+    )
+    executable = "Aspect ratio: 9:16 vertical\nscene clutter: ..."
+    scene = _scene_with([
+        {"type": "video", "description": executable, "source": "generate",
+         "prompt_profile": "ugc_native_executable"},
+    ])
+    assert canonical_video_prompt_from_scene(scene) == executable
+    assert canonical_generation_prompt_from_scene(scene) == executable
+
+
+def test_canonical_generation_prompt_skips_non_generate_source():
+    from lib.generation_spec import canonical_generation_prompt_from_scene
+    scene = _scene_with([
+        {"type": "image", "description": "stock image", "source": "source"},
+    ])
+    assert canonical_generation_prompt_from_scene(scene) is None
+
+
+def test_canonical_generation_prompt_empty_description_returns_none():
+    from lib.generation_spec import canonical_generation_prompt_from_scene
+    scene = _scene_with([
+        {"type": "image", "description": "   ", "source": "generate"},
+    ])
+    assert canonical_generation_prompt_from_scene(scene) is None
+
+
+def test_video_wrapper_ignores_image_assets():
+    """canonical_video_prompt_from_scene must stay video-only — the
+    reference_scene_plan sync depends on that semantic."""
+    from lib.generation_spec import canonical_video_prompt_from_scene
+    scene = _scene_with([
+        {"type": "image", "description": "a poster prompt", "source": "generate"},
+    ])
+    assert canonical_video_prompt_from_scene(scene) is None
+
+
+def test_canonical_generation_prompt_skips_non_executable_video_description():
+    from lib.generation_spec import canonical_generation_prompt_from_scene
+    scene = _scene_with([
+        {"type": "video", "description": "A cinematic walkthrough of the office",
+         "source": "generate"},
+    ])
+    assert canonical_generation_prompt_from_scene(scene) is None

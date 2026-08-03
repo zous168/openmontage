@@ -54,22 +54,39 @@ PROFILE_LABELS: dict[str, dict[str, str]] = {
 }
 
 
-def canonical_video_prompt_from_scene(scene: dict[str, Any]) -> str | None:
-    """Return provider-ready executable prompt from scene_plan required_assets."""
+def canonical_generation_prompt_from_scene(
+    scene: dict[str, Any], *, types: tuple[str, ...] = ("video", "image")
+) -> str | None:
+    """Return provider-ready prompt recorded on the scene for any visual type.
+
+    ``required_assets[].description`` is the exact prompt text for
+    ``source == "generate"`` assets. For ``video``, only provider-ready
+    descriptions qualify (ugc_native_executable profile, "Aspect ratio:"
+    header, or DNA-inheritance continuation); for ``image`` the description
+    IS the prompt sent to the model and is returned verbatim.
+    """
     for asset in scene.get("required_assets") or []:
         if not isinstance(asset, dict):
             continue
-        if asset.get("type") != "video" or asset.get("source") != "generate":
+        if asset.get("type") not in types or asset.get("source") != "generate":
             continue
         desc = str(asset.get("description") or "").strip()
         if not desc:
             continue
-        profile = str(asset.get("prompt_profile") or "").strip()
-        if profile == "ugc_native_executable" or "Aspect ratio:" in desc:
-            return desc
-        if desc.startswith("[INHERIT DNA LOCK]"):
-            return desc
+        if asset.get("type") == "video":
+            profile = str(asset.get("prompt_profile") or "").strip()
+            if profile == "ugc_native_executable" or "Aspect ratio:" in desc:
+                return desc
+            if desc.startswith("[INHERIT DNA LOCK]"):
+                return desc
+            continue  # video description 非 provider-ready，跳过
+        return desc  # image：description 即发送原文，原样返回
     return None
+
+
+def canonical_video_prompt_from_scene(scene: dict[str, Any]) -> str | None:
+    """Video-only wrapper — keeps reference_scene_plan sync behavior unchanged."""
+    return canonical_generation_prompt_from_scene(scene, types=("video",))
 
 
 def analysis_prompt_from_scene(scene: dict[str, Any]) -> str | None:

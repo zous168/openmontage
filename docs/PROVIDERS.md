@@ -43,6 +43,7 @@ XAI_API_KEY=                 # xAI Grok image generation/editing + Grok video ge
 DOUBAO_SPEECH_API_KEY=       # Volcengine Doubao Speech TTS (strong Mandarin narration)
 DOUBAO_SPEECH_VOICE_TYPE=    # Default Doubao speaker/voice type
 DASHSCOPE_API_KEY=           # Alibaba DashScope (Qwen image gen, TTS, ASR with word timestamps)
+ZHIPU_API_KEY=               # ZhipuAI GLM/CogView-4 image generation (accurate Chinese text in images)
 
 # SPEECH-TO-TEXT (optional cloud transcription; local whisper is the default)
 AZURE_SPEECH_KEY=            # Azure AI Speech — Fast Transcription (word-level timestamps)
@@ -185,6 +186,38 @@ The ASR tool (`qwen3-asr-flash-filetrans`) uses an async submit-poll pattern. Au
 | `qwen-image-2.0-pro` | ~$0.02 per image (check console for current rates) |
 | `qwen3-tts-flash` | ~$0.000015 per character |
 | `qwen3-asr-flash-filetrans` | Per-minute billing (check console) |
+
+---
+
+### ZhipuAI BigModel — GLM/CogView-4 Image Generation
+
+> **Best for Chinese-text rendering in images.** CogView-4 reliably renders Chinese text (signs, posters, titles, UI mockups) inside generated images.
+
+**Tools unlocked:** `zhipu_image`
+**Env var:** `ZHIPU_API_KEY`
+
+#### Setup
+
+1. Go to [bigmodel.cn/usercenter/proj-mgmt/apikeys](https://bigmodel.cn/usercenter/proj-mgmt/apikeys)
+2. Generate an API key
+3. Add to `.env`: `ZHIPU_API_KEY=...`
+
+#### What it's best for
+
+- Images containing accurate Chinese text (posters, book covers, UI mockups, explainer titles)
+- Cost-effective generation (~¥0.06/image, cogview-4-250304 standard)
+- OpenAI-compatible endpoint — plain `requests`, no extra SDK
+
+#### API notes
+
+`POST https://open.bigmodel.cn/api/paas/v4/images/generations` with `Authorization: Bearer $ZHIPU_API_KEY`. Response `data[0].url` is a temporary link (valid ~30 days) — the tool downloads it to `output_path` immediately. Size uses the OpenAI-compatible `WxH` separator (`"1024x1024"`), **not** DashScope's `"W*H"`.
+
+| Model | Quality | Notes |
+|------|-------|------|
+| `cogview-4-250304` | hd / standard | Default; Chinese text in images; ~¥0.06/image standard |
+| `cogview-4` | hd / standard | CogView-4 series alias |
+| `cogview-3-flash` | standard | Fast, cheaper |
+| `glm-image` | hd only | Fixed 1280x1280, ignores `size` |
 
 ---
 

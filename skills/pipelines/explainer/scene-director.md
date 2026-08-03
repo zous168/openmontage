@@ -62,6 +62,8 @@ For each generation unit `[start_seconds, end_seconds)`:
 
 Do **not** defer reverse-engineered prompts to asset-director only — scene_plan must already carry them so human review of 分镜 sees the actual generation spec.
 
+同一规则适用于图片：I2V keyframe 之外的生成图片，其最终提示词同样以 `required_assets[].description` 为准；keyframe 图片提示词由 `lib.reference_scene_plan.sync_asset_manifest_prompts` 从场景可执行 video prompt 同步。
+
 Transform each **generation unit** into one visual scene (not each script section).
 
 ```json
@@ -201,6 +203,12 @@ If the video includes narration, the script **must** be written to fit the video
 > **inputs**, not the strings sent to `video_selector`. The asset-director assembles the complete
 > per-shot prompt at generation time (six-block table + Appendix A in `asset-director.md`). Do not use
 > cross-scene shorthand ("same as above") here — provide enough structured beats for assets to expand.
+>
+> **Final image prompts.** `required_assets[]` 中 `type: "image"`、`source: "generate"` 的
+> **`description` 即最终发送给图片模型的提示词原文**——与视频约定一致（`metadata.image_prompts`
+> 为早期临时约定，已废弃，勿再写入）。asset-director 不得把该 description 改写成通用摘要再发送；
+> 如运行中确需改写，改写后的原文必须回写 `required_assets[].description` 并在 asset manifest
+> 记录发送原文。
 
 > **Overlays callout.** Overlays (titles, subtitles, HUD, watermarks, framing graphics, lower-thirds, section_title bars, stat_reveal chips, hero_title overlays, provider chips) are NOT part of the scene's foreground/midground/background depth axis. List them separately in scene metadata (`overlays: [...]`) with content and placement. Never describe an overlay as "in the foreground" — that confuses both downstream tools and any video-understanding model that re-analyzes the output.
 
