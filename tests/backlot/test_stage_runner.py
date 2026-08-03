@@ -46,6 +46,9 @@ def projects_root(tmp_path, monkeypatch):
         os.path.normcase(str(root.resolve())),
     )
     monkeypatch.setattr(server_mod, "THUMB_CACHE_DIR", tmp_path / "thumbs")
+    # _TASKS 是模块级内存态：上个用例遗留的 "film" 任务会让本用例的
+    # approve/reject 误判为 busy。每个用例从干净状态开始。
+    stage_runner_mod._TASKS.clear()
     return root
 
 
@@ -148,6 +151,31 @@ class TestPrepareStageRun:
         with pytest.raises(stage_runner_mod.StageRunError) as exc:
             stage_runner_mod.prepare_stage_run(project_dir, stage="script")
         assert "只能运行" in str(exc.value)
+
+    def test_rerun_after_reject_carries_feedback_into_prompt(
+        self, projects_root, project_dir,
+    ):
+        """驳回反馈存在 checkpoint metadata 上；页面重跑按钮不带 feedback，
+        prepare 必须自己捞回来，否则 agent 收不到修改意见。"""
+        write_checkpoint(
+            projects_root, "film", "research", "awaiting_human",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE,
+        )
+        stage_runner_mod.reject_stage(project_dir, "research", feedback="请聚焦到页面驱动通道")
+        task = stage_runner_mod.prepare_stage_run(project_dir)  # 不传 feedback
+        assert "请聚焦到页面驱动通道" in task.prompt
+
+    def test_explicit_feedback_wins_over_stored(self, projects_root, project_dir):
+        write_checkpoint(
+            projects_root, "film", "research", "awaiting_human",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE,
+        )
+        stage_runner_mod.reject_stage(project_dir, "research", feedback="旧的反馈内容")
+        task = stage_runner_mod.prepare_stage_run(project_dir, feedback="新的反馈内容")
+        assert "新的反馈内容" in task.prompt
+        assert "旧的反馈内容" not in task.prompt
 
     def test_stale_lock_taken_over(self, projects_root, project_dir):
         task = stage_runner_mod.prepare_stage_run(project_dir)
@@ -271,6 +299,102 @@ class TestApproveReject:
         log = load_decision_log(project_dir)
         assert log["decisions"][-1]["category"] == "human_approval"
 
+    def test_approve_mirrors_every_pending_decision_with_unique_ids(
+        self, projects_root, project_dir,
+    ):
+        """多条待批决策：每条都要镜像，且 decision_id 必须各不相同。
+        （曾经循环里反复调 suggest_next_decision_id → 全同一个 id →
+        append_decisions 静默去重，只落一条，其余永远 drift。）"""
+        self._awaiting_proposal(project_dir, projects_root)
+        append_decisions("film", [{
+            "decision_id": "d-002",
+            "stage": "script",
+            "category": "voice_selection",
+            "subject": "Narration TTS provider",
+            "options_considered": [
+                {"option_id": "piper", "label": "Piper", "score": 0.9, "reason": "本地免费"},
+            ],
+            "selected": "piper",
+            "reason": "agent 决定",
+            "user_visible": True,
+            "user_approved": False,
+        }])
+        stage_runner_mod.approve_stage(project_dir, "script")
+
+        decisions = load_decision_log(project_dir)["decisions"]
+        mirrored = [d for d in decisions if d["decision_id"].startswith("wa-")]
+        assert len(mirrored) == 2, [d["decision_id"] for d in mirrored]
+        assert len({d["decision_id"] for d in mirrored}) == 2
+        # 同 (category, subject) 才算清账。
+        assert {(d["category"], d["subject"]) for d in mirrored} == {
+            ("playbook_selection", "Style playbook"),
+            ("voice_selection", "Narration TTS provider"),
+        }
+        assert all(d["user_approved"] for d in mirrored)
+
+    def test_approve_skips_schema_invalid_source_decision(
+        self, projects_root, project_dir,
+    ):
+        """日志里已存在 schema 不合法的决策时，批准不得整单 500。
+
+        无头 agent 带 bypassPermissions 运行，可以绕过 append_decisions /
+        write_checkpoint 的校验直接落盘（真实 E2E 里就出现过自造 category）。
+        批准要么清账要么如实上报，绝不能半途炸在 checkpoint 已写之后。
+        """
+        write_checkpoint(
+            projects_root, "film", "research", "completed",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE, human_approved=True,
+        )
+        write_checkpoint(
+            projects_root, "film", "script", "awaiting_human",
+            artifacts={"script": sample_artifact("script")},
+            pipeline_type=PIPELINE,
+        )
+        # 绕开校验直写——复现 agent 旁路落盘留下的降级状态。
+        log_path = project_dir / "decision_log.json"
+        log_path.write_text(json.dumps({
+            "version": "1.0",
+            "project_id": "film",
+            "decisions": [{
+                "decision_id": "d-bogus",
+                "stage": "script",
+                "category": "totally_made_up_category",
+                "subject": "自造类别",
+                "options_considered": [
+                    {"option_id": "a", "label": "A", "score": 1, "reason": "x"},
+                ],
+                "selected": "a",
+                "reason": "agent 自造",
+                "user_visible": True,
+                "user_approved": False,
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        result = stage_runner_mod.approve_stage(project_dir, "script")
+        assert result["status"] == "completed"
+        assert any("d-bogus" in s for s in result.get("unmirrored_decisions", []))
+        cp = read_checkpoint(projects_root, "film", "script")
+        assert cp["human_approved"] is True
+
+    def test_approve_appends_decisions_before_checkpoint(
+        self, projects_root, project_dir, monkeypatch,
+    ):
+        """追加失败时绝不能留下 completed+human_approved 而决策未批准的
+        drift 状态——那正是 approval_gate_drift 要抓的形态。"""
+        self._awaiting_proposal(project_dir, projects_root)
+
+        def boom(*_a, **_k):
+            raise RuntimeError("decision log write failed")
+
+        monkeypatch.setattr(stage_runner_mod, "append_decisions", boom, raising=False)
+        monkeypatch.setattr(decision_log_mod, "append_decisions", boom)
+        with pytest.raises(RuntimeError):
+            stage_runner_mod.approve_stage(project_dir, "script")
+        cp = read_checkpoint(projects_root, "film", "script")
+        assert cp["status"] == "awaiting_human"  # 阶段仍挂着，板面照实显示
+        assert not cp["human_approved"]
+
     def test_approve_not_awaiting_rejected(self, project_dir):
         with pytest.raises(stage_runner_mod.StageRunError) as exc:
             stage_runner_mod.approve_stage(project_dir, "research")
@@ -292,6 +416,25 @@ class TestApproveReject:
         log = load_decision_log(project_dir)
         assert log["decisions"][-1]["category"] == "human_rejection"
         assert log["decisions"][-1]["reason"] == "节奏太慢，压缩到 30 秒"
+        # 用户亲手做的决定 → 已签。写 false 会在重跑+批准后变成永久 drift。
+        assert log["decisions"][-1]["user_approved"] is True
+
+    def test_reject_then_rerun_then_approve_leaves_no_drift(
+        self, projects_root, project_dir,
+    ):
+        """驳回 → 重跑 → 批准的完整闭环后，审计必须干净。"""
+        from lib.production_audit import check_approval_gate_drift
+
+        self._awaiting_proposal(project_dir, projects_root)
+        stage_runner_mod.reject_stage(project_dir, "script", feedback="请压缩到 30 秒")
+        # agent 重跑后重新写 awaiting_human。
+        write_checkpoint(
+            projects_root, "film", "script", "awaiting_human",
+            artifacts={"script": sample_artifact("script")},
+            pipeline_type=PIPELINE,
+        )
+        stage_runner_mod.approve_stage(project_dir, "script")
+        assert check_approval_gate_drift(project_dir) == []
 
     def test_reject_revision_cap(self, projects_root, project_dir):
         for i in range(3):
@@ -330,6 +473,75 @@ class TestPrompt:
         assert "awaiting_human" in prompt
         assert "research" in prompt
         assert "END YOUR TURN" in prompt or "停止" in prompt
+
+
+class TestStreamLogRendering:
+    """stream-json 落盘保真，展示前渲染——运行中也能看到日志。"""
+
+    def test_cli_uses_streaming_output(self):
+        args = stage_runner_mod._build_cli_args(2.0)
+        # text 模式只在退出时一次性吐出 → 运行中日志恒为空。
+        assert "stream-json" in args
+        assert "--verbose" in args
+        assert "text" not in args
+
+    def test_renders_tool_use_text_and_result(self):
+        raw = "\n".join([
+            json.dumps({"type": "system", "subtype": "init", "model": "claude-opus-5"}),
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": "开始写 checkpoint"},
+                {"type": "tool_use", "name": "Bash", "input": {"command": "python -c pass"}},
+            ]}}),
+            json.dumps({"type": "user", "message": {"content": [
+                {"type": "tool_result", "content": "ok", "is_error": False},
+            ]}}),
+            json.dumps({
+                "type": "result", "subtype": "success", "duration_ms": 12000,
+                "total_cost_usd": 0.0123, "result": "agent_run_summary: awaiting_human",
+            }),
+        ])
+        lines = stage_runner_mod.render_run_log(raw)
+        joined = "\n".join(lines)
+        assert "claude-opus-5" in joined
+        assert "开始写 checkpoint" in joined
+        assert "▸ Bash(" in joined
+        assert "✓ ok" in joined
+        assert "$0.0123" in joined
+        assert "agent_run_summary: awaiting_human" in joined
+
+    def test_error_tool_result_marked(self):
+        raw = json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "content": "boom", "is_error": True},
+        ]}})
+        assert stage_runner_mod.render_run_log(raw) == ["  ✗ boom"]
+
+    def test_non_json_lines_preserved(self):
+        # CLI 崩溃栈/认证报错不是 JSON——失败诊断全靠它们，必须原样保留。
+        raw = "Failed to authenticate. API Error: 401\nTraceback (most recent call last):"
+        assert stage_runner_mod.render_run_log(raw) == [
+            "Failed to authenticate. API Error: 401",
+            "Traceback (most recent call last):",
+        ]
+
+    def test_malformed_json_line_preserved(self):
+        assert stage_runner_mod.render_run_log('{"type":"assist') == ['{"type":"assist']
+
+    def test_log_tail_drops_partial_leading_event(self, tmp_path):
+        log = tmp_path / "r.log"
+        events = [
+            json.dumps({"type": "assistant", "message": {"content": [
+                {"type": "text", "text": f"事件{i}"},
+            ]}})
+            for i in range(20)
+        ]
+        log.write_text("\n".join(events), encoding="utf-8")
+        tail = stage_runner_mod._log_tail(log, 300)
+        # 被字节切断的半行 JSON 不得混入展示。
+        assert "{" not in tail
+        assert "事件19" in tail
+
+    def test_log_tail_missing_file_is_empty(self, tmp_path):
+        assert stage_runner_mod._log_tail(tmp_path / "nope.log", 100) == ""
 
 
 class TestCliResolution:

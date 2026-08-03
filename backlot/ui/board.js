@@ -4250,6 +4250,11 @@ function openRunLogModal(run) {
   modal.append(
     el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
     page);
+  modal.classList.add("open");
+  modal.setAttribute("role", "dialog");
+  modal.setAttribute("aria-modal", "true");
+  modal.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
   async function loadLog() {
     try {
       const res = await getJSON(

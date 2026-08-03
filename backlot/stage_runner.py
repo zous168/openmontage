@@ -41,7 +41,9 @@ DEFAULT_WALL_TIME_MINUTES = 30
 MIN_WALL_TIME_MINUTES = 10
 DEFAULT_BUDGET_USD = 5
 REVISION_LIMIT_DEFAULT = 3
-LOG_TAIL_CHARS = 2000
+# 尾巴按**原始 NDJSON 字节**切——一个事件动辄数百字节，取得太小渲染后
+# 只剩一两行，板面预览就没信息量了。
+LOG_TAIL_CHARS = 8000
 
 
 class StageRunError(Exception):
@@ -176,10 +178,17 @@ def _which(name: str) -> Optional[str]:
 
 
 def _build_cli_args(budget_usd: float) -> list[str]:
-    """argv 100% 静态（budget 来自 manifest 数值）——用户输入只经 stdin。"""
+    """argv 100% 静态（budget 来自 manifest 数值）——用户输入只经 stdin。
+
+    用 ``stream-json`` 而非 ``text``：text 只在进程结束时一次性吐出，
+    于是「查看日志」在最需要它的时候（阶段跑了几分钟还没结束）永远是空的。
+    stream-json 实时逐行落盘，日志随 agent 推进增长。原始 NDJSON 留在
+    ``runs/*.log``（保真、可 debug），展示前经 ``render_run_log`` 渲染。
+    """
     return [
         "-p",
-        "--output-format", "text",
+        "--output-format", "stream-json",
+        "--verbose",  # stream-json 在 -p 下需要它才输出逐事件流
         "--permission-mode", "bypassPermissions",
         "--max-budget-usd", f"{budget_usd:.2f}",
     ]
@@ -334,12 +343,94 @@ def _write_run_state(task: RunTask, *, log_tail_chars: int = LOG_TAIL_CHARS) -> 
     os.replace(tmp, _run_state_path(task.project_dir, task.task_id))
 
 
+# ---------------------------------------------------------------------------
+# stream-json 渲染（NDJSON 事件流 → 人类可读日志行）
+# ---------------------------------------------------------------------------
+
+
+def _brief(value: Any, limit: int = 120) -> str:
+    """把工具入参/结果压成单行摘要。"""
+    if isinstance(value, list):  # tool_result 的 content 可能是 block 数组
+        value = " ".join(
+            b.get("text", "") if isinstance(b, dict) else str(b) for b in value
+        )
+    if isinstance(value, dict):
+        value = ", ".join(f"{k}={v}" for k, v in value.items())
+    text = " ".join(str(value or "").split())
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
+def _render_stream_event(obj: dict) -> Optional[str]:
+    """单个 stream-json 事件 → 展示行（None = 不展示）。"""
+    typ = obj.get("type")
+    if typ == "system":
+        if obj.get("subtype") == "init":
+            return f"● 会话启动 · model={obj.get('model') or '?'}"
+        return None
+    if typ == "assistant":
+        out = []
+        for block in (obj.get("message") or {}).get("content") or []:
+            kind = block.get("type")
+            if kind == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    out.append(text)
+            elif kind == "tool_use":
+                out.append(f"▸ {block.get('name') or 'tool'}({_brief(block.get('input'))})")
+        return "\n".join(out) or None
+    if typ == "user":
+        for block in (obj.get("message") or {}).get("content") or []:
+            if block.get("type") == "tool_result":
+                mark = "✗" if block.get("is_error") else "✓"
+                return f"  {mark} {_brief(block.get('content'))}"
+        return None
+    if typ == "result":
+        head = [f"● 结束 · {obj.get('subtype') or ''}"]
+        duration = obj.get("duration_ms")
+        if isinstance(duration, (int, float)):
+            head.append(f"{duration / 1000:.0f}s")
+        cost = obj.get("total_cost_usd")
+        if isinstance(cost, (int, float)):
+            head.append(f"${cost:.4f}")
+        result = (obj.get("result") or "").strip()
+        line = " · ".join(head)
+        return f"{line}\n{result}" if result else line
+    return None
+
+
+def render_run_log(raw: str) -> list[str]:
+    """NDJSON 日志 → 展示行。非 JSON 行（CLI 报错、崩溃栈）原样保留——
+    失败诊断恰恰依赖它们。"""
+    lines: list[str] = []
+    for raw_line in raw.splitlines():
+        stripped = raw_line.strip()
+        if not stripped:
+            continue
+        if not stripped.startswith("{"):
+            lines.append(raw_line)
+            continue
+        try:
+            event = json.loads(stripped)
+        except json.JSONDecodeError:
+            lines.append(raw_line)
+            continue
+        rendered = _render_stream_event(event) if isinstance(event, dict) else None
+        if rendered:
+            lines.extend(rendered.splitlines())
+    return lines
+
+
 def _log_tail(log_path: Path, chars: int) -> str:
     if not log_path.is_file():
         return ""
     try:
-        data = log_path.read_bytes()[-chars:]
-        return data.decode("utf-8", errors="replace")
+        # 按字节切尾会截断首行 JSON——丢掉它，避免半行事件混进展示。
+        data = log_path.read_bytes()
+        truncated = len(data) > chars
+        text = data[-chars:].decode("utf-8", errors="replace")
+        if truncated:
+            text = text.split("\n", 1)[1] if "\n" in text else ""
+        return "\n".join(render_run_log(text))
     except OSError:
         return ""
 
@@ -368,7 +459,7 @@ def read_run_log(project_dir: Path, task_id: str, *, offset: int = 0, limit: int
     if not log_path.is_file():
         raise StageRunError("日志文件不存在")
     raw = log_path.read_bytes().decode("utf-8", errors="replace")
-    lines = raw.splitlines()
+    lines = render_run_log(raw)
     return {
         "offset": offset,
         "total": len(lines),
@@ -483,7 +574,7 @@ def prepare_stage_run(
     校验顺序（契约）：manifest 加载 → stage == get_next_stage（同时覆盖
     首次运行与驳回/失败重跑）→ 加锁（409）→ 组装 prompt。
     """
-    from lib.checkpoint import get_next_stage
+    from lib.checkpoint import get_next_stage, read_checkpoint
     from lib.pipeline_loader import get_stage_order, load_pipeline_readonly
 
     project_id = project_dir.name
@@ -508,6 +599,14 @@ def prepare_stage_run(
         raise StageRunError(
             f"只能运行 {next_stage!r}（get_next_stage 指向的阶段）——当前是 {target!r}"
         )
+
+    # 驳回后重跑：反馈落在 checkpoint 的 metadata.revision_request 上。调用方
+    # 没显式带 feedback 时必须从那里捞回来——否则 agent 拿不到修改意见，
+    # 驳回就成了空转（页面「运行下一阶段」按钮正是这条路径）。
+    if feedback is None:
+        prior = read_checkpoint(PROJECTS_DIR, project_id, target)
+        if prior:
+            feedback = (prior.get("metadata") or {}).get("revision_request") or None
 
     task = RunTask(
         task_id=uuid.uuid4().hex[:12],
@@ -896,12 +995,7 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
     artifacts）+ 镜像追加同 (category, subject) 的 user_approved=true 决策
     —— 唯一 audit 干净的页面批准路径（approval_gate_drift 要求）。"""
     from lib.checkpoint import get_next_stage, read_checkpoint, write_checkpoint
-    from lib.decision_log import (
-        append_decisions,
-        latest_decisions_for_stage,
-        load_decision_log,
-        suggest_next_decision_id,
-    )
+    from lib.decision_log import append_decisions
 
     project_id = project_dir.name
     busy = _busy_or_none(project_dir)
@@ -911,6 +1005,14 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
     cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
     if not cp or cp.get("status") != "awaiting_human":
         raise StageRunError(f"阶段 {stage!r} 不在等待批准状态（awaiting_human）")
+
+    # 顺序是契约的一部分：**先**追加决策再写 checkpoint。反过来（先 completed +
+    # human_approved=True，再追加）一旦追加失败，就恰好留下
+    # approval_gate_drift 要抓的那种状态——阶段标着"人已批准"而决策仍是
+    # user_approved=false，且无人知晓。反向失败只是"日志记了、阶段还挂着
+    # awaiting"，板面照实显示，用户重按一次即自愈。
+    to_append, skipped = _approval_mirror(project_dir, stage, notes)
+    append_decisions(project_id, to_append)
 
     write_checkpoint(
         PROJECTS_DIR,
@@ -924,53 +1026,87 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
         metadata={**(cp.get("metadata") or {}), "approved_via": "backlot-web"},
     )
 
-    # 镜像追加：该阶段所有 user_visible 且未批准的最新决策逐条补 user_approved=true。
+    next_stage = get_next_stage(PROJECTS_DIR, project_id, cp.get("pipeline_type"))
+    result = {"ok": True, "stage": stage, "status": "completed", "next_stage": next_stage}
+    if skipped:
+        # 不静默：镜像不了的决策仍会让 audit 报 drift，调用方必须知道。
+        result["unmirrored_decisions"] = skipped
+    return result
+
+
+def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[dict], list[str]]:
+    """构造批准的镜像决策：该阶段每条 user_visible 且未批准的最新决策，
+    按**同 (category, subject)** 追加一条 user_approved=true —— 这是
+    ``approval_gate_drift`` 认可的唯一清账方式。
+
+    返回 (待追加, 无法镜像的决策描述)。
+    """
+    from lib.decision_log import (
+        latest_decisions_for_stage,
+        load_decision_log,
+        suggest_next_decision_id,
+    )
+    from schemas.artifacts import validate_artifact
+
+    project_id = project_dir.name
     log = load_decision_log(project_dir)
     pending = latest_decisions_for_stage(log.get("decisions", []), stage)
-    to_append = []
+
+    # suggest_next_decision_id 从磁盘算，循环里反复调会给每条同一个 id
+    # （随后被 append_decisions 静默去重 → 只落一条）。取一次基号后自增。
+    base = suggest_next_decision_id(project_dir, prefix="wa")
+    start = int(base.rsplit("-", 1)[1])
+
+    to_append: list[dict] = []
+    skipped: list[str] = []
+    reason = notes or "用户在 Backlot 页面批准该阶段"
+    default_options = [
+        {
+            "option_id": "approved",
+            "label": "批准",
+            "score": 1,
+            "reason": "用户在 Backlot 页面批准该阶段",
+        },
+    ]
+
     for d in pending:
-        if d.get("user_visible") and not d.get("user_approved"):
-            to_append.append({
-                "decision_id": suggest_next_decision_id(project_dir, prefix="wa"),
-                "stage": stage,
-                "category": d.get("category", "unknown"),
-                "subject": d.get("subject", f"{stage} decision"),
-                "options_considered": d.get("options_considered") or [
-                    {
-                        "option_id": "approved",
-                        "label": "批准",
-                        "score": 1,
-                        "reason": "用户在 Backlot 页面批准该阶段",
-                    },
-                ],
-                "selected": d.get("selected") or "approved",
-                "reason": notes or "用户在 Backlot 页面批准该阶段",
-                "user_visible": True,
-                "user_approved": True,
+        if not d.get("user_visible") or d.get("user_approved"):
+            continue
+        entry = {
+            "decision_id": f"wa-{start + len(to_append):03d}",
+            "stage": stage,
+            "category": d.get("category", "unknown"),
+            "subject": d.get("subject", f"{stage} decision"),
+            "options_considered": d.get("options_considered") or default_options,
+            "selected": d.get("selected") or "approved",
+            "reason": reason,
+            "user_visible": True,
+            "user_approved": True,
+        }
+        try:
+            validate_artifact("decision_log", {
+                "version": "1.0", "project_id": project_id, "decisions": [entry],
             })
+        except Exception as exc:
+            # 源决策本身不合 schema（例如经 checkpoint 内嵌 decision_log 旁路
+            # 写入的自造 category）。整单批准不该因此 500 —— 跳过并上报。
+            skipped.append(f"{d.get('decision_id')}({d.get('category')}): {str(exc)[:80]}")
+            continue
+        to_append.append(entry)
+
     if not to_append:
         to_append.append({
-            "decision_id": suggest_next_decision_id(project_dir, prefix="wa"),
+            "decision_id": f"wa-{start:03d}",
             "stage": stage,
             "category": "human_approval",
             "subject": f"{stage} approval",
-            "options_considered": [
-                {
-                    "option_id": "approved",
-                    "label": "批准",
-                    "score": 1,
-                    "reason": "用户在 Backlot 页面批准该阶段",
-                },
-            ],
+            "options_considered": default_options,
             "selected": "approved",
-            "reason": notes or "用户在 Backlot 页面批准该阶段",
+            "reason": reason,
             "user_visible": True,
             "user_approved": True,
         })
-    append_decisions(project_id, to_append)
-
-    next_stage = get_next_stage(PROJECTS_DIR, project_id, cp.get("pipeline_type"))
-    return {"ok": True, "stage": stage, "status": "completed", "next_stage": next_stage}
+    return to_append, skipped
 
 
 def _revision_count(project_dir: Path, stage: str) -> int:
@@ -1033,7 +1169,10 @@ def reject_stage(project_dir: Path, stage: str, *, feedback: str) -> dict:
         "selected": "revision",
         "reason": feedback,
         "user_visible": True,
-        "user_approved": False,
+        # 驳回是**用户亲手做的决定**，user_approved=true 才是准确的：该字段
+        # 记的是"人类是否签了这条"。写 false 会让它在重跑+批准后仍算一条
+        # 未批准的当前决策，gated 阶段就此永久 approval_gate_drift。
+        "user_approved": True,
     }])
 
     write_checkpoint(
