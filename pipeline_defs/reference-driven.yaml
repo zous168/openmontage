@@ -47,7 +47,7 @@ required_skills:
 orchestration:
   mode: executive-producer
   skill: pipelines/explainer/executive-producer
-  budget_default_usd: 10.00
+  budget_default_usd: 25.00
   max_revisions_per_stage: 3
   max_send_backs: 3
   max_wall_time_minutes: 25
