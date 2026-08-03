@@ -1,14 +1,22 @@
 import { staticFile } from "remotion";
 import { CinematicRendererProps } from "./types";
 
+/**
+ * Demo fixture for the SignalFromTomorrowWithMusic composition.
+ *
+ * The four original VEO 3.1 reference clips were never committed to
+ * public/ (commit 5223eec added the fixture without its assets), so any
+ * browser load of this composition 404'd. The finished 30s master
+ * (assets/signal-from-tomorrow-demo.mp4) IS tracked in git — this fixture
+ * slices that master into the same scene windows and uses its extracted
+ * audio track as the soundtrack, so the demo renders without missing files.
+ */
 export const signalFromTomorrowWithMusicFixture: CinematicRendererProps = {
   titleFontSize: 78,
   titleWidth: 1320,
   signalLineCount: 18,
   soundtrack: {
-    src: staticFile(
-      "music/signal-from-tomorrow/cinematic_time_hans_zimmer_style.mp3",
-    ),
+    src: staticFile("music/signal-from-tomorrow/demo_30s.m4a"),
     volume: 0.42,
     fadeInSeconds: 1.5,
     fadeOutSeconds: 2.5,
@@ -19,7 +27,7 @@ export const signalFromTomorrowWithMusicFixture: CinematicRendererProps = {
       kind: "video",
       startSeconds: 0,
       durationSeconds: 4,
-      src: staticFile("video/signal-from-tomorrow/sample_observatory_veo31_ref.mp4"),
+      src: staticFile("video/signal-from-tomorrow/demo_final_30s.mp4"),
       tone: "cold",
       trimBeforeSeconds: 1,
       fadeInFrames: 0,
@@ -29,10 +37,9 @@ export const signalFromTomorrowWithMusicFixture: CinematicRendererProps = {
       kind: "video",
       startSeconds: 4,
       durationSeconds: 4,
-      src: staticFile(
-        "video/signal-from-tomorrow/sc2_mission_control_veo31_ref_8s.mp4",
-      ),
+      src: staticFile("video/signal-from-tomorrow/demo_final_30s.mp4"),
       tone: "steel",
+      trimBeforeSeconds: 4,
     },
     {
       id: "sc3",
@@ -48,8 +55,9 @@ export const signalFromTomorrowWithMusicFixture: CinematicRendererProps = {
       kind: "video",
       startSeconds: 11,
       durationSeconds: 7,
-      src: staticFile("video/signal-from-tomorrow/sc4_launch_departure_veo31_ref.mp4"),
+      src: staticFile("video/signal-from-tomorrow/demo_final_30s.mp4"),
       tone: "cold",
+      trimBeforeSeconds: 11,
     },
     {
       id: "sc5",
@@ -65,10 +73,9 @@ export const signalFromTomorrowWithMusicFixture: CinematicRendererProps = {
       kind: "video",
       startSeconds: 21,
       durationSeconds: 6,
-      src: staticFile(
-        "video/signal-from-tomorrow/sc6_orbital_paradox_veo31_ref_8s.mp4",
-      ),
+      src: staticFile("video/signal-from-tomorrow/demo_final_30s.mp4"),
       tone: "void",
+      trimBeforeSeconds: 21,
     },
     {
       id: "sc7",

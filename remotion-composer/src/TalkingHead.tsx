@@ -8,6 +8,7 @@ import {
 } from "remotion";
 import { CaptionOverlay, WordCaption } from "./components/CaptionOverlay";
 import { resolveAsset } from "./resolveAsset";
+import { SafeVideo } from "./SafeVideo";
 import { TextCard } from "./components/TextCard";
 import { StatCard } from "./components/StatCard";
 import { CalloutBox } from "./components/CalloutBox";
@@ -318,8 +319,9 @@ export const TalkingHead: React.FC<TalkingHeadProps> = ({
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
       {/* Layer 1: Video background */}
-      <OffthreadVideo
-        src={resolveAsset(videoSrc)}
+      <SafeVideo
+        src={videoSrc}
+        label="videoSrc"
         style={{ width: "100%", height: "100%", objectFit: "cover" }}
       />
 

@@ -1,10 +1,11 @@
-import { Composition, CalculateMetadataFunction } from "remotion";
+import { Composition, CalculateMetadataFunction, staticFile } from "remotion";
 import { Explainer, ExplainerProps } from "./Explainer";
 import {
   CinematicRenderer,
   calculateCinematicMetadata,
 } from "./CinematicRenderer";
 import { signalFromTomorrowWithMusicFixture } from "./cinematic/fixtures";
+import worldInNumbersFixture from "../public/demo-props/world-in-numbers.json";
 import { TalkingHead, TalkingHeadProps } from "./TalkingHead";
 import {
   TitledVideo,
@@ -142,12 +143,7 @@ export const Root: React.FC = () => {
         fps={30}
         width={1920}
         height={1080}
-        defaultProps={{
-          cuts: [],
-          overlays: [],
-          captions: [],
-          audio: {},
-        }}
+        defaultProps={worldInNumbersFixture as unknown as ExplainerProps}
         calculateMetadata={calculateMetadata}
       />
       <Composition
@@ -157,12 +153,7 @@ export const Root: React.FC = () => {
         fps={30}
         width={1920}
         height={1080}
-        defaultProps={{
-          scenes: [],
-          titleFontSize: 78,
-          titleWidth: 1320,
-          signalLineCount: 18,
-        }}
+        defaultProps={signalFromTomorrowWithMusicFixture}
         calculateMetadata={calculateCinematicMetadata}
       />
       <Composition
@@ -183,8 +174,17 @@ export const Root: React.FC = () => {
         width={1080}
         height={1920}
         defaultProps={{
-          videoSrc: "",
-          captions: [],
+          // Studio preview fixtures — pipeline runs override via --props.
+          videoSrc: staticFile("talking-head/demo-footage.mp4"),
+          captions: [
+            { word: "THIS", startMs: 500, endMs: 1200 },
+            { word: "IS", startMs: 1300, endMs: 1800 },
+            { word: "A", startMs: 1900, endMs: 2200 },
+            { word: "PREVIEW", startMs: 2300, endMs: 3800 },
+            { word: "FIXTURE", startMs: 3900, endMs: 5400 },
+            { word: "FOR", startMs: 5500, endMs: 6000 },
+            { word: "STUDIO", startMs: 6100, endMs: 7600 },
+          ],
           overlays: [],
           wordsPerPage: 4,
           fontSize: 52,
@@ -199,7 +199,7 @@ export const Root: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          videoSrc: "",
+          videoSrc: staticFile("talking-head/demo-footage.mp4"),
           tagline: "home is a verb.",
           taglineInSeconds: 53.5,
           taglineOutSeconds: undefined,
@@ -229,7 +229,8 @@ export const Root: React.FC = () => {
         width={1280}
         height={720}
         defaultProps={{
-          productImage: "airnothing/product.png",
+          // Component calls staticFile() itself — pass relative path here.
+          productImage: "assets/images/sc1.jpg",
           productName: "AirNothing Pro Max Ultra",
           price: "Starting at $999",
           tagline: "Nothing included.",
@@ -245,7 +246,8 @@ export const Root: React.FC = () => {
         width={720}
         height={1280}
         defaultProps={{
-          productImage: "airnothing/product.png",
+          // Component calls staticFile() itself — pass relative path here.
+          productImage: "assets/images/sc1.jpg",
           productName: "AirNothing Pro Max Ultra",
           price: "Starting at $999",
           tagline: "Nothing included.",
@@ -261,7 +263,17 @@ export const Root: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          words: [] as WordCaption[],
+          words: [
+            { word: "WORDS", startMs: 0, endMs: 900 },
+            { word: "LIGHT", startMs: 900, endMs: 1800 },
+            { word: "UP", startMs: 1800, endMs: 2400 },
+            { word: "ONE", startMs: 2400, endMs: 3300 },
+            { word: "BY", startMs: 3300, endMs: 3800 },
+            { word: "ONE", startMs: 3800, endMs: 4700 },
+            { word: "UNDER", startMs: 4700, endMs: 5700 },
+            { word: "THE", startMs: 5700, endMs: 6200 },
+            { word: "FOOTAGE", startMs: 6200, endMs: 7700 },
+          ] as WordCaption[],
           wordsPerPage: 3,
           fontSize: 58,
           highlightColor: "#FACC15",
@@ -276,11 +288,61 @@ export const Root: React.FC = () => {
         width={1080}
         height={1920}
         defaultProps={{
-          backgroundSrc: "",
+          backgroundSrc: staticFile("talking-head/demo-footage.mp4"),
           backgroundInSeconds: 0,
           curtainStartSeconds: 1.5,
           curtainEndSeconds: 3.0,
-          clips: [],
+          clips: [
+            {
+              src: staticFile("assets/images/sc1.jpg"),
+              kind: "image",
+              inSeconds: 3.0,
+              outSeconds: 10,
+              x: 0.3,
+              y: 0.42,
+              widthPct: 0.42,
+              rotation: -6,
+              transition: "pop",
+              hero: true,
+              seed: 1,
+            },
+            {
+              src: staticFile("assets/images/sc4.jpg"),
+              kind: "image",
+              inSeconds: 4.2,
+              outSeconds: 12,
+              x: 0.72,
+              y: 0.38,
+              widthPct: 0.36,
+              rotation: 5,
+              transition: "slide-zoom",
+              seed: 2,
+            },
+            {
+              src: staticFile("assets/images/sc6.jpg"),
+              kind: "image",
+              inSeconds: 5.4,
+              outSeconds: 13,
+              x: 0.4,
+              y: 0.78,
+              widthPct: 0.32,
+              rotation: -3,
+              transition: "spin",
+              seed: 3,
+            },
+            {
+              src: staticFile("assets/images/sc8.jpg"),
+              kind: "image",
+              inSeconds: 6.6,
+              outSeconds: 14,
+              x: 0.75,
+              y: 0.8,
+              widthPct: 0.3,
+              rotation: 7,
+              transition: "glitch",
+              seed: 4,
+            },
+          ],
         } as CollageBurstProps}
       />
       <Composition
@@ -291,8 +353,13 @@ export const Root: React.FC = () => {
         width={1080}
         height={1920}
         defaultProps={{
-          videoSrc: "",
-          lyrics: [],
+          videoSrc: staticFile("talking-head/demo-footage.mp4"),
+          lyrics: [
+            { text: "City lights", inSeconds: 0.5, outSeconds: 3.0 },
+            { text: "are calling me home", inSeconds: 3.2, outSeconds: 6.5 },
+            { text: "Every window", inSeconds: 6.8, outSeconds: 9.0 },
+            { text: "a story untold", inSeconds: 9.2, outSeconds: 11.5 },
+          ],
           bottomY: 0.88,
         } as LyricOverlayProps}
       />

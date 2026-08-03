@@ -9,6 +9,7 @@ import {
 } from "remotion";
 import React from "react";
 import { resolveAsset } from "./resolveAsset";
+import { SafeVideo } from "./SafeVideo";
 import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
 
 const { fontFamily: playfairItalic } = loadPlayfair("italic", {
@@ -156,7 +157,7 @@ export const LyricOverlay: React.FC<LyricOverlayProps> = ({
   const { durationInFrames } = useVideoConfig();
   return (
     <AbsoluteFill style={{ backgroundColor: "#000" }}>
-      <OffthreadVideo src={resolveAsset(videoSrc)} />
+      <SafeVideo src={videoSrc} label="videoSrc" />
       {lyrics.map((l, i) => (
         <LyricLine key={i} lyric={l} bottomY={bottomY} />
       ))}

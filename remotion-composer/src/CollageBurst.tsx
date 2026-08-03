@@ -12,6 +12,7 @@ import {
 } from "remotion";
 import React from "react";
 import { resolveAsset } from "./resolveAsset";
+import { SafeVideo } from "./SafeVideo";
 import { loadFont as loadPlayfair } from "@remotion/google-fonts/PlayfairDisplay";
 
 const { fontFamily: playfairFamily } = loadPlayfair("normal", {
@@ -479,8 +480,9 @@ export const CollageBurst: React.FC<CollageBurstProps> = ({
             opacity: 0.55,
           }}
         >
-          <OffthreadVideo
-            src={resolveAsset(backgroundSrc)}
+          <SafeVideo
+            src={backgroundSrc}
+            label="backgroundSrc"
             startFrom={Math.round(backgroundInSeconds * fps)}
             muted
             style={{

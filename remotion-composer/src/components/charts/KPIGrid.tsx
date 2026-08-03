@@ -45,22 +45,28 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
   animationStyle = "count-up",
 }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
+
+  // Responsive scale: layout constants below are authored for a 1920x1080
+  // canvas; scale them down for smaller canvases (e.g. 720x1280 portrait).
+  // At 1920x1080 S=1 and the layout is pixel-identical to the old behavior.
+  const S = Math.min(width / 1920, height / 1080);
+  const fontS = Math.sqrt(S);
 
   const cols = Math.min(columns, metrics.length);
   const rows = Math.ceil(metrics.length / cols);
 
-  // Grid layout constants (within 1920x1080)
-  const gridPadding = 100;
-  const cardGap = 28;
-  const titleHeight = title ? 120 : 0;
-  const gridTop = 80 + titleHeight;
-  const gridWidth = 1920 - gridPadding * 2;
-  const gridHeight = 1080 - gridTop - 80;
+  // Grid layout constants (authored within 1920x1080, scaled by S)
+  const gridPadding = 100 * S;
+  const cardGap = 28 * S;
+  const titleHeight = (title ? 120 : 0) * S;
+  const gridTop = 80 * S + titleHeight;
+  const gridWidth = width - gridPadding * 2;
+  const gridHeight = height - gridTop - 80 * S;
   const cardWidth = (gridWidth - cardGap * (cols - 1)) / cols;
   const cardHeight = Math.min(
     (gridHeight - cardGap * (rows - 1)) / rows,
-    320
+    320 * S
   );
 
   // Center grid vertically
@@ -89,11 +95,11 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
         <div
           style={{
             position: "absolute",
-            top: 60,
+            top: 60 * S,
             left: 0,
             right: 0,
             textAlign: "center",
-            fontSize: 48,
+            fontSize: 48 * fontS,
             fontWeight: 700,
             color: textColor,
             fontFamily,
@@ -159,13 +165,13 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
                 width: cardWidth,
                 height: cardHeight,
                 backgroundColor: cardBackgroundColor,
-                borderRadius: 12,
-                borderLeft: `4px solid ${accentColor}`,
+                borderRadius: 12 * S,
+                borderLeft: `${4 * S}px solid ${accentColor}`,
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "center",
                 alignItems: "center",
-                padding: 24,
+                padding: 24 * S,
                 opacity: cardOpacity * fadeOut,
                 transform: `translateY(${slideY}px)`,
                 boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
@@ -182,6 +188,7 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
                 fps={fps}
                 staggerDelay={staggerDelay}
                 animationStyle={animationStyle}
+                scale={S}
               />
             </div>
           );
@@ -205,13 +212,13 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
               width: cardWidth,
               height: cardHeight,
               backgroundColor: cardBackgroundColor,
-              borderRadius: 12,
-              borderLeft: `4px solid ${accentColor}`,
+              borderRadius: 12 * S,
+              borderLeft: `${4 * S}px solid ${accentColor}`,
               display: "flex",
               flexDirection: "column",
               justifyContent: "center",
               alignItems: "center",
-              padding: 24,
+              padding: 24 * S,
               opacity: cardOpacity * fadeOut,
               transform: `scale(${cardScale})`,
               boxShadow: "0 2px 12px rgba(0,0,0,0.06)",
@@ -228,6 +235,7 @@ export const KPIGrid: React.FC<KPIGridProps> = ({
               fps={fps}
               staggerDelay={idx * 3}
               animationStyle={animationStyle}
+              scale={S}
             />
           </div>
         );
@@ -247,6 +255,7 @@ interface KPICardContentProps {
   fps: number;
   staggerDelay: number;
   animationStyle: KPIAnimationStyle;
+  scale: number;
 }
 
 const KPICardContent: React.FC<KPICardContentProps> = ({
@@ -260,7 +269,9 @@ const KPICardContent: React.FC<KPICardContentProps> = ({
   fps,
   staggerDelay,
   animationStyle,
+  scale,
 }) => {
+  const fontS = Math.sqrt(scale);
   // Count-up animation
   const countProgress =
     animationStyle === "count-up"
@@ -292,8 +303,8 @@ const KPICardContent: React.FC<KPICardContentProps> = ({
       {metric.icon && (
         <div
           style={{
-            fontSize: 36,
-            marginBottom: 8,
+            fontSize: 36 * fontS,
+            marginBottom: 8 * scale,
           }}
         >
           {metric.icon}
@@ -303,7 +314,7 @@ const KPICardContent: React.FC<KPICardContentProps> = ({
       {/* Value */}
       <div
         style={{
-          fontSize: 56,
+          fontSize: 56 * fontS,
           fontWeight: 800,
           color: accentColor,
           fontFamily,
@@ -318,11 +329,11 @@ const KPICardContent: React.FC<KPICardContentProps> = ({
       {/* Label */}
       <div
         style={{
-          fontSize: 22,
+          fontSize: 22 * fontS,
           fontWeight: 500,
           color: textColor,
           fontFamily,
-          marginTop: 8,
+          marginTop: 8 * scale,
           opacity: 0.8,
         }}
       >
@@ -335,16 +346,16 @@ const KPICardContent: React.FC<KPICardContentProps> = ({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 4,
-            marginTop: 10,
-            fontSize: 20,
+            gap: 4 * scale,
+            marginTop: 10 * scale,
+            fontSize: 20 * fontS,
             fontWeight: 600,
             fontFamily,
             color: metric.change > 0 ? positiveColor : negativeColor,
             opacity: changeOpacity,
           }}
         >
-          <span style={{ fontSize: 18 }}>
+          <span style={{ fontSize: 18 * fontS }}>
             {metric.change > 0 ? "\u25B2" : "\u25BC"}
           </span>
           {Math.abs(metric.change).toFixed(1)}%

@@ -21,6 +21,22 @@ export function resolveAsset(src: string): string {
 
   let clean = src.replace(/^file:\/\/\/?/, "").replace(/\\/g, "/");
 
+  // Already a staticFile() URL — render bundles set remotion_staticBase to
+  // "/public", Studio uses "/static-<hash>". Re-parsing these as filesystem
+  // paths would flatten "video/signal-from-tomorrow/x.mp4" to "x.mp4" (the
+  // double-processing bug that 404'd multi-level static paths).
+  const staticBase =
+    typeof window !== "undefined"
+      ? (window as unknown as { remotion_staticBase?: string })
+          .remotion_staticBase
+      : undefined;
+  if (staticBase && clean.startsWith(staticBase)) {
+    return clean;
+  }
+  if (/^\/static-[a-zA-Z0-9]+(\/|$)/.test(clean)) {
+    return clean;
+  }
+
   // Absolute path (Windows drive or POSIX) → project-relative for staticFile().
   if (/^[A-Za-z]:\//.test(clean) || (clean.startsWith("/") && !clean.startsWith("//"))) {
     const projectsMatch = clean.match(/\/projects\/[^/]+\/(.+)$/i);

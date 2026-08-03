@@ -11,6 +11,7 @@ import {
 } from "remotion";
 import { getVideoMetadata } from "@remotion/media-utils";
 import { resolveAsset } from "./resolveAsset";
+import { SafeVideo } from "./SafeVideo";
 import { loadFont } from "@remotion/google-fonts/PlayfairDisplay";
 
 // Editorial serif for the tagline — Playfair Display at its boldest weight.
@@ -198,8 +199,9 @@ export const TitledVideo: React.FC<TitledVideoProps> = ({
       {/* Full-bleed background video — no fades, no vignette, no color shift.
           The source is already color-graded final.mp4 with music baked in;
           we play it through untouched, audio included. */}
-      <OffthreadVideo
-        src={resolveAsset(videoSrc)}
+      <SafeVideo
+        src={videoSrc}
+        label="videoSrc"
         style={{
           width: "100%",
           height: "100%",
