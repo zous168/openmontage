@@ -1,9 +1,10 @@
 # Backlot — the living storyboard
 
-A read-only local board that shows a production happening: pipeline stages
-lighting up, the script as a screenplay page, the scene plan as a filmstrip
-that fills in as assets generate, decisions, spend, and activity — all
-derived from what the pipeline already writes to `projects/<id>/`.
+A local board that shows a production happening — and, since API v44, can
+**drive** it: pipeline stages lighting up, the script as a screenplay page,
+the scene plan as a filmstrip that fills in as assets generate, decisions,
+spend, and activity — all derived from what the pipeline already writes to
+`projects/<id>/`.
 
 ```bash
 python -m backlot open <project-id>   # start server if needed + open browser
@@ -11,9 +12,29 @@ python -m backlot open                # library view (all projects)
 python -m backlot serve --port 4750   # run the server in the foreground
 ```
 
+## Driving a stage from the page (headless agent channel)
+
+The board's "运行下一阶段" button spawns a headless agent to execute exactly
+one pipeline stage, then the page approves / rejects the gate — the same
+contract as the interactive agent:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/project/{id}/stage/run` | spawn `claude -p` (prompt via stdin: director skill + project status + manifest stage + feedback). 202 + `task_id`. 400 if `stage != get_next_stage()`; 409 if a run is active |
+| `GET /api/project/{id}/stage/runs` | recent runs (+ `log_tail`) |
+| `GET /api/project/{id}/stage/run/{task_id}/log` | incremental log lines |
+| `POST /api/project/{id}/stage/run/{task_id}/cancel` | kill process tree; patches a stuck `in_progress` to `failed` |
+| `POST /api/project/{id}/stage/approve` | `awaiting_human → completed` (`human_approved=True`) + mirrored `user_approved=true` decision |
+| `POST /api/project/{id}/stage/reject` | `human_rejection` decision + stage back to `in_progress` (artifacts kept), feedback fed to the next run |
+
+Run progress lives in `projects/<id>/runs/<task_id>.json` (heartbeats every
+~25s) — the same watcher → SSE → board path, so no extra polling. A
+`.run.lock` file makes the web channel self-serializing (stale takeover);
+`reconcile_runs()` re-attaches to live processes after a server restart.
+
 ## How it stays live
 
-No agent involvement. A `watchfiles` watcher on `projects/` publishes change
+A `watchfiles` watcher on `projects/` publishes change
 notifications over SSE; the browser refetches board state. State sources:
 
 | Board element | Disk source |

@@ -41,7 +41,9 @@
               "capability_extension",
               "playbook_override",
               "visual_accuracy_check",
-              "nle_edit"
+              "nle_edit",
+              "human_approval",
+              "human_rejection"
             ],
             "description": "What class of decision this is"
           },

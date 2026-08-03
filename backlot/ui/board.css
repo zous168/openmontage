@@ -2397,6 +2397,54 @@ a.global-settings-btn { text-decoration: none; }
   border-radius: 9px; padding: 11px 15px; font-size: calc(12.5px * var(--fs-scale)); color: var(--text-2); margin: 18px 0 4px;
 }
 .notice b { color: var(--amber); font-weight: 600; }
+
+/* ---------- headless-agent stage channel ---------- */
+.stage-run-ctl {
+  display: flex; align-items: center; gap: 12px;
+  margin: 12px 26px 0; padding: 10px 16px;
+  border: 1px solid var(--border-soft); border-radius: 12px;
+  background: var(--surface-2); color: var(--text-2);
+  font-size: calc(12px * var(--fs-scale));
+}
+.stage-run-ctl .spinner {
+  display: inline-block;
+  color: var(--amber); font-size: calc(15px * var(--fs-scale));
+  animation: run-spin 1.2s linear infinite;
+}
+@keyframes run-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+.run-btn {
+  border: 1px solid var(--border); border-radius: 99px; padding: 6px 13px;
+  background: var(--surface-2); color: var(--text-2); font: inherit;
+  letter-spacing: inherit; cursor: pointer; white-space: nowrap;
+}
+.run-btn:hover, .run-btn:focus-visible { color: var(--amber); border-color: var(--amber); outline: none; }
+.run-btn-primary {
+  background: var(--amber); border-color: var(--amber); color: var(--bg);
+  font-weight: 600;
+}
+.run-btn-primary:hover, .run-btn-primary:focus-visible { color: var(--bg); opacity: .9; }
+.run-btn-reject { color: var(--red); border-color: var(--red); }
+.run-btn-reject:hover, .run-btn-reject:focus-visible { color: var(--red); border-color: var(--red); }
+.run-btn-group { display: flex; gap: 10px; align-items: center; }
+.run-panel {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 12px; border: 1px solid var(--border-soft); border-radius: 12px;
+  background: var(--surface-1); width: 100%;
+}
+.run-panel-title { font-size: calc(12px * var(--fs-scale)); color: var(--text-2); font-weight: 600; }
+.run-panel-feedback {
+  width: 100%; min-height: 64px; resize: vertical;
+  background: var(--surface-2); color: var(--text-1);
+  border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+  font: inherit;
+}
+.run-panel-actions { display: flex; gap: 10px; justify-content: flex-end; }
+.run-log {
+  margin-top: 12px; max-height: 60vh; overflow: auto;
+  white-space: pre-wrap; word-break: break-all;
+  font-family: var(--mono); font-size: calc(11px * var(--fs-scale));
+  line-height: 1.5; color: var(--text-2);
+}
 .section-title {
   font-family: var(--mono); font-size: calc(11px * var(--fs-scale)); font-weight: 600; letter-spacing: .18em;
   text-transform: uppercase; color: var(--text-2); padding: 26px 0 2px;

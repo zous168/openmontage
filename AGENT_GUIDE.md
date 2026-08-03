@@ -305,6 +305,37 @@ At pipeline initialization, before any stage runs:
 1. **Initialize the workspace**: `python -c "from lib.checkpoint import init_project; init_project('<project-id>', title='<Title>', pipeline_type='<pipeline>')"` — creates the layout above and writes `project.json` (the marker the Backlot board reads).
 2. **Open the board**: run `python -m backlot open <project-id>`. This starts the Backlot server if needed and opens the user's browser at the project's live board. If the command fails, continue the production — the board is an observer, never a blocker. This is the agent's ONLY board duty; the board derives everything else from disk.
 
+### Backlot Web Channel (page-driven runs)
+
+Since Backlot API v44 the board is no longer *only* an observer: the page can
+drive the pipeline as a second execution channel, equal in contract to the
+interactive agent.
+
+- **Run a stage** — `POST /api/project/{id}/stage/run` spawns a headless agent
+  (`claude -p --permission-mode bypassPermissions`, prompt via stdin) that
+  reads the **same director skill**, executes **the same registry tools**
+  (events.jsonl auto-attributed) and writes **the same checkpoint contract**.
+  It executes exactly one stage — `stage == get_next_stage()` is the only legal
+  target; the server never chains stages or auto-advances.
+- **Approve / reject gates** — `POST /api/project/{id}/stage/approve` /
+  `/stage/reject` are the page equivalents of a chat approval: approve rewrites
+  `awaiting_human → completed` with `human_approved=True` **and mirrors the
+  same `(category, subject)` decision with `user_approved=true`** (otherwise
+  `approval_gate_drift` fires); reject appends a `human_rejection` decision
+  and rewrites the stage to `in_progress` (artifacts preserved) so a re-run
+  re-enters via `get_next_stage()`.
+- **Concurrency** — the web channel guards itself with a per-project
+  `.run.lock` (stale takeover); it does **not** lock against the interactive
+  agent (that channel is unchanged). Two executors racing the same stage is a
+  documented boundary: last-write-wins plus the checkpoint gate and stage-order
+  audit backstops it.
+- **Server-side files** (`runs/*.json`, `runs/*.log`, `.run.lock`) are
+  observation metadata only — never part of checkpoint / artifacts /
+  decision_log / events.jsonl contract paths. `audit_project()` treats a
+  page-driven run exactly like an agent-driven one.
+- Web-run artifacts still gate on humans: the headless agent writes
+  `awaiting_human` and ENDS; the page approval button is the human gate.
+
 All tools and agents must write outputs to these paths — **always pass an explicit `output_path` under `projects/<project-id>/`**. Assets written to the repo root, cwd, or temp dirs are invisible to the user's board and violate the workspace contract.
 
 **This applies to atelier and HyperFrames-skill runs too**: hand-authored compositions still write the canonical artifacts they have (script or beats-plan, scene_plan-equivalent, asset manifest) plus checkpoints into `projects/<project-id>/`. The board is runtime-agnostic; only runs that skip the artifacts get a degraded board.

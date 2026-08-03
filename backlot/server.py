@@ -59,6 +59,7 @@ from backlot.nle_edit import (
     read_draft_props,
     write_draft,
 )
+from backlot import stage_runner
 from lib.composition_timeline import build_composition_timeline
 from backlot.state import PROJECTS_DIR, REPO_ROOT, _is_demo_project, list_projects, load_board_state, summarize_project
 
@@ -167,6 +168,22 @@ class NleEditBody(BaseModel):
     cuts: list[dict[str, Any]]
     overlays: Optional[list[dict[str, Any]]] = None
     decision_note: str = Field(default="", max_length=400)
+
+
+class StageRunBody(BaseModel):
+    stage: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    parameters: Optional[dict[str, Any]] = None
+    feedback: Optional[str] = Field(default=None, max_length=2000)
+
+
+class StageApproveBody(BaseModel):
+    stage: str = Field(min_length=1, max_length=64)
+    notes: Optional[str] = Field(default=None, max_length=2000)
+
+
+class StageRejectBody(BaseModel):
+    stage: str = Field(min_length=1, max_length=64)
+    feedback: str = Field(min_length=5, max_length=4000)
 
 
 def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
@@ -299,6 +316,10 @@ def create_app() -> FastAPI:
         from lib.env_loader import load_env
         load_env(REPO_ROOT)
         app.state.watch_task = asyncio.create_task(_watch_projects())
+        try:
+            await stage_runner.reconcile_runs()
+        except Exception:
+            pass  # 接回失败不应阻塞启动——board 仍可手动刷新
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
@@ -627,6 +648,94 @@ def create_app() -> FastAPI:
     async def nle_edit_draft(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(read_draft, project_dir)
+
+    # ---- Headless-agent stage channel ----------------------------------
+
+    @app.post("/api/project/{project_id}/stage/run", status_code=202)
+    async def stage_run(project_id: str, payload: StageRunBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            task = await asyncio.to_thread(
+                stage_runner.prepare_stage_run,
+                project_dir,
+                stage=payload.stage,
+                parameters=payload.parameters,
+                feedback=payload.feedback,
+            )
+        except stage_runner.StageRunError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        asyncio.create_task(stage_runner.run_task(task))
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return {
+            "ok": True,
+            "task_id": task.task_id,
+            "stage": task.stage,
+            "status": task.status,
+            "started_at": task.started_at,
+            "log_path": f"runs/{task.task_id}.log",
+        }
+
+    @app.get("/api/project/{project_id}/stage/runs")
+    async def stage_runs(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        return {"runs": await asyncio.to_thread(stage_runner.list_runs, project_dir, limit=8)}
+
+    @app.get("/api/project/{project_id}/stage/run/{task_id}/log")
+    async def stage_run_log(
+        project_id: str, task_id: str, offset: int = 0, limit: int = 200,
+    ) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            return await asyncio.to_thread(
+                stage_runner.read_run_log, project_dir, task_id,
+                offset=offset, limit=limit,
+            )
+        except stage_runner.StageRunError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.post("/api/project/{project_id}/stage/run/{task_id}/cancel")
+    async def stage_run_cancel(project_id: str, task_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            result = await asyncio.to_thread(stage_runner.cancel_run, project_dir, task_id)
+        except stage_runner.StageRunError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
+
+    @app.post("/api/project/{project_id}/stage/approve")
+    async def stage_approve(project_id: str, payload: StageApproveBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            result = await asyncio.to_thread(
+                stage_runner.approve_stage,
+                project_dir,
+                payload.stage,
+                notes=payload.notes or "",
+            )
+        except stage_runner.StageRunError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
+
+    @app.post("/api/project/{project_id}/stage/reject")
+    async def stage_reject(project_id: str, payload: StageRejectBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        try:
+            result = await asyncio.to_thread(
+                stage_runner.reject_stage,
+                project_dir,
+                payload.stage,
+                feedback=payload.feedback,
+            )
+        except stage_runner.StageRunError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
 
     @app.get("/api/project/{project_id}/events")
     async def project_events(project_id: str, request: Request) -> StreamingResponse:

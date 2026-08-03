@@ -3408,7 +3408,9 @@ function renderApprovalReview(s) {
       el("span", {}, nextStage
         ? t("approvalUnlocks", { stage: stageLabel(nextStage.name) })
         : t("finalApprovalGate")),
-      el("button", { type: "button", onclick: () => toggleDrawer(awaiting.name) }, t("openFullArtifact")),
+      el("div", { class: "run-btn-group" },
+        el("button", { type: "button", onclick: () => toggleDrawer(awaiting.name) }, t("openFullArtifact")),
+        approvalButtons(awaiting.name)),
     ),
   );
 }
@@ -4138,6 +4140,171 @@ function renderNoState(s) {
       t("noPipelineStateDetail")));
 }
 
+// ---------------------------------------------------------------------------
+// headless-agent stage channel — run / approve / reject / cancel / log
+// ---------------------------------------------------------------------------
+
+function activeRun(s) {
+  return (s.runs || []).find((r) => r.status === "queued" || r.status === "running");
+}
+
+function nextRunStage(s) {
+  if (activeRun(s)) return null;
+  const awaiting = s.stages.find((x) => x.status === "awaiting_human");
+  if (awaiting) return null; // 审批横幅负责此阶段
+  return s.stages.find((x) => !x.undeclared && x.status !== "completed") || null;
+}
+
+async function runNextStage(stageName) {
+  if (!window.confirm(t("stageRunNextConfirm", { stage: stageLabel(stageName) }))) return;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/stage/run`, { stage: stageName });
+    render(); // SSE 也会刷新；立即 re-render 让运行态马上出现
+  } catch (err) {
+    window.alert(err.message || String(err));
+    render();
+  }
+}
+
+async function approveStageNow(stageName) {
+  if (!window.confirm(t("stageRunApproveConfirm", { stage: stageLabel(stageName) }))) return;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/stage/approve`, { stage: stageName, notes: "" });
+    render();
+  } catch (err) {
+    window.alert(err.message || String(err));
+    render();
+  }
+}
+
+function rejectPanel(stageName, anchor) {
+  const panel = el("div", { class: "run-panel" },
+    el("div", { class: "run-panel-title" },
+      t("stageRunRejectTitle", { stage: stageLabel(stageName) })),
+    el("textarea", {
+      class: "run-panel-feedback", rows: 3, maxlength: 4000, minlength: 5,
+      placeholder: t("stageRunRejectFeedback"),
+    }),
+    el("div", { class: "run-panel-actions" },
+      el("button", {
+        type: "button", class: "run-btn run-btn-ghost",
+        onclick: () => { anchor.innerHTML = ""; render(); },
+      }, t("stageRunRejectCancel")),
+      el("button", {
+        type: "button", class: "run-btn run-btn-primary",
+        onclick: () => submitReject(stageName, panel),
+      }, t("stageRunRejectSubmit"))),
+  );
+  anchor.innerHTML = "";
+  anchor.append(panel);
+  const ta = panel.querySelector(".run-panel-feedback");
+  if (ta) ta.focus();
+}
+
+async function submitReject(stageName, panel) {
+  const ta = panel.querySelector(".run-panel-feedback");
+  const feedback = (ta.value || "").trim();
+  if (feedback.length < 5) {
+    window.alert(t("stageRunRejectFeedback"));
+    if (ta) ta.focus();
+    return;
+  }
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/stage/reject`, { stage: stageName, feedback });
+    render();
+  } catch (err) {
+    window.alert(err.message || String(err));
+    render();
+  }
+}
+
+function approvalButtons(stageName) {
+  return el("div", { class: "run-btn-group" },
+    el("button", {
+      type: "button", class: "run-btn run-btn-primary",
+      onclick: () => approveStageNow(stageName),
+    }, t("stageRunApprove")),
+    el("button", {
+      type: "button", class: "run-btn run-btn-reject",
+      onclick: (evt) => rejectPanel(stageName, evt.currentTarget.parentElement),
+    }, t("stageRunReject")));
+}
+
+async function cancelRunNow(taskId) {
+  if (!window.confirm(t("stageRunCancelConfirm"))) return;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/stage/run/${encodeURIComponent(taskId)}/cancel`, {});
+    render();
+  } catch (err) {
+    window.alert(err.message || String(err));
+  }
+}
+
+function openRunLogModal(run) {
+  modal.innerHTML = "";
+  const pre = el("pre", { class: "run-log" }, t("stageRunLogEmpty"));
+  const page = el("div", { class: "modal-page" },
+    el("h2", {}, t("stageRunLogTitle", { stage: stageLabel(run.stage) })),
+    el("button", { type: "button", class: "run-btn run-btn-ghost", onclick: loadLog }, t("stageRunLogRefresh")),
+    pre);
+  modal.append(
+    el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
+    page);
+  async function loadLog() {
+    try {
+      const res = await getJSON(
+        `/api/project/${encodedProjectId}/stage/run/${encodeURIComponent(run.task_id)}/log?limit=1000`);
+      pre.textContent = res.lines && res.lines.length ? res.lines.join("\n") : t("stageRunLogEmpty");
+    } catch (err) {
+      pre.textContent = String(err.message || err);
+    }
+  }
+  loadLog();
+  if (run.status === "running") {
+    // 运行中自动跟随；modal 关闭即停。
+    const timer = setInterval(() => {
+      if (!modal.children.length) { clearInterval(timer); return; }
+      loadLog();
+    }, 5000);
+  }
+}
+
+function renderRunControl(s) {
+  const run = activeRun(s);
+  if (run) {
+    return el("div", { class: "stage-run-ctl active" },
+      el("span", { class: "spinner" }, "◌"),
+      el("span", {}, t("stageRunRunning", { stage: stageLabel(run.stage) })),
+      el("button", {
+        type: "button", class: "run-btn run-btn-ghost",
+        onclick: () => openRunLogModal(run),
+      }, t("stageRunLog")),
+      el("button", {
+        type: "button", class: "run-btn run-btn-ghost",
+        onclick: () => cancelRunNow(run.task_id),
+      }, t("stageRunCancel")));
+  }
+  const next = nextRunStage(s);
+  if (!next) {
+    const failed = (s.runs || []).find((r) => r.status === "failed");
+    if (failed) {
+      return el("div", { class: "stage-run-ctl failed" },
+        el("span", { style: "color:var(--red)" },
+          t("stageRunFailed", { error: failed.error || failed.status })),
+        el("button", {
+          type: "button", class: "run-btn run-btn-ghost",
+          onclick: () => openRunLogModal(failed),
+        }, t("stageRunLog")));
+    }
+    return null;
+  }
+  return el("div", { class: "stage-run-ctl" },
+    el("button", {
+      type: "button", class: "run-btn run-btn-primary",
+      onclick: () => runNextStage(next.name),
+    }, t("stageRunNext", { stage: stageLabel(next.name) })));
+}
+
 function renderAwaitingNotice(s) {
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
   if (!awaiting) return null;
@@ -4145,7 +4312,8 @@ function renderAwaitingNotice(s) {
     el("span", { style: "font-size:calc(16px * var(--fs-scale))" }, "◈"),
     el("span", {},
       el("b", {}, t("stageWaiting", { stage: stageLabel(awaiting.name) })),
-      t("agentPaused"), el("b", {}, t("inChat")), t("approveOrChange")));
+      t("agentPaused"), el("b", {}, t("inChat")), t("approveOrChange")),
+    el("div", { style: "margin-left:auto" }, approvalButtons(awaiting.name)));
 }
 
 // ---------------------------------------------------------------------------
@@ -4324,6 +4492,8 @@ function render() {
   // Zone 1 — pipeline: stage rail + replay scrubber (one visual unit)
   const pipeline = el("section", { class: "board-pipeline", "aria-label": t("boardPipelineAria") });
   pipeline.append(renderRail(s));
+  const runCtl = renderRunControl(s);
+  if (runCtl) pipeline.append(runCtl);
   const replayBar = renderReplayBar(state);
   if (replayBar) pipeline.append(replayBar);
   app.append(pipeline);
@@ -4401,6 +4571,7 @@ function normalize(s) {
     s.source_media = null;
   }
   s.events = Array.isArray(s.events) ? s.events : [];
+  s.runs = Array.isArray(s.runs) ? s.runs : [];
   if (typeof s.production_active !== "boolean") {
     s.production_active = undefined;
   }

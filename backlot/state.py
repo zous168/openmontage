@@ -1640,8 +1640,19 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
             and production_active
         ),
     }
+    state["runs"] = _collect_runs(project_dir)
     state["poster"] = _find_poster(project_dir, state)
     return state
+
+
+def _collect_runs(project_dir: Path) -> list[dict]:
+    """Headless-agent run summaries for the board (never raises)."""
+    try:
+        from backlot.stage_runner import run_state_for_board
+
+        return run_state_for_board(project_dir)
+    except Exception:
+        return []
 
 
 def summarize_project(project_dir: Path) -> dict[str, Any]:
