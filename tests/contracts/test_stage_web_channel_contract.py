@@ -95,6 +95,84 @@ def _agent_awaits_script(projects_root) -> None:
     }])
 
 
+class TestStageSkillResolution:
+    """无头 agent 的 prompt 承诺「导演技能全文已粘贴」——必须真的贴上。
+
+    manifest 存的是裸标识符（``pipelines/explainer/compose-director``），
+    既无 ``skills/`` 根也无 ``.md`` 后缀。曾经直接把该字段当路径用，
+    ``is_file()`` 恒为假，于是每个阶段都贴了个空块，agent 只能自己
+    Grep/Read 去翻技能，白烧若干轮。
+    """
+
+    def test_every_declared_stage_skill_resolves_to_a_real_file(self):
+        import contextlib
+        import io
+
+        from lib.paths import REPO_ROOT
+        from lib.pipeline_loader import load_pipeline_readonly, resolve_stage_skill_file
+
+        missing: list[str] = []
+        checked = 0
+        for manifest_path in sorted((REPO_ROOT / "pipeline_defs").glob("*.yaml")):
+            try:
+                with contextlib.redirect_stderr(io.StringIO()):
+                    manifest = load_pipeline_readonly(manifest_path.stem)
+            except Exception:
+                continue  # manifest 自身 schema 不合法——由别的契约测试负责
+            for stage in manifest.get("stages") or []:
+                resolved = resolve_stage_skill_file(manifest, stage["name"])
+                if resolved is None:
+                    continue
+                checked += 1
+                if not (REPO_ROOT / resolved).is_file():
+                    missing.append(f"{manifest_path.stem}/{stage['name']} -> {resolved}")
+        assert checked > 0, "没有任何阶段声明了 skill——解析器可能坏了"
+        assert missing == [], f"技能文件解析不到: {missing}"
+
+    @pytest.mark.parametrize("declared", [
+        "pipelines/explainer/compose-director",       # manifest 里的裸写法
+        "skills/pipelines/explainer/compose-director",  # 已带前缀
+        "pipelines/explainer/compose-director.md",    # 已带后缀
+        "skills/pipelines/explainer/compose-director.md",
+        "pipelines\\explainer\\compose-director",     # Windows 反斜杠
+    ])
+    def test_resolve_normalizes_prefix_suffix_and_separators(self, declared):
+        from lib.pipeline_loader import resolve_stage_skill_file
+
+        manifest = {"stages": [{"name": "compose", "skill": declared}]}
+        assert resolve_stage_skill_file(manifest, "compose") == (
+            "skills/pipelines/explainer/compose-director.md"
+        )
+
+    def test_resolve_returns_none_when_stage_declares_no_skill(self):
+        from lib.pipeline_loader import resolve_stage_skill_file
+
+        manifest = {"stages": [{"name": "research"}]}
+        assert resolve_stage_skill_file(manifest, "research") is None
+        assert resolve_stage_skill_file(manifest, "nope") is None
+
+    def test_prompt_actually_embeds_the_skill_body(self):
+        """端到端：prompt 里必须出现技能正文，而不只是标题壳子。"""
+        from lib.paths import REPO_ROOT
+        from lib.pipeline_loader import load_pipeline_readonly, resolve_stage_skill_file
+
+        manifest = load_pipeline_readonly("reference-driven")
+        skill_rel = resolve_stage_skill_file(manifest, "compose")
+        body = (REPO_ROOT / skill_rel).read_text(encoding="utf-8")
+        probe = body.strip().splitlines()[0]  # 技能正文首行
+
+        prompt = stage_runner_mod.build_stage_prompt(
+            Path(paths_mod.PROJECTS_DIR) / "nonexistent-project",
+            "compose",
+            manifest=manifest,
+            wall_time_minutes=25,
+            budget_usd=10.0,
+        )
+        assert skill_rel in prompt
+        assert probe in prompt, "prompt 声称贴了技能全文，实际没有"
+        assert len(prompt) > len(body), "prompt 应当包含整份技能"
+
+
 class TestWebChannelAuditClean:
     def test_approve_flow_audits_zero_critical(self, projects_root, project_dir):
         _complete_research(projects_root)

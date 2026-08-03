@@ -23,7 +23,7 @@ from lib.checkpoint import (
 )
 from lib.events import read_events
 from lib.paths import PROJECTS_DIR, REPO_ROOT
-from lib.pipeline_loader import get_stage_skill, load_pipeline_readonly
+from lib.pipeline_loader import load_pipeline_readonly, resolve_stage_skill_file
 from lib.production_audit import audit_project
 
 
@@ -163,9 +163,7 @@ def build_project_status(
 
     director_skill: Optional[str] = None
     if next_stage and manifest:
-        skill = get_stage_skill(manifest, next_stage)
-        if skill:
-            director_skill = f"skills/{skill}.md"
+        director_skill = resolve_stage_skill_file(manifest, next_stage)
 
     status: dict[str, Any] = {
         "project_id": project_id,

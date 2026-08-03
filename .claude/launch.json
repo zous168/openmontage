@@ -12,6 +12,13 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4788", "--bind", "127.0.0.1"],
       "port": 4788
+    },
+    {
+      "name": "remotion-studio",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["remotion", "studio", "--port", "3111"],
+      "cwd": "remotion-composer",
+      "port": 3111
     }
   ]
 }

@@ -886,19 +886,29 @@ def build_stage_prompt(
 ) -> str:
     """组装无头 agent 的完整 prompt：粘贴 director skill 全文 + 项目状态
     JSON + manifest 本阶段定义 + 前置 artifacts 清单 + 驳回反馈。"""
-    from lib.pipeline_loader import get_stage_human_approval_default, get_stage_skill
+    from lib.pipeline_loader import (
+        get_stage_human_approval_default,
+        resolve_stage_skill_file,
+    )
 
     project_id = project_dir.name
     marker = _read_json(project_dir / "project.json") or {}
     pipeline_type = marker.get("pipeline_type", "")
     title = marker.get("title", project_id)
 
-    skill_path = get_stage_skill(manifest, stage) or ""
+    skill_path = resolve_stage_skill_file(manifest, stage) or ""
     skill_text = ""
     if skill_path:
         skill_file = REPO_ROOT / skill_path
         if skill_file.is_file():
             skill_text = skill_file.read_text(encoding="utf-8")
+        else:
+            # 不要沉默：prompt 声称"全文已粘贴"，贴空块会让 agent 自己去
+            # Grep/Read 翻技能，白烧若干轮。说清楚它得自己读。
+            skill_text = (
+                f"（技能文件未找到：{skill_path} —— 请先用 Read 打开该路径，"
+                f"找不到再用 Glob 在 skills/ 下搜索同名文件）"
+            )
 
     gated = bool(get_stage_human_approval_default(manifest, stage))
     stage_block = next(

@@ -175,6 +175,27 @@ def get_stage_skill(manifest: dict, stage_name: str) -> Optional[str]:
     return None
 
 
+def resolve_stage_skill_file(manifest: dict, stage_name: str) -> Optional[str]:
+    """Repo-relative path to a stage's director skill file, or None.
+
+    Manifests store a bare identifier (``pipelines/explainer/compose-director``)
+    — neither the ``skills/`` root nor the ``.md`` suffix. Callers that want to
+    *read* the file must add both; treating the raw field as a path silently
+    resolves to nothing (that bug left the headless agent's prompt promising
+    "技能全文已粘贴" while pasting an empty block). Tolerates manifests that
+    already carry the prefix and/or the extension.
+    """
+    skill = get_stage_skill(manifest, stage_name)
+    if not skill:
+        return None
+    path = skill.replace("\\", "/").strip("/")
+    if not path.startswith("skills/"):
+        path = f"skills/{path}"
+    if not path.endswith(".md"):
+        path = f"{path}.md"
+    return path
+
+
 def get_stage_human_approval_default(manifest: dict, stage_name: str) -> Optional[bool]:
     """Whether a stage gates on human approval. None if the stage isn't declared.
 
