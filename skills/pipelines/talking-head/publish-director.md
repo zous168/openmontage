@@ -1,61 +1,61 @@
-# Publish Director — Talking Head Pipeline
+# 发布导演 —— Talking Head 管线
 
-## When to Use
+## 何时使用
 
-You have a render report with the final video. Your job is to prepare metadata, thumbnails, and an export package for publishing.
+你手上有一份带成片的渲染报告。你的工作是准备元数据、封面，以及一个用于发布的导出包。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact validation |
-| Prior artifacts | Render report, Brief | Video file and context |
+| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact 校验 |
+| 上游 artifact | 渲染报告、Brief | 视频文件与语境 |
 
-## Process
+## 流程
 
-### Step 1: Generate Metadata
+### 第 1 步：生成元数据
 
-Create platform-specific metadata:
-- **Title**: Based on the brief's title and hook
-- **Description**: Summary of the content with relevant keywords
-- **Tags**: Derived from brief's key_points
-- **Chapters**: From script section timestamps
+创建平台专属的元数据：
+- **标题**：基于 brief 的标题与钩子
+- **描述**：内容摘要，带上相关关键词
+- **标签**：由 brief 的 key_points 推导
+- **章节**：来自脚本 section 的时间戳
 
-### Step 2: Thumbnail Concept
+### 第 2 步：封面概念
 
-Describe or generate a thumbnail:
-- Extract a compelling frame from the footage (if frame_sampler available)
-- Add text overlay concept (title or key stat)
+描述或生成一张封面：
+- 从素材中抽出一帧有吸引力的画面（若 frame_sampler 可用）
+- 加上文字叠加的概念（标题或关键数据）
 
-### Step 3: Package Export
+### 第 3 步：打包导出
 
-Create the export directory:
-- Video file
-- Metadata JSON
-- Description text file
-- Chapter markers
-- Thumbnail concept
+创建导出目录：
+- 视频文件
+- 元数据 JSON
+- 描述文本文件
+- 章节标记
+- 封面概念
 
-### Step 4: Build Publish Log
+### 第 4 步：搭建 Publish Log
 
-Document the publish event with platform, status (draft), and export path.
+记录本次发布事件，含平台、状态（draft）与导出路径。
 
-### Step 5: Self-Evaluate
+### 第 5 步：自评
 
-| Criterion | Question |
+| 判据 | 问题 |
 |-----------|----------|
-| **Metadata quality** | Is the title compelling and description informative? |
-| **Completeness** | Is the export package complete? |
+| **元数据质量** | 标题够抓人吗？描述信息量够吗？ |
+| **完整性** | 导出包完整吗？ |
 
-### Step 6: Submit
+### 第 6 步：提交
 
-Validate the publish_log against the schema and persist via checkpoint.
+对照 schema 校验 publish_log，并通过检查点持久化。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

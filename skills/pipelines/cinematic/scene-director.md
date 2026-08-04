@@ -1,47 +1,47 @@
-# Scene Director - Cinematic Pipeline
+# 场景导演 —— Cinematic 管线
 
-## When To Use
+## 何时使用
 
-You are deciding how each cinematic beat will look and transition. This is where mood becomes a visual plan.
+你要决定每个电影感节拍看起来是什么样、如何转场。情绪正是在这里变成视觉方案。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["proposal"]["proposal_packet"]` | Beat map and source truth |
-| Tools | `frame_sampler`, `scene_detect` | Source inspection and reframing checks |
-| Playbook | Active style playbook | Color and typography consistency |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["script"]["script"]`、`state.artifacts["proposal"]["proposal_packet"]` | 节拍图与源素材实况 |
+| 工具 | `frame_sampler`、`scene_detect` | 源素材检视与重新构图检查 |
+| Playbook | 当前生效的风格 playbook | 色彩与排版一致性 |
 
-## Process
+## 流程
 
-### 1. Make Hero Frames Explicit
+### 1. 把主画面明确定下来
 
-Every cinematic piece needs a few memorable frames. Define them directly:
+每件电影感作品都需要几个令人记住的画面。直接定义它们：
 
-- opening image,
-- reveal image,
-- final image,
-- any title-card hero moments.
+- 开场画面，
+- 揭示画面，
+- 结尾画面，
+- 任何标题卡的主视觉时刻。
 
-### 2. Keep Source-Led Scenes Primary
+### 2. 让源素材主导的场景保持主体地位
 
-If source footage exists, let it carry the piece. Generated inserts or text cards should support transitions, emphasis, or missing coverage, not dominate the timeline.
+若存在源素材，就让它承载整件作品。生成的插入镜头或文字卡应当服务于转场、强调或补足缺失的覆盖，而不是主导时间线。
 
-### 3. Limit Transition Vocabulary
+### 3. 限制转场词汇
 
-Choose a small set:
+选一小组：
 
-- hard cut,
-- fade to black,
-- slow dissolve,
-- restrained push or punch-in.
+- 硬切，
+- 淡入黑场，
+- 缓慢叠化，
+- 克制的推近或急推。
 
-Too many transition types kill the mood.
+转场类型太多会毁掉情绪。
 
-### 4. Use Metadata For Visual Rules
+### 4. 用元数据表达视觉规则
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `hero_frames`
 - `transition_rules`
@@ -49,39 +49,39 @@ Recommended metadata keys:
 - `title_card_rules`
 - `support_insert_rules`
 
-### 5. 5-Aspect Scene-Plan Checklist
+### 5. 五要素场景方案检查清单
 
-> Every scene beat — and especially every hero frame — must specify all five aspects. Cinematic relies on a small number of memorable frames; vague hero-frame specs are the single most common failure mode and produce unpredictable model output. Marking an aspect as N/A is allowed but must be explicit (e.g., "no subject — establishing scenery shot"). Silent omission is forbidden.
+> 每个场景节拍 —— 尤其是每一个主画面 —— 都必须写明全部五个要素。电影感依赖少数几个令人记住的画面；主画面规格含糊是最常见的单一失败模式，会产出不可预测的模型输出。把某个要素标为 N/A 是允许的，但必须写明（例如"无主体 —— 定场风景镜头"）。静默省略是被禁止的。
 >
-> 1. **Subject** — type + key visual attributes; if multiple, how to disambiguate. For hero frames, identity must be anchored verbatim across shots.
-> 2. **Subject Motion** — actions in temporal order; subject↔object / subject↔subject interactions.
-> 3. **Scene** — overlays (separately!) + POV + setting + time of day + scene dynamics.
-> 4. **Spatial Framing** — shot size + position-in-frame + depth (FG/MG/BG) + camera-height-relative; and how those CHANGE across the beat.
-> 5. **Camera** — playback speed → lens distortion → height → angle → focus/DoF → steadiness → movement.
+> 1. **Subject** —— 类型 + 关键视觉属性；若有多个，如何区分。对主画面，身份必须在各镜头间逐字锚定。
+> 2. **Subject Motion** —— 按时间顺序的动作；主体↔物体 / 主体↔主体的互动。
+> 3. **Scene** —— 叠加层（单独列！）+ POV + 环境 + 时段 + 场景动态。
+> 4. **Spatial Framing** —— 景别 + 画面内位置 + 纵深（前景/中景/背景）+ 相对相机高度；以及它们在该节拍中如何**变化**。
+> 5. **Camera** —— 播放速度 → 镜头畸变 → 高度 → 角度 → 对焦/景深 → 稳定度 → 运动。
 >
-> See `skills/creative/video-gen-prompting.md` for the primitive vocabulary.
+> 原语词汇表见 `skills/creative/video-gen-prompting.md`。
 
-> **Overlays callout.** Overlays (titles, subtitles, HUD, watermarks, framing graphics, lower-thirds, name plates, end-tag cards) are NOT part of the scene's foreground/midground/background depth axis. List them separately in scene metadata (`overlays: [...]`) with content and placement. Never describe an overlay as "in the foreground" — that confuses both downstream tools and any video-understanding model that re-analyzes the output.
+> **叠加层提醒。** 叠加层（标题、字幕、HUD、水印、边框图形、下三分之一条、姓名条、片尾标签卡）**不**属于场景的 前景/中景/背景 纵深轴。在场景元数据中单独列出（`overlays: [...]`），写明内容和位置。绝不要把叠加层描述成"在前景里" —— 那会同时误导下游工具和任何重新分析输出的视频理解模型。
 
-### 6. Quality Gate
+### 6. 质量门
 
-- every beat has a scene treatment,
-- hero frames are identifiable AND fully specified across all 5 aspects,
-- support inserts are justified,
-- overlays are recorded under `overlays:`, never inside the depth/framing description,
-- the visual language stays consistent across the piece.
+- 每个节拍都有对应的场景处理方式，
+- 主画面可辨识**并且**五个要素都写全了，
+- 辅助插入镜头有正当理由，
+- 叠加层记录在 `overlays:` 下，绝不写进纵深/构图描述里，
+- 整件作品的视觉语言保持一致。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Using title cards as filler.
-- Treating generated inserts like the primary story without saying so.
-- Planning flashy transitions for every beat.
+- 把标题卡当填充物用。
+- 让生成的插入镜头实际上成了主线故事，却不说明。
+- 每个节拍都规划花哨的转场。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

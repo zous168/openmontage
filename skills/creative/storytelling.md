@@ -1,189 +1,189 @@
-# Storytelling & Narrative Structure for Explainer Videos
+# 讲解视频的叙事与故事结构
 
-> Sources: YouTube Creator Academy, Derek Muller PhD thesis (U. Sydney 2008), Kurzgesagt production
-> methodology (Philipp Dettmer), 3Blue1Brown (Grant Sanderson), Richard Mayer "Multimedia Learning"
-> (Cambridge UP, 2001/2020)
+> 资料来源：YouTube Creator Academy、Derek Muller 博士论文（悉尼大学 2008）、Kurzgesagt 制作
+> 方法论（Philipp Dettmer）、3Blue1Brown（Grant Sanderson）、Richard Mayer《Multimedia Learning》
+> （剑桥大学出版社，2001/2020）
 
-## The Explainer Arc Template
+## 讲解弧线模板
 
-For a **3-minute explainer video** (scale proportionally for other lengths):
+针对一支 **3 分钟的讲解视频**（其他时长按比例缩放）：
 
 ```
-[0:00 - 0:08]  HOOK
-               Pattern interrupt or counterintuitive claim. 1-2 sentences max.
-               Visual: striking image or animation that creates curiosity.
+[0:00 - 0:08]  钩子
+               模式打断或反直觉论断。最多 1-2 句。
+               画面：能激起好奇的醒目图像或动画。
 
-[0:08 - 0:30]  TENSION / INFORMATION GAP
-               "Here's what most people think... but that's not quite right."
-               Establish stakes: why should I care?
-               Visual: show the misconception or the puzzle.
+[0:08 - 0:30]  张力 / 信息缺口
+               "多数人是这么想的……但这并不完全对。"
+               交代利害：我为什么该在意？
+               画面：把误解或谜题呈现出来。
 
-[0:30 - 0:50]  CONCEPT 1 (Foundation)
-               Simplest building block needed. ONE idea, ONE visual.
-               End with a "but" or "therefore" transition.
+[0:30 - 0:50]  概念 1（基础）
+               所需的最简构件。一个想法，一套画面。
+               以 "但是" 或 "因此" 的过渡收尾。
 
-[0:50 - 1:15]  CONCEPT 2 (Complication)
-               Build on Concept 1. Introduce the wrinkle.
-               Visual: transform/evolve the previous visual.
+[0:50 - 1:15]  概念 2（复杂化）
+               在概念 1 之上推进。抛出那个转折。
+               画面：把上一幕的画面变形/演进。
 
-[1:15 - 1:20]  PALETTE CLEANSER
-               Brief pause, visual gag, or "let that sink in" moment.
-               Gives working memory a beat to consolidate.
+[1:15 - 1:20]  清味剂
+               短暂停顿、视觉笑点，或"让它沉淀一下"的时刻。
+               给工作记忆一个整合的间隙。
 
-[1:20 - 1:50]  CONCEPT 3 (Key Insight)
-               The "aha" moment. Core of the video.
-               1-3 seconds of deliberate silence after the reveal.
-               Visual: the most polished animation in the video.
+[1:20 - 1:50]  概念 3（关键洞见）
+               "啊哈"时刻。整支视频的核心。
+               揭示之后刻意留 1-3 秒静默。
+               画面：全片最精致的一段动画。
 
-[1:50 - 2:20]  PROOF / EXAMPLE
-               Concrete demonstration: "Watch what happens when..."
-               Visual: show the insight working in a specific case.
+[1:50 - 2:20]  佐证 / 案例
+               具体演示："看看当……时会发生什么"。
+               画面：展示这个洞见在具体案例中如何奏效。
 
-[2:20 - 2:45]  IMPLICATIONS / "SO WHAT?"
-               Connect back to the real world. "This means that..."
-               Scale from specific back to general.
+[2:20 - 2:45]  影响 / "那又怎样？"
+               连回现实世界。"这意味着……"
+               从具体重新放大到一般。
 
-[2:45 - 3:00]  REFRAME + CLOSE
-               Callback to the hook. Restate the core insight in one sentence.
-               Optional: open a new curiosity gap.
+[2:45 - 3:00]  重新框定 + 收尾
+               呼应开头的钩子。用一句话重述核心洞见。
+               可选：再打开一个新的好奇缺口。
 ```
 
-## Scaling by Duration
+## 按时长缩放
 
-| Length | Concepts | Hook | Tension | Core | Proof | Close |
+| 时长 | 概念数 | 钩子 | 张力 | 核心 | 佐证 | 收尾 |
 |--------|----------|------|---------|------|-------|-------|
-| 1 min | 1-2 | 5s | 10s | 30s | 10s | 5s |
-| 2 min | 2-3 | 8s | 15s | 60s | 25s | 12s |
-| 3 min | 3-5 | 8s | 22s | 100s | 30s | 15s |
-| 5 min | 5-8 | 10s | 30s | 180s | 50s | 20s |
+| 1 分钟 | 1-2 | 5秒 | 10秒 | 30秒 | 10秒 | 5秒 |
+| 2 分钟 | 2-3 | 8秒 | 15秒 | 60秒 | 25秒 | 12秒 |
+| 3 分钟 | 3-5 | 8秒 | 22秒 | 100秒 | 30秒 | 15秒 |
+| 5 分钟 | 5-8 | 10秒 | 30秒 | 180秒 | 50秒 | 20秒 |
 
-## Anti-Subjective Rule
+## 反主观规则
 
-> Hooks, beats, and section descriptions in OpenMontage scripts must describe the **visual cause** of the emotion, not the emotion itself. The CMU/Harvard CHAI study showed that subjective phrasing varies wildly across annotators and across model interpretations — so it does not constrain pixels and it doesn't reliably guide downstream generation tools.
+> OpenMontage 脚本中的钩子、节拍和段落描述必须描述情绪的**视觉成因**，而不是情绪本身。CMU/Harvard 的 CHAI 研究表明，主观措辞在不同标注者和不同模型理解之间差异极大 —— 因此它约束不了像素，也无法可靠地指导下游生成工具。
 >
-> | Avoid | Use instead |
+> | 避免 | 改用 |
 > |---|---|
-> | "epic reveal" | "wide aerial pull-back; subject silhouetted against rising sun" |
-> | "inspiring moment" | "low angle on the subject's face; light catches the edge of a tear" |
-> | "moody atmosphere" | "low-key key light, lifted shadows by 2 stops, fog volumetrics" |
-> | "powerful music swell" | "music drops out at 0:42, holds 1.5s of silence, returns with low taiko at half tempo" |
+> | "史诗般的揭示" | "wide aerial pull-back; subject silhouetted against rising sun" |
+> | "鼓舞人心的时刻" | "low angle on the subject's face; light catches the edge of a tear" |
+> | "阴郁的氛围" | "low-key key light, lifted shadows by 2 stops, fog volumetrics" |
+> | "有力的音乐涌起" | "music drops out at 0:42, holds 1.5s of silence, returns with low taiko at half tempo" |
 >
-> The rule applies to script narration AND to the metadata fields scene-director consumes. For the universal vocabulary that names these visual primitives, see `skills/creative/video-gen-prompting.md`.
+> 该规则同时适用于脚本旁白**和** scene-director 会消费的元数据字段。命名这些视觉原语的通用词汇表见 `skills/creative/video-gen-prompting.md`。
 
-## Subject Transitions in the Script
+## 脚本中的主体转换
 
-When a script beat introduces a new subject, kills one off, or hands focus from one subject to another, **name the transition explicitly** so the scene-director doesn't have to infer it. The CMU/Harvard taxonomy uses four labels:
+当某个脚本节拍引入新主体、让某个主体退场，或把焦点从一个主体交给另一个时，**明确写出这个转换**，这样 scene-director 就不必自己推断。CMU/Harvard 的分类法使用四个标签：
 
-| Label | What it means |
+| 标签 | 含义 |
 |---|---|
-| **revealing** | A new subject enters frame or is uncovered (door opens, camera pans to find them, fog clears). |
-| **disappearing** | An existing subject leaves frame or is removed (walks out, fades, eclipsed). |
-| **switching** | Focus jumps from subject A to subject B (cut, rack focus, camera whip). |
-| **complex-alternating** | Multiple subjects trade focus repeatedly within a beat (debate cross-cutting, ensemble action). |
+| **revealing（显现）** | 新主体进入画面或被揭开（门打开、镜头摇过去找到它、雾散开）。 |
+| **disappearing（消失）** | 已有主体离开画面或被移除（走出去、淡出、被遮蔽）。 |
+| **switching（切换）** | 焦点从主体 A 跳到主体 B（切、变焦点、镜头甩动）。 |
+| **complex-alternating（复杂交替）** | 一个节拍内多个主体反复交换焦点（辩论式交叉剪辑、群戏动作）。 |
 
-Add 1-2 sentences in the beat describing the mechanism (cut, pan, reveal-by-light, etc.). This propagates into the scene_plan as a transition primitive.
+在该节拍里加 1-2 句描述这个机制（切、摇、光线揭示等）。它会作为一个转场原语传递进 scene_plan。
 
-## Hook Types
+## 钩子类型
 
-| Type | Pattern | Best For |
+| 类型 | 范式 | 适用于 |
 |------|---------|----------|
-| **Contrarian** | "Everything you've been told about X is wrong." | Veritasium-style science/myth-busting |
-| **Outcome** | "By the end of this video, you'll understand X." | 3Blue1Brown-style math/concept |
-| **Mystery** | "In 1987, something impossible happened..." | Kurzgesagt-style story-driven |
-| **Stakes** | "This one mistake costs people X every year." | Practical/how-to content |
+| **反常识** | "关于 X，你听到的一切都是错的。" | Veritasium 式的科学/破除迷思 |
+| **成果** | "看完这支视频，你就会理解 X。" | 3Blue1Brown 式的数学/概念 |
+| **悬疑** | "1987 年，发生了一件不可能的事……" | Kurzgesagt 式的故事驱动 |
+| **利害** | "这一个错误，每年让人们损失 X。" | 实用/操作类内容 |
 
-## The 30-Second Rule
+## 30 秒法则
 
-YouTube data shows **50% of viewer drop-off happens in the first 30 seconds**. The hook + tension
-setup MUST be complete by second 30. Retention curves that survive the 30-second cliff typically
-retain 40-60% through the full video.
+YouTube 数据显示，**50% 的观众流失发生在前 30 秒**。钩子 + 张力
+铺垫**必须**在第 30 秒之前完成。撑过 30 秒悬崖的留存曲线，通常
+能在全片保持 40-60%。
 
-## The "But-Therefore" Method
+## "But-Therefore"（但是-因此）方法
 
-Never connect sections with "and then." Always use **"but"** or **"therefore."**
+绝不要用 "然后" 来连接段落。始终使用 **"但是"** 或 **"因此"**。
 
-**Bad:** "Atoms have electrons, AND THEN those electrons have energy levels, AND THEN..."
+**差：** "原子有电子，**然后**这些电子有能级，**然后**……"
 
-**Good:** "Atoms have electrons, BUT they don't behave like tiny planets, THEREFORE we need a
-completely new model..."
+**好：** "原子有电子，**但是**它们的行为不像微缩的行星，**因此**我们需要一个
+全新的模型……"
 
-Applied structure:
+应用后的结构：
 ```
-SETUP:     Here's what you think you know about X.
-BUT:       Here's why that's wrong / incomplete / surprising.
-THEREFORE: We need to understand Y (the real mechanism).
-BUT:       Y creates a new puzzle...
-THEREFORE: The actual answer is Z.
-THEREFORE: This changes how you should think about X.
-```
-
-## Misconception-First Approach (Research-Backed)
-
-Derek Muller's PhD research (University of Sydney, 2008) showed that **videos presenting common
-misconceptions FIRST, then refuting them, produce significantly higher learning gains** than videos
-that simply present correct information. Viewers who watched "misconception-first" videos scored
-higher on post-tests and reported higher engagement.
-
-Apply this: always consider opening with what the audience *thinks* is true before revealing what
-*actually* is.
-
-## Guided Discovery (3Blue1Brown Method)
-
-Don't explain the answer. **Reconstruct the reasoning path** so the viewer feels they discovered it.
-
-1. **The Question** — Pose a specific, concrete question
-2. **The Naive Attempt** — Show the obvious approach; let it partially work, then break
-3. **The Key Insight** — Introduce ONE new idea. Pause visually for 2-3 seconds of silence.
-4. **The Build** — Apply the insight step by step. Each step feels inevitable.
-5. **The Generalization** — "Notice this pattern works beyond our specific example..."
-
-**Progressive Revelation:** Never show the full picture at once. Build visuals layer by layer.
-Each layer arrives exactly when the narration references it.
-
-## Camera Intent Per Beat
-
-When writing a beat, attach one line of camera intent so the scene-director doesn't have to invent it from a blank slate. Use the universal vocabulary in `skills/creative/video-gen-prompting.md` (Subject / Subject Motion / Scene / Spatial Framing / Camera). One line is enough — the scene-director will expand it.
-
-Example beat:
-
-```
-[0:30] Concept 1 — atoms aren't tiny planets
-Narration: "We grew up imagining electrons as tiny planets orbiting the nucleus..."
-Camera intent: medium shot of stylized atom; slow rotation; deep focus.
+铺垫：   关于 X，你以为你知道的是这些。
+但是：   这为什么是错的 / 不完整的 / 出人意料的。
+因此：   我们需要理解 Y（真正的机制）。
+但是：   Y 又制造了一个新的谜题……
+因此：   真正的答案是 Z。
+因此：   这改变了你该如何看待 X。
 ```
 
-The camera-intent line is consumed verbatim by the scene-director's 5-aspect spec — keep it concrete, no mood adjectives.
+## 误解优先法（有研究支持）
 
-## Pacing Rules
+Derek Muller 的博士研究（悉尼大学，2008）表明，**先呈现常见
+误解、再加以驳斥的视频，其学习增益显著高于**只是
+直接给出正确信息的视频。看过"误解优先"视频的观众，后测得分
+更高，报告的投入度也更高。
 
-| Rule | Value | Source |
+应用它：始终考虑先讲受众*以为*正确的东西，再揭示*实际上*
+是怎样的。
+
+## 引导式发现（3Blue1Brown 方法）
+
+不要直接讲答案。**重建推理路径**，让观众感到是自己发现的。
+
+1. **提问** —— 抛出一个具体、明确的问题
+2. **朴素尝试** —— 展示显而易见的做法；让它部分奏效，然后崩掉
+3. **关键洞见** —— 引入**一个**新想法。画面上停顿 2-3 秒静默。
+4. **搭建** —— 逐步应用这个洞见。每一步都显得顺理成章。
+5. **推广** —— "注意，这个规律在我们这个具体例子之外也成立……"
+
+**渐进式揭示：** 绝不一次性展示全貌。逐层搭建画面。
+每一层都恰好在旁白提到它时出现。
+
+## 每个节拍的镜头意图
+
+写每个节拍时，附上一行镜头意图，这样 scene-director 就不必从一张白纸开始发明。使用 `skills/creative/video-gen-prompting.md` 中的通用词汇表（Subject / Subject Motion / Scene / Spatial Framing / Camera）。一行就够 —— scene-director 会把它展开。
+
+节拍示例：
+
+```
+[0:30] 概念 1 —— 原子不是微缩的行星
+旁白："我们从小就把电子想象成绕着原子核转的小行星……"
+镜头意图：medium shot of stylized atom; slow rotation; deep focus.
+```
+
+这行镜头意图会被 scene-director 的五要素规格逐字消费 —— 要具体，不要情绪形容词。
+
+## 节奏规则
+
+| 规则 | 取值 | 来源 |
 |------|-------|--------|
-| Narration speed | 150-160 wpm | Kurzgesagt standard (conversational is 170-190) |
-| New visual element | Every 3-5 seconds | Kurzgesagt production rules |
-| Concept density | Max 1 new concept per 30-45 seconds | Mayer's Segmenting Principle |
-| Pattern interrupt | Every 45-90 seconds | YouTube retention data |
-| Deliberate silence | 1-3 seconds after key insights | 3Blue1Brown technique |
-| Palette cleanser | Every 45-60 seconds | Kurzgesagt production rules |
+| 旁白速度 | 每分钟 150-160 词 | Kurzgesagt 标准（日常对话是 170-190） |
+| 新视觉元素 | 每 3-5 秒 | Kurzgesagt 制作规范 |
+| 概念密度 | 每 30-45 秒最多 1 个新概念 | Mayer 的分段原则 |
+| 模式打断 | 每 45-90 秒 | YouTube 留存数据 |
+| 刻意静默 | 关键洞见后 1-3 秒 | 3Blue1Brown 技法 |
+| 清味剂 | 每 45-60 秒 | Kurzgesagt 制作规范 |
 
-## Mayer's Multimedia Learning Principles (Applied)
+## Mayer 的多媒体学习原则（应用版）
 
-These are the most relevant research-backed rules from cognitive science:
+以下是认知科学中最相关、有研究支持的规则：
 
-1. **Segmenting** — Max 1 new concept per 30-45 seconds. A 3-min video = 4-6 concept segments.
-2. **Signaling** — Use verbal signposts every 30-45 seconds ("Here's where it gets interesting").
-3. **Temporal Contiguity** — Narration and visuals must be simultaneous. Learning drops ~30% when offset even by a few seconds.
-4. **Coherence** — Remove interesting-but-irrelevant content. "Seductive details" reduce learning by 20-30% on transfer tests.
-5. **Modality** — Use narration (audio) + visuals (animation), NOT on-screen text + visuals. Spoken words + pictures outperform written words + pictures.
+1. **分段（Segmenting）** —— 每 30-45 秒最多 1 个新概念。一支 3 分钟视频 = 4-6 个概念段。
+2. **信号（Signaling）** —— 每 30-45 秒给一个口头路标（"接下来就有意思了"）。
+3. **时间邻近（Temporal Contiguity）** —— 旁白与画面必须同时出现。哪怕只错开几秒，学习效果也会下降约 30%。
+4. **连贯（Coherence）** —— 删掉有趣但无关的内容。"诱人的细节"会让迁移测试的学习效果降低 20-30%。
+5. **通道（Modality）** —— 使用 旁白（音频）+ 画面（动画），**不要**用 屏幕文字 + 画面。口述词语 + 图像的效果优于书面词语 + 图像。
 
-## Applying to OpenMontage
+## 应用到 OpenMontage
 
-When writing a **script artifact** for the animated-explainer pipeline:
+为 animated-explainer 管线撰写 **script artifact** 时：
 
-1. Choose a hook type from the table above based on the topic
-2. Structure sections using the Explainer Arc template
-3. Apply "but-therefore" connectors between sections
-4. Consider the misconception-first approach for science/technical topics
-5. Set `narration_wpm: 155` in the script to calculate accurate timing
-6. Plan visual changes every 3-5 seconds in the scene_plan
-7. Mark "silence" beats in the script for key insights
-8. Validate: total concepts should not exceed the scaling table above
+1. 根据主题从上表中挑一种钩子类型
+2. 用讲解弧线模板来搭段落结构
+3. 段落之间用"但是-因此"连接
+4. 科学/技术类题材考虑采用误解优先法
+5. 在 script 中设 `narration_wpm: 155`，以便算出准确时序
+6. 在 scene_plan 中规划每 3-5 秒一次画面变化
+7. 在脚本中为关键洞见标出"静默"节拍
+8. 校验：概念总数不应超过上面的缩放表

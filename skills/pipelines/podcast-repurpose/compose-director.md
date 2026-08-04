@@ -1,71 +1,71 @@
-# Compose Director - Podcast Repurpose Pipeline
+# 合成导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-Render the podcast-derived outputs with audio fidelity as the top priority. The visuals need to support the speech, not compete with it.
+以音频保真度为最高优先级来渲染播客衍生的输出。画面要**支撑**语音，而不是与之争夺注意力。
 
-## Runtime Routing (HARD CONSTRAINT — Remotion or FFmpeg only)
+## 运行时路由（硬约束 —— 仅 Remotion 或 FFmpeg）
 
-Phase 1 deferred from HyperFrames. `edit_decisions.render_runtime` must be `"remotion"` (audiograms, composed outputs) or `"ffmpeg"` (pure-audio-led clip exports). HyperFrames caption-burn parity is deferred, and podcast outputs lean on Remotion's word-level caption stack.
+Phase 1 中 HyperFrames 被推迟。`edit_decisions.render_runtime` 必须是 `"remotion"`（音频波形图、合成输出）或 `"ffmpeg"`（纯音频主导的片段导出）。HyperFrames 的字幕烧录对等能力被推迟，而播客输出依赖 Remotion 的词级字幕栈。
 
-- If `edit_decisions.render_runtime == "hyperframes"`, stop. Re-open the idea stage and surface the constraint to the user. Never silently rewrite the runtime.
-- Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": tell the user HyperFrames exists and why it isn't viable on this pipeline, rather than silently locking remotion. Record a `render_runtime_selection` decision with hyperframes `rejected_because: "caption-burn parity deferred on podcast-repurpose"`.
-- Pass `proposal_packet`/`brief` to `video_compose.execute()` for end-to-end runtime-swap detection.
+- 若 `edit_decisions.render_runtime == "hyperframes"`，停下。重新打开 idea 阶段并把这个约束呈现给用户。绝不要静默改写运行时。
+- 按 AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)"：告诉用户 HyperFrames 是存在的，以及它在本管线上为什么不可行，而不是静默锁定 remotion。记录一条 `render_runtime_selection` 决策，把 hyperframes 标为 `rejected_because: "caption-burn parity deferred on podcast-repurpose"`。
+- 把 `proposal_packet`/`brief` 传给 `video_compose.execute()`，以便端到端检测运行时切换。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/render_report.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["edit"]["edit_decisions"]`, `state.artifacts["assets"]["asset_manifest"]` | Output plans and asset paths |
-| Tools | `video_compose`, `audio_mixer` | Rendering and mix control |
-| Playbook | Active style playbook | Brand consistency |
+| Schema | `schemas/artifacts/render_report.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["edit"]["edit_decisions"]`、`state.artifacts["assets"]["asset_manifest"]` | 输出方案与素材路径 |
+| 工具 | `video_compose`、`audio_mixer` | 渲染与混音控制 |
+| Playbook | 当前生效的风格 playbook | 品牌一致性 |
 
-## Process
+## 流程
 
-### 1. Render Highest-Value Outputs First
+### 1. 先渲染价值最高的输出
 
-Priority order:
+优先顺序：
 
-1. short highlight clips
-2. quote-led clips
-3. optional long-form companion video
+1. 短亮点片段
+2. 语录主导的片段
+3. 可选的长视频配套
 
-This keeps the most publishable assets available first.
+这样最可发布的素材能最先到手。
 
-### 2. Preserve Audio Quality
+### 2. 保住音频质量
 
-- avoid unnecessary re-encoding,
-- keep speech intelligible and stable,
-- use music sparingly and only when it does not compete,
-- verify subtitle sync after render.
+- 避免不必要的重新编码，
+- 让语音保持可懂、稳定，
+- 音乐要用得节制，且只在不抢戏时使用，
+- 渲染之后验证字幕同步。
 
-### 3. Respect Platform Shapes
+### 3. 尊重平台形态
 
-- `9:16` for short-form social
-- `1:1` for quote-led or feed-safe clips
-- `16:9` for long-form YouTube companion output
+- 短视频社交用 `9:16`
+- 语录主导或适合信息流的片段用 `1:1`
+- 长视频 YouTube 配套输出用 `16:9`
 
-### 4. Verify Every Deliverable
+### 4. 验证每个交付物
 
-- correct duration,
-- correct aspect ratio,
-- readable subtitles,
-- accurate speaker attribution,
-- stable audio,
-- consistent brand treatment.
+- 时长正确，
+- 画幅比正确，
+- 字幕可读，
+- 说话人署名准确，
+- 音频稳定，
+- 品牌处理一致。
 
-### 5. Use Render Report Metadata
+### 5. 使用 Render Report 元数据
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `deliverable_groups`
 - `audio_notes`
 - `subtitle_checks`
 - `failed_outputs`
 
-## Common Pitfalls
+## 常见陷阱
 
-- Letting visual treatments degrade audio quality.
-- Rendering the full companion first and delaying the clips that matter most.
-- Forgetting that a simple, readable clip beats a technically elaborate but confusing one.
+- 让视觉处理拖累了音频质量。
+- 先渲染整集配套，反而拖延了最重要的那些片段。
+- 忘了：一条简洁、可读的片段，胜过一条技术复杂却让人困惑的片段。

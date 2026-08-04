@@ -42,18 +42,29 @@ SHELL_WRITE = re.compile(
 EXPLORE = re.compile(r"\b(ls|dir|find|Get-ChildItem|tree)\b")
 PY_SCRIPT = re.compile(r"python3?\s+[\w./\-]+\.py|cat\s*>\s*\S+\.py")
 
+# 只认 OpenMontage 的 projects/ 工作区。裸匹配 "projects" 会把
+# %USERPROFILE%\.claude\projects\... 下的 agent 记忆目录一并误判。
+_WS = PD.as_posix().lower()
+_WS_ALT = f"projects/{PID}"
+
+
+def _in_workspace(text: str) -> bool:
+    t = text.replace("\\", "/").lower()
+    return _WS in t or _WS_ALT in t
+
+
 def classify(name, inp):
     inp = inp or {}
     if name in WRITE_TOOLS:
         fp = str(inp.get("file_path") or inp.get("path") or "")
-        if "projects" in fp.replace("\\", "/"):
+        if _in_workspace(fp):
             return "VIOLATION", f"直接写 projects/ 下文件: {fp}"
-        return "GRAY", f"写 projects/ 之外: {fp}"
+        return "GRAY", f"写工作区之外: {fp}"
     if name == "Bash":
         cmd = str(inp.get("command") or "")
         if PY_SCRIPT.search(cmd):
             return "VIOLATION", "创建/执行 .py 脚本"
-        touches_proj = "projects" in cmd.replace("\\", "/") or PID in cmd
+        touches_proj = _in_workspace(cmd)
         if SHELL_WRITE.search(cmd) and touches_proj and not any(s in cmd for s in SANCTIONED):
             return "VIOLATION", "未经 lib API 写 projects/ 下数据"
         if EXPLORE.search(cmd) and touches_proj:

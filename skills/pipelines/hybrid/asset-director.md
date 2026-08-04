@@ -1,109 +1,109 @@
-# Asset Director - Hybrid Pipeline
+# 素材导演 —— Hybrid 管线
 
-## When To Use
+## 何时使用
 
-This stage prepares the support kit around the anchor edit: subtitles, diagrams, generated inserts, narration, music, and reusable overlay systems.
+本阶段围绕主线剪辑准备辅助套件：字幕、图解、生成的插入镜头、旁白、音乐，以及可复用的叠加层体系。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Support needs and variant plan |
-| Tools | `subtitle_gen`, `tts_selector`, `image_selector`, `video_selector`, `diagram_gen`, `code_snippet`, `music_gen`, `audio_enhance` — selectors auto-discover all available providers from the registry | Optional support asset production |
-| Playbook | Active style playbook | Consistency rules |
+| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 辅助需求与变体方案 |
+| 工具 | `subtitle_gen`、`tts_selector`、`image_selector`、`video_selector`、`diagram_gen`、`code_snippet`、`music_gen`、`audio_enhance` —— selector 会自动从注册表发现所有可用 provider | 可选的辅助素材制作 |
+| Playbook | 当前生效的风格 playbook | 一致性规则 |
 
-## Process
+## 流程
 
-### 1. Build Shared Support Assets First
+### 1. 先做共享的辅助素材
 
-Start with reusable systems:
+从可复用体系开始：
 
-- subtitle treatment,
-- lower-third or label system,
-- stat-card system,
-- CTA container,
-- diagram style.
+- 字幕处理，
+- 下三分之一条或标签体系，
+- 数据卡体系，
+- CTA 容器，
+- 图解风格。
 
-### 1b. Sample Preview (Prevents Wasted Spend)
+### 1b. 样片预览（避免浪费花费）
 
-Before batch-generating support assets, produce one sample of each expensive generated type and show the user:
+批量生成辅助素材之前，每种昂贵的生成类型先出一个样本给用户看：
 
-1. **TTS sample** (if narration is needed): Generate one section. Confirm voice and tone before batching.
-2. **Image/video sample** (if generating inserts): Generate one representative visual. Confirm style fits the source footage before batching.
+1. **TTS 样本**（若需要旁白）：生成其中一段。在批量之前确认音色和调性。
+2. **图像/视频样本**（若要生成插入镜头）：生成一个有代表性的视觉。在批量之前确认风格与源素材相衬。
 
-If rejected, adjust parameters and retry (max 3 iterations). Do not batch until approved.
+若被否决，调整参数重试（最多 3 轮）。未获批准之前不要批量生成。
 
-### 2. Generate Only The Support Assets You Need
+### 2. 只生成你需要的辅助素材
 
-Support assets should fill identified needs from the script and scene plan, not speculative possibilities.
+辅助素材应当填补脚本和场景方案中已识别的需求，而不是可能性上的猜测。
 
-### 3. Preserve Anchor Truth
+### 3. 保住主线的事实
 
-Keep the metadata clear about which assets are:
+在元数据中清楚区分哪些素材是：
 
-- source-derived,
-- provided,
-- recorded,
-- generated.
+- 从源素材派生的，
+- 用户提供的，
+- 录制的，
+- 还是生成的。
 
-### 4. Use Metadata For The Support Map
+### 4. 用元数据表达辅助映射
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `shared_support_assets`
 - `scene_asset_index`
 - `source_vs_generated_map`
 - `variant_assets`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- support assets map to real narrative needs,
-- reusable kits are present,
-- source and generated assets are clearly separated,
-- every referenced file exists.
+- 辅助素材对应真实的叙事需求，
+- 可复用套件已到位，
+- 源素材与生成素材被清楚区分，
+- 每个被引用的文件都真实存在。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during asset generation:
-- Use `web_search` to verify visual accuracy of subjects (e.g. what does this building actually look like?)
-- Use `web_search` to find reference images before generating illustrations
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在素材生成过程中遇到不确定之处：
+- 用 `web_search` 核实对象的视觉准确性（例如：这栋建筑实际上长什么样？）
+- 在生成插画之前用 `web_search` 找参考图
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Visual accuracy matters. If the script mentions a specific place, person, or object,
-verify what it actually looks like before generating images. Don't rely on
-the AI model's training data — it may be wrong or outdated.
+视觉准确性很重要。若脚本提到某个具体的地点、人物或物件，
+先核实它实际长什么样，再去生成图像。不要依赖
+AI 模型的训练数据 —— 它可能是错的或过时的。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Overbuilding support assets before the anchor cut is proven.
-- Losing track of which assets are generated versus supplied.
-- Creating inconsistent overlay systems across one project.
+- 主线剪辑还没被验证，就把辅助素材做过头。
+- 分不清哪些素材是生成的、哪些是用户提供的。
+- 在同一个项目里做出彼此不一致的叠加层体系。
 
 
-## When You Do Not Know How
+## 当你不知道该怎么做时
 
-If you encounter a generation technique, provider behavior, or prompting pattern you are unsure about:
+若你遇到一种拿不准的生成技法、provider 行为或提示词范式：
 
-1. **Search the web** for current best practices — models and APIs change frequently, and the agent's training data may be stale
-2. **Check `.agents/skills/`** for existing Layer 3 knowledge (provider-specific prompting guides, API patterns)
-3. **If neither helps**, write a project-scoped skill at `projects/<project-name>/skills/<name>.md` documenting what you learned
-4. **Reference source URLs** in the skill so the knowledge is traceable
-5. **Log it** in the decision log: `category: "capability_extension"`, `subject: "learned technique: <name>"`
+1. **上网检索**当前最佳实践 —— 模型和 API 变动频繁，agent 的训练数据可能已经过时
+2. **查 `.agents/skills/`** 中已有的 Layer 3 知识（provider 专属提示词指南、API 范式）
+3. **若两者都无济于事**，在 `projects/<project-name>/skills/<name>.md` 写一份项目作用域的技能，记录你学到的东西
+4. 在技能中**引用来源 URL**，让知识可追溯
+5. 在 decision log 中**记录它**：`category: "capability_extension"`、`subject: "learned technique: <name>"`
 
-This is especially important for:
-- **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
-- **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
-- **Remotion component patterns** — new composition techniques emerge as the framework evolves
+这对以下情况尤其重要：
+- **视频生成提示词** —— 模型响应的是随版本变化的特定词汇
+- **图像模型参数** —— FLUX、GPT Image、Imagen 的最优设置各不相同且在演进
+- **音频 provider 的怪癖** —— 音色克隆、音乐生成和 TTS 各有其模型专属的最佳实践
+- **Remotion 组件范式** —— 随框架演进会出现新的合成技法
 
-Do not rely on stale knowledge. When in doubt, search first.
+不要依赖过时的知识。拿不准就先检索。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

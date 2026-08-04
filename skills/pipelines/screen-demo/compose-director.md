@@ -1,99 +1,99 @@
-# Compose Director - Screen Demo Pipeline
+# 合成导演 —— Screen Demo 管线
 
-## When To Use
+## 何时使用
 
-Render the final screen-demo outputs. The quality bar is simple: the UI must be readable, the pacing must feel intentional, and the result must match the planned platform shapes.
+渲染最终的屏幕演示输出。质量标准很简单：UI 必须可读，节奏必须显得是有意为之，成片必须与规划好的平台形态相符。
 
-## Runtime Routing (MANDATORY first step)
+## 运行时路由（强制的第一步）
 
-Read `edit_decisions.render_runtime` first. Screen-demo compositions use three distinct runtimes depending on the demo shape:
+先读 `edit_decisions.render_runtime`。屏幕演示的合成会依据演示形态使用三类不同运行时：
 
-- **`render_runtime="remotion"` with `TerminalScene`** — the preferred path for synthetic terminal/CLI/install flows. See `.agents/skills/synthetic-screen-recording/`.
-- **`render_runtime="remotion"`** (other scenes) — for mixed screen-capture + animated overlays.
-- **`render_runtime="hyperframes"`** — for custom synthetic HTML UI demos where CSS + GSAP express the UI naturally. Read `skills/core/hyperframes.md`. `hyperframes lint` and `hyperframes validate` must both pass before render.
-- **`render_runtime="ffmpeg"`** — for simple cut/concat of real screen recordings without composition.
+- **`render_runtime="remotion"` 且使用 `TerminalScene`** —— 合成型终端/CLI/安装流程的首选路径。见 `.agents/skills/synthetic-screen-recording/`。
+- **`render_runtime="remotion"`**（其他场景）—— 用于「屏幕录制 + 动画叠加层」的混合形态。
+- **`render_runtime="hyperframes"`** —— 用于自定义的合成 HTML UI 演示，这类场景 CSS + GSAP 能自然地表达 UI。读 `skills/core/hyperframes.md`。渲染之前 `hyperframes lint` 和 `hyperframes validate` 必须都通过。
+- **`render_runtime="ffmpeg"`** —— 用于真实屏幕录制的简单裁切/拼接，不做合成。
 
-Silent swaps between runtimes are CRITICAL governance violations. If the locked runtime is unavailable, escalate per AGENT_GUIDE.md before substituting.
+在运行时之间静默替换属于 CRITICAL 级治理违规。若被锁定的运行时不可用，按 AGENT_GUIDE.md 上报，然后再谈替代。
 
-**Pass `proposal_packet` to `video_compose.execute()`** so the tool can directly confirm the runtime locked at proposal matches what edit_decisions says. Without it the in-tool swap check is skipped and you rely entirely on the reviewer skill to catch drift.
+**把 `proposal_packet` 传给 `video_compose.execute()`**，这样工具就能直接确认：提案阶段锁定的运行时与 edit_decisions 中所写的一致。不传它，工具内的替换检查会被跳过，你就完全依赖 reviewer 技能去发现漂移。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/render_report.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["edit"]["edit_decisions"]`, `state.artifacts["assets"]["asset_manifest"]` | What to render |
-| Tools | `video_compose`, `audio_mixer`, `video_trimmer` | Rendering capabilities |
-| Playbook | Active style playbook | Quality targets |
+| Schema | `schemas/artifacts/render_report.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["edit"]["edit_decisions"]`、`state.artifacts["assets"]["asset_manifest"]` | 要渲染什么 |
+| 工具 | `video_compose`、`audio_mixer`、`video_trimmer` | 渲染能力 |
+| Playbook | 当前生效的风格 playbook | 质量目标 |
 
-## Process
+## 流程
 
-### 1. Render For Legibility First
+### 1. 先为可读性而渲染
 
-Prefer the simplest reliable render chain:
+优先选最简单且可靠的渲染链：
 
-- trim and speed-adjust source footage,
-- compose overlays and subtitles,
-- mix audio only as much as needed,
-- encode at a bitrate suitable for text-heavy content.
+- 裁切并调整源素材速度，
+- 合成叠加层与字幕，
+- 只在需要的程度上混音，
+- 用适合文字密集内容的码率编码。
 
-### 2. Choose Output Shapes Pragmatically
+### 2. 务实地选择输出形态
 
-| Platform | Aspect Ratio | Resolution | Notes |
+| 平台 | 画幅比 | 分辨率 | 备注 |
 |----------|--------------|------------|-------|
-| YouTube / docs | `16:9` | 1920x1080 or higher | safest default for dense UI |
-| LinkedIn feed | `1:1` | 1080x1080 | good compromise when vertical is too tight |
-| Shorts / Reels / TikTok | `9:16` | 1080x1920 | only if crop plan is actually readable |
+| YouTube / 文档 | `16:9` | 1920x1080 或更高 | 密集 UI 最稳妥的默认值 |
+| LinkedIn 信息流 | `1:1` | 1080x1080 | 当竖屏太挤时的好折中 |
+| Shorts / Reels / TikTok | `9:16` | 1080x1920 | 仅当裁切方案确实可读时才用 |
 
-If the source is 4K and text is tiny, keep a higher resolution when practical.
+若源素材是 4K 且文字很小，在可行的情况下保留更高分辨率。
 
-### 3. Compose In The Right Order
+### 3. 按正确顺序合成
 
-1. apply trims and speed changes,
-2. apply crop and framing strategy,
-3. place masks and overlays,
-4. burn subtitles,
-5. mix audio,
-6. encode with text-preserving settings.
+1. 施加裁切与变速，
+2. 施加裁切构图策略，
+3. 摆放遮罩与叠加层，
+4. 烧录字幕，
+5. 混音，
+6. 用保护文字的设置编码。
 
-Use sharp scaling and avoid aggressive compression. Screen text is the first thing viewers notice when encode quality drops.
+使用锐利的缩放算法，避免激进压缩。编码质量一下滑，屏幕文字是观众最先注意到的东西。
 
-### 4. Keep Audio Honest
+### 4. 让音频保持诚实
 
-- preserve original speech clarity,
-- do not overcompress,
-- mute or simplify useless sped-up noise,
-- use music sparingly, if at all.
+- 保住原始语音的清晰度，
+- 不要过度压缩，
+- 把加速片段里无用的噪声静音或简化，
+- 音乐要节制使用，甚至可以完全不用。
 
-### 5. Verify Every Output
+### 5. 验证每一个输出
 
-**File checks:**
-- [ ] Output file exists and is a valid MP4 container
-- [ ] Duration matches effective target within +/-5%
-- [ ] Resolution matches selected profile
+**文件检查：**
+- [ ] 输出文件存在，且是合法的 MP4 容器
+- [ ] 时长与有效目标的偏差在 +/-5% 以内
+- [ ] 分辨率与选定档位相符
 
-**Visual spot checks:**
-- [ ] Text is sharp and readable at sampled frames
-- [ ] Crop transitions are smooth enough to follow
-- [ ] Callout overlays appear and disappear cleanly
-- [ ] Blur masks fully cover sensitive data
-- [ ] No black frames or timing glitches
-- [ ] Subtitles do not sit on top of critical UI
+**画面抽查：**
+- [ ] 在抽样帧上文字锐利可读
+- [ ] 裁切转场足够平滑，能跟得上
+- [ ] 标注叠加层出现与消失都干净
+- [ ] 模糊遮罩完整覆盖敏感数据
+- [ ] 没有黑帧或时序抖动
+- [ ] 字幕没有压在关键 UI 之上
 
-**Audio spot checks:**
-- [ ] Narration/voiceover is clear and consistent volume
-- [ ] Music, if used, is not competing with speech
-- [ ] No obvious audio glitches at speed boundaries
-- [ ] No clipping or distortion
+**音频抽查：**
+- [ ] 旁白/口播清晰、音量稳定
+- [ ] 若用了音乐，它没有与语音争抢
+- [ ] 变速边界处没有明显的音频瑕疵
+- [ ] 没有削波或失真
 
-Record important findings in:
+把重要发现记录到：
 
 - `render_report.verification_notes`
 - `render_report.warnings`
 - `render_report.metadata.variant_notes`
 
-## Common Pitfalls
+## 常见陷阱
 
-- Rendering `9:16` versions that are technically exported but practically unreadable.
-- Encoding screen text with generic low-bitrate social defaults.
-- Letting decorative backgrounds or padding reduce usable UI area too far.
+- 渲染出技术上确实导出了、实际上根本读不清的 `9:16` 版本。
+- 用通用的低码率社交默认值来编码屏幕文字。
+- 让装饰性背景或留白把可用 UI 面积压得太小。

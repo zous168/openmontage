@@ -1,33 +1,33 @@
-# Edit Director - Character Animation Pipeline
+# 剪辑导演 —— Character Animation 管线
 
-## Goal
+## 目标
 
-Produce `edit_decisions` and `action_timeline`.
+产出 `edit_decisions` 和 `action_timeline`。
 
-## Process
+## 流程
 
-1. Carry `render_runtime` forward from the approved proposal.
-2. Convert scene beats into timed character actions.
-3. Add anticipation, hold, action, and follow-through where appropriate.
-4. Align mouth/gesture beats to dialogue or music.
-5. Keep action density readable.
+1. 把已获批 proposal 中的 `render_runtime` 原样带下来。
+2. 把场景节拍转换成带时序的角色动作。
+3. 在合适的位置加上预备、停留、动作和跟随。
+4. 让口型/手势节拍与对白或音乐对齐。
+5. 保持动作密度可读。
 
-## Timing Pattern
+## 时序范式
 
-Most acting beats need:
+多数表演节拍需要：
 
 ```text
-anticipation -> action -> hold/reaction -> settle
+预备 -> 动作 -> 停留/反应 -> 归位
 ```
 
-Do not animate everything continuously. Holds are part of acting.
+不要让所有东西都在连续运动。停留也是表演的一部分。
 
-## Tool Use
+## 工具使用
 
-Use `action_timeline_compiler` for a first pass, then revise the timeline if the
-acting or rhythm is weak.
+用 `action_timeline_compiler` 跑第一遍，若表演或律动偏弱，再去修改
+这条时间线。
 
-## Quality Bar
+## 质量底线
 
-Every scene has timed actions. Every action maps to a pose, action cycle, or
-procedural effect that the renderer can understand.
+每个场景都有带时序的动作。每个动作都映射到渲染器能理解的
+姿势、动作循环或程序化效果。

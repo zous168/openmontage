@@ -1,62 +1,62 @@
-# Asset Director - Avatar Spokesperson Pipeline
+# 素材导演 —— Avatar Spokesperson 管线
 
-## When To Use
+## 何时使用
 
-This stage prepares the actual spokesperson ingredients: narration, avatar or lip-sync footage, subtitle assets, branded backgrounds, and the minimal support graphics needed to complete the cut.
+本阶段准备真正的代言人原料：旁白、数字人或唇形同步素材、字幕资源、品牌背景，以及完成剪辑所需的最少辅助图形。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Presenter plan and narration needs |
-| Tools | `talking_head`, `lip_sync`, `tts_selector`, `subtitle_gen`, `image_selector`, `audio_enhance` — selectors auto-discover all available providers from the registry | Avatar, narration, and support asset options |
-| Playbook | Active style playbook | Background, type, and subtitle rules |
+| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 出镜人方案与旁白需求 |
+| 工具 | `talking_head`、`lip_sync`、`tts_selector`、`subtitle_gen`、`image_selector`、`audio_enhance` —— selector 会自动从注册表发现所有可用 provider | 数字人、旁白与辅助素材选项 |
+| Playbook | 当前生效的风格 playbook | 背景、字体与字幕规则 |
 
-## Process
+## 流程
 
-### 1. Lock The Avatar Generation Path
+### 1. 锁定数字人生成路径
 
-Use one primary path and record it clearly:
+只用一条主路径，并把它清楚记录下来：
 
-- `talking_head` from still image plus audio,
-- `lip_sync` from existing presenter plate plus new audio,
-- externally supplied avatar render if created outside the current runtime.
+- 由静态图像加音频驱动的 `talking_head`，
+- 由已有出镜人底板加新音频驱动的 `lip_sync`，
+- 若数字人渲染是在当前运行时之外制作的，则为外部提供的成品。
 
-Do not hide a blocked avatar path. Record it.
+不要隐瞒受阻的数字人路径。把它记录下来。
 
-### 1b. Sample Preview (Prevents Wasted Spend)
+### 1b. 样片预览（避免浪费花费）
 
-Before batch-generating assets, produce one sample of each expensive type and show the user:
+批量生成素材之前，每种昂贵类型先出一个样本给用户看：
 
-1. **TTS sample** (if generating narration): Generate one section. Confirm voice, pace, and persona before batching the rest.
-2. **Avatar sample** (if using `talking_head`): Generate a short test clip. Confirm the avatar quality is acceptable before committing to full generation.
+1. **TTS 样本**（若要生成旁白）：生成其中一段。在批量生成其余部分之前确认音色、语速和人设。
+2. **数字人样本**（若使用 `talking_head`）：生成一小段测试片。在投入完整生成之前确认数字人质量可接受。
 
-If rejected, adjust parameters and retry (max 3 iterations). Do not batch until approved.
+若被否决，调整参数重试（最多 3 轮）。未获批准之前不要批量生成。
 
-### 2. Resolve Narration Before Support Graphics
+### 2. 先解决旁白，再做辅助图形
 
-Spokesperson videos depend on speech. Determine whether narration is:
+代言视频依赖语音。先确定旁白是：
 
-- supplied,
-- TTS-generated,
-- already embedded in a presenter plate.
+- 用户提供的，
+- TTS 生成的，
+- 还是已经内嵌在出镜人底板里的。
 
-If narration is missing and no TTS tool is available, mark the project blocked instead of pretending the stage succeeded.
+若旁白缺失且没有任何 TTS 工具可用，就把项目标记为受阻，而不是假装这个阶段成功了。
 
-### 3. Build The Minimal Support Kit
+### 3. 构建最小辅助套件
 
-Prepare only what the scene plan actually needs:
+只准备场景方案真正需要的东西：
 
-- subtitle files,
-- one lower-third system,
-- CTA card,
-- background or plate assets,
-- optional still or product support images.
+- 字幕文件，
+- 一套下三分之一条体系，
+- CTA 卡，
+- 背景或底板素材，
+- 可选的静图或产品辅助图。
 
-### 4. Use Metadata For Capability Truth
+### 4. 用元数据表达能力事实
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `avatar_generation_path`
 - `narration_assets`
@@ -65,76 +65,76 @@ Recommended metadata keys:
 - `scene_asset_index`
 - `blocked_assets`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- the avatar path is explicit,
-- narration and avatar assets align,
-- support graphics stay minimal,
-- every referenced file exists.
+- 数字人路径明确，
+- 旁白与数字人素材相互吻合，
+- 辅助图形保持精简，
+- 每个被引用的文件都真实存在。
 
-## No-Avatar Path
+## 无数字人路径
 
-When the EP has triggered a narration-over-graphics pivot (neither `talking_head` nor `lip_sync` available), skip avatar generation entirely and produce a graphics-driven asset kit instead:
+当 EP 触发了"旁白配图形"的转向（`talking_head` 和 `lip_sync` 都不可用）时，完全跳过数字人生成，改为产出一套以图形驱动的素材包：
 
-### What to produce:
-1. **Narration audio** — via `tts_selector` (mandatory; block the project if no TTS is available either).
-2. **Scene visuals** — via `image_selector` or `video_selector`. One primary visual per scene that reinforces the spoken point (diagram, illustration, product shot, or stock footage).
-3. **Subtitle files** — same as standard path.
-4. **Text cards** — key-point overlays, stat cards, CTA end card.
-5. **Backgrounds** — consistent family matching the playbook.
+### 要产出什么：
+1. **旁白音频** —— 通过 `tts_selector`（强制；若连 TTS 也没有，就把项目标记为受阻）。
+2. **场景视觉** —— 通过 `image_selector` 或 `video_selector`。每个场景一个主视觉，用来强化口播的论点（图解、插画、产品图或素材片段）。
+3. **字幕文件** —— 与标准路径相同。
+4. **文字卡** —— 关键点叠加、数据卡、CTA 结尾卡。
+5. **背景** —— 与 playbook 匹配的一致家族。
 
-### What to skip:
-- No `talking_head` or `lip_sync` calls.
-- No presenter framing metadata.
-- `avatar_generation_path` should be set to `"none — narration-over-graphics pivot"`.
+### 要跳过什么：
+- 不调用 `talking_head` 或 `lip_sync`。
+- 没有出镜人构图元数据。
+- `avatar_generation_path` 应设为 `"none — narration-over-graphics pivot"`。
 
-### Metadata for this path:
-- `avatar_generation_path`: `"narration_over_graphics"`
-- `pivot_reason`: why the no-avatar path was chosen
-- All other metadata keys remain the same.
+### 这条路径的元数据：
+- `avatar_generation_path`：`"narration_over_graphics"`
+- `pivot_reason`：为什么选择无数字人路径
+- 其余元数据键保持不变。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during asset generation:
-- Use `web_search` to verify visual accuracy of subjects (e.g. what does this building actually look like?)
-- Use `web_search` to find reference images before generating illustrations
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在素材生成过程中遇到不确定之处：
+- 用 `web_search` 核实对象的视觉准确性（例如：这栋建筑实际上长什么样？）
+- 在生成插画之前用 `web_search` 找参考图
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Visual accuracy matters. If the script mentions a specific place, person, or object,
-verify what it actually looks like before generating images. Don't rely on
-the AI model's training data — it may be wrong or outdated.
+视觉准确性很重要。若脚本提到某个具体的地点、人物或物件，
+先核实它实际长什么样，再去生成图像。不要依赖
+AI 模型的训练数据 —— 它可能是错的或过时的。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Building decorative assets before the narration path is solved.
-- Mixing multiple avatar-generation strategies in one simple spokesperson video.
-- Marking the stage complete when the core presenter asset is still hypothetical.
-- (No-avatar path) Generating filler visuals with no connection to the narration — every image must reinforce the spoken point.
+- 在旁白路径还没解决时就先做装饰性素材。
+- 在一支简单的代言视频里混用多种数字人生成策略。
+- 核心的出镜人素材还只是假设，就把这个阶段标记为完成。
+- （无数字人路径）生成与旁白毫无关联的填充画面 —— 每张图都必须强化口播的论点。
 
 
-## When You Do Not Know How
+## 当你不知道该怎么做时
 
-If you encounter a generation technique, provider behavior, or prompting pattern you are unsure about:
+若你遇到一种拿不准的生成技法、provider 行为或提示词范式：
 
-1. **Search the web** for current best practices — models and APIs change frequently, and the agent's training data may be stale
-2. **Check `.agents/skills/`** for existing Layer 3 knowledge (provider-specific prompting guides, API patterns)
-3. **If neither helps**, write a project-scoped skill at `projects/<project-name>/skills/<name>.md` documenting what you learned
-4. **Reference source URLs** in the skill so the knowledge is traceable
-5. **Log it** in the decision log: `category: "capability_extension"`, `subject: "learned technique: <name>"`
+1. **上网检索**当前最佳实践 —— 模型和 API 变动频繁，agent 的训练数据可能已经过时
+2. **查 `.agents/skills/`** 中已有的 Layer 3 知识（provider 专属提示词指南、API 范式）
+3. **若两者都无济于事**，在 `projects/<project-name>/skills/<name>.md` 写一份项目作用域的技能，记录你学到的东西
+4. 在技能中**引用来源 URL**，让知识可追溯
+5. 在 decision log 中**记录它**：`category: "capability_extension"`、`subject: "learned technique: <name>"`
 
-This is especially important for:
-- **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
-- **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
-- **Remotion component patterns** — new composition techniques emerge as the framework evolves
+这对以下情况尤其重要：
+- **视频生成提示词** —— 模型响应的是随版本变化的特定词汇
+- **图像模型参数** —— FLUX、GPT Image、Imagen 的最优设置各不相同且在演进
+- **音频 provider 的怪癖** —— 音色克隆、音乐生成和 TTS 各有其模型专属的最佳实践
+- **Remotion 组件范式** —— 随框架演进会出现新的合成技法
 
-Do not rely on stale knowledge. When in doubt, search first.
+不要依赖过时的知识。拿不准就先检索。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

@@ -1,123 +1,123 @@
-# Screen Recording Pipeline
+# 屏幕录制管线
 
-> Sources: OBS Studio documentation, Loom production guidelines, Fireship production
-> methodology, Kevin Powell CSS tutorial techniques, Theo Browne dev content guides
+> 资料来源：OBS Studio 文档、Loom 制作规范、Fireship 制作
+> 方法论、Kevin Powell 的 CSS 教程技法、Theo Browne 的开发内容指南
 
-## Quick Reference Card
+## 速查卡
 
 ```
-RESOLUTION:       1920x1080 at 2x display (record at 3840x2160, deliver at 1080p)
-FRAME RATE:       60fps for UI/scrolling, 30fps for static code
-CURSOR:           Enlarged (1.5-2x), highlighted with ring or glow
-ZOOM:             1.5-2x for code focus, 0.8s ease-in-out transition
-SPEED RAMP:       1.5x for navigation, 2x for repetitive actions, 1.0x for key moments
-DEAD AIR:         Remove pauses > 1.5 seconds
-FONT SIZE (IDE):  18-22px minimum for readability at 1080p delivery
+分辨率：         1920x1080，以 2 倍显示录制（录 3840x2160，交付 1080p）
+帧率：           UI/滚动用 60fps，静态代码用 30fps
+光标：           放大（1.5-2 倍），用光圈或辉光高亮
+缩放：           聚焦代码用 1.5-2 倍，0.8 秒 ease-in-out 过渡
+变速：           导航 1.5 倍，重复操作 2 倍，关键时刻 1.0 倍
+空白时间：       删掉超过 1.5 秒的停顿
+IDE 字号：       至少 18-22px，以保证 1080p 交付时可读
 ```
 
-## Recording Settings
+## 录制设置
 
-### Resolution Strategy
+### 分辨率策略
 
-| Approach | Record At | Deliver At | Why |
+| 方案 | 录制于 | 交付于 | 理由 |
 |----------|----------|-----------|-----|
-| **Recommended** | 3840x2160 (4K) | 1920x1080 | Enables 2x zoom into code without quality loss |
-| Budget | 1920x1080 | 1920x1080 | Direct capture, limited zoom headroom |
-| Vertical | 2160x3840 | 1080x1920 | Short-form screen recording |
+| **推荐** | 3840x2160（4K） | 1920x1080 | 可以 2 倍放大看代码而不损失画质 |
+| 省事 | 1920x1080 | 1920x1080 | 直接采集，缩放余量有限 |
+| 竖屏 | 2160x3840 | 1080x1920 | 短视频形态的屏幕录制 |
 
-### Frame Rate
+### 帧率
 
-| Content Type | FPS | Why |
+| 内容类型 | FPS | 理由 |
 |-------------|-----|-----|
-| Code editing (mostly static) | 30 | Smaller file size, no visible difference |
-| UI interaction, scrolling | 60 | Smooth scrolling and cursor movement |
-| Animation/demo with motion | 60 | Motion clarity |
-| Terminal output | 30 | Text updates don't need 60fps |
+| 代码编辑（基本静态） | 30 | 文件更小，看不出差别 |
+| UI 交互、滚动 | 60 | 滚动与光标移动更顺滑 |
+| 带运动的动画/演示 | 60 | 运动更清晰 |
+| 终端输出 | 30 | 文本更新不需要 60fps |
 
-### IDE/Editor Setup
+### IDE/编辑器设置
 
-- **Font size:** 18-22px minimum (must be readable at 1080p delivery)
-- **Theme:** Dark theme preferred (easier on eyes, looks better in video)
-- **Line numbers:** ON (helps viewers follow along)
-- **Minimap:** OFF (wastes screen space, distracting)
-- **Sidebar:** Collapsed unless showing file structure is the point
-- **Status bar:** Consider hiding (clutters bottom of frame)
-- **Zoom level:** 150-175% for readability
+- **字号：** 至少 18-22px（必须在 1080p 交付时可读）
+- **主题：** 优先深色主题（护眼，视频里也更好看）
+- **行号：** 开（帮助观众跟上）
+- **缩略图（Minimap）：** 关（浪费屏幕空间，分散注意力）
+- **侧边栏：** 折叠，除非展示文件结构正是重点
+- **状态栏：** 考虑隐藏（让画面底部变杂乱）
+- **缩放级别：** 150-175% 以保证可读性
 
-## Cursor Management
+## 光标管理
 
-### Visibility
+### 可见度
 
-| Setting | Value |
+| 设置 | 取值 |
 |---------|-------|
-| Cursor size | 1.5-2x default system size |
-| Highlight | Yellow or white ring/glow (50px radius) |
-| Click indicator | Brief flash or ripple on click |
-| Smoothing | Light smoothing to reduce jitter |
+| 光标尺寸 | 系统默认的 1.5-2 倍 |
+| 高亮 | 黄色或白色光圈/辉光（半径 50px） |
+| 点击指示 | 点击时短暂闪烁或涟漪 |
+| 平滑 | 轻度平滑以减少抖动 |
 
-### Cursor Behavior
+### 光标行为
 
-- **Move deliberately** — no random wandering
-- **Pause on target** for 0.5s before clicking
-- **Avoid circling** — don't circle the cursor around what you're talking about
-- **Hide cursor** when it's not needed (during code explanation)
+- **移动要有目的** —— 不要随意游走
+- 点击前在目标上**停顿 0.5 秒**
+- **不要画圈** —— 不要绕着你正在讲的东西转圈
+- 不需要时**隐藏光标**（讲解代码期间）
 
-## Zoom and Pan
+## 缩放与平移
 
-### Zoom Levels
+### 缩放级别
 
-| Context | Zoom | Duration of Transition |
+| 场景 | 缩放 | 过渡时长 |
 |---------|------|----------------------|
-| Full screen overview | 1.0x (100%) | — |
-| Code focus | 1.5-2.0x | 0.8s ease-in-out |
-| Terminal focus | 1.5x | 0.6s ease-in-out |
-| UI element highlight | 2.0-2.5x | 0.8s ease-in-out |
-| Return to overview | 1.0x | 0.6s ease-in-out |
+| 全屏总览 | 1.0 倍（100%） | — |
+| 聚焦代码 | 1.5-2.0 倍 | 0.8 秒 ease-in-out |
+| 聚焦终端 | 1.5 倍 | 0.6 秒 ease-in-out |
+| 高亮 UI 元素 | 2.0-2.5 倍 | 0.8 秒 ease-in-out |
+| 回到总览 | 1.0 倍 | 0.6 秒 ease-in-out |
 
-### Pan Rules
+### 平移规则
 
-- Pan to follow the active area — don't make viewers search
-- Smooth pan (ease-in-out), not instant jump
-- Hold position for at least **3 seconds** before next pan
-- Announce what you're zooming into: "Let's look at this function..."
+- 平移要跟随活动区域 —— 别让观众自己去找
+- 平滑平移（ease-in-out），不要瞬移
+- 下一次平移之前，至少**保持位置 3 秒**
+- 说出你正在放大看什么："我们来看看这个函数……"
 
-## Post-Processing
+## 后期处理
 
-### Speed Ramping
+### 变速
 
-| Action | Speed | Notes |
+| 动作 | 速度 | 备注 |
 |--------|-------|-------|
-| Typing boilerplate | 2-3x | Viewers don't need to watch you type imports |
-| File navigation | 1.5-2x | Opening files, switching tabs |
-| Package install / build | 2-4x or cut | Show start + end, skip the wait |
-| Key code writing | 1.0x | Important moments at real speed |
-| Debugging / thinking | 1.0x with cuts | Remove dead pauses, keep the reasoning |
+| 敲样板代码 | 2-3 倍 | 观众不需要看你打 import |
+| 文件导航 | 1.5-2 倍 | 打开文件、切标签页 |
+| 装包 / 构建 | 2-4 倍或直接剪掉 | 展示开头 + 结尾，跳过等待 |
+| 关键代码书写 | 1.0 倍 | 重要时刻按真实速度 |
+| 调试 / 思考 | 1.0 倍 + 剪辑 | 删掉无声停顿，保留推理过程 |
 
-### Dead Air Removal
+### 删除空白时间
 
-- Remove **all pauses > 1.5 seconds** unless deliberate
-- Remove "um", "uh", typing mistakes and backspaces (when possible)
-- Jump cuts are acceptable and expected in screen recording content
-- Add a subtle **zoom shift** (1.0x → 1.02x) at each jump cut to mask the edit
+- 删掉**所有超过 1.5 秒的停顿**，除非是刻意为之
+- 尽可能删掉 "呃"、"嗯"、打字失误和退格
+- 屏幕录制内容里，跳切是可接受且被预期的
+- 在每个跳切处加一个细微的**缩放位移**（1.0 倍 → 1.02 倍）来掩饰剪辑痕迹
 
-### Audio Enhancement
+### 音频增强
 
-- Apply `clean_speech` preset from `audio_enhance`
-- HPF at 80Hz to remove keyboard/desk rumble
-- Compress at 3:1 to even out speaking volume
-- Target -16 LUFS for screen recording content (slightly quieter than -14, more comfortable for long viewing)
+- 应用 `audio_enhance` 的 `clean_speech` 预设
+- 80Hz 高通滤波去除键盘/桌面的低频轰隆
+- 3:1 压缩以拉平说话音量
+- 屏幕录制内容以 -16 LUFS 为目标（比 -14 略轻，长时间观看更舒适）
 
-## Applying to OpenMontage
+## 应用到 OpenMontage
 
-When processing screen recordings in the talking-head pipeline:
+在口播人像管线中处理屏幕录制时：
 
-1. **Record at 4K** if possible — enables quality zoom in post
-2. **Set IDE font to 20px+** before recording
-3. **Use `scene_detect`** with threshold 30, min_scene_length 2.0s to find natural segments
-4. **Apply zoom/pan** in compose stage — 1.5-2x on code, 0.8s transitions
-5. **Speed ramp navigation** to 1.5-2x, keep key moments at 1.0x
-6. **Remove dead air** > 1.5s with `video_trimmer`
-7. **Add cursor highlight** in post if not captured in recording
-8. **Target -16 LUFS** (slightly below YouTube standard for comfortable viewing)
-9. **Subtitles recommended** — use `subtitle_gen` for accessibility
-10. **Dark theme** looks best in video — recommend to users before recording
+1. **尽可能用 4K 录制** —— 便于后期做高质量缩放
+2. 录制前**把 IDE 字号设到 20px 以上**
+3. **用 `scene_detect`**，阈值 30、min_scene_length 2.0 秒，找出自然的段落
+4. 在 compose 阶段**应用缩放/平移** —— 代码 1.5-2 倍，0.8 秒过渡
+5. **导航部分变速**到 1.5-2 倍，关键时刻保持 1.0 倍
+6. 用 `video_trimmer` **删掉超过 1.5 秒的空白时间**
+7. 若录制时没有采集到，**在后期加上光标高亮**
+8. **以 -16 LUFS 为目标**（略低于 YouTube 标准，观看更舒适）
+9. **建议加字幕** —— 用 `subtitle_gen` 以提升无障碍
+10. **深色主题**在视频里最好看 —— 录制前建议用户切换

@@ -1,93 +1,92 @@
-# Checkpoint Protocol — Meta Skill
+# 检查点协议 —— 元技能
 
-## When to Use
+## 何时使用
 
-After completing a stage's work AND passing review. This skill teaches you when and how to checkpoint, and when to ask the human for approval. It replaces the Python `checkpoint_policy.py` with an instruction-driven protocol.
+在完成某个阶段的工作**并且**通过自评之后。本技能教你何时、如何写检查点，以及何时该请求人工审批。它用一套指令驱动的协议取代了 Python 的 `checkpoint_policy.py`。
 
-Checkpoints are the save points of a pipeline. They enable resume-from-failure, human oversight, and audit trails.
+检查点是管线的存档点。它们支撑失败续跑、人工监督和审计轨迹。
 
-## Protocol
+## 协议
 
-### Step 1: Check Manifest Policy
+### 第 1 步：查看 manifest 策略
 
-Read the current stage's configuration from the pipeline manifest:
+从管线 manifest 中读取当前阶段的配置：
 
 ```yaml
 - name: idea
-  checkpoint_required: true      # Must we checkpoint?
-  human_approval_default: true   # Must we ask the human?
+  checkpoint_required: true      # 必须写检查点吗？
+  human_approval_default: true   # 必须问人吗？
 ```
 
-| `checkpoint_required` | `human_approval_default` | Action |
+| `checkpoint_required` | `human_approval_default` | 措施 |
 |----------------------|------------------------|--------|
-| true | true | Checkpoint + present to human for approval |
-| true | false | Checkpoint + proceed automatically |
-| false | * | Skip checkpoint entirely (rare) |
+| true | true | 写检查点 + 呈现给人工审批 |
+| true | false | 写检查点 + 自动继续 |
+| false | * | 完全跳过检查点（少见） |
 
-### Step 2: Prepare Checkpoint Data
+### 第 2 步：准备检查点数据
 
-Gather everything needed for the checkpoint:
+收集检查点所需的一切：
 
-1. **Stage name** — which stage just completed
-2. **Status** — `"completed"` (or `"awaiting_human"` if approval needed)
-3. **Artifacts** — the canonical artifact(s) produced by this stage
-4. **Metadata** — review findings, cost snapshot, timing info
+1. **阶段名** —— 刚刚完成的是哪个阶段
+2. **状态** —— `"completed"`（或需要审批时为 `"awaiting_human"`）
+3. **Artifacts** —— 该阶段产出的规范 artifact
+4. **元数据** —— 自评发现、成本快照、耗时信息
 
-### Step 3: Write Checkpoint
+### 第 3 步：写检查点
 
-Call the checkpoint utility:
+调用检查点工具：
 
 ```python
 write_checkpoint(
-    pipeline_dir,      # Project working directory
-    project_name,      # Project identifier
-    stage_name,        # e.g., "idea"
-    status,            # "completed" or "awaiting_human"
-    artifacts,         # {"brief": {...}} — the stage's output
+    pipeline_dir,      # 项目工作目录
+    project_name,      # 项目标识
+    stage_name,        # 例如 "idea"
+    status,            # "completed" 或 "awaiting_human"
+    artifacts,         # {"brief": {...}} —— 该阶段的输出
 )
 ```
 
-The checkpoint utility will:
-- Validate the artifact against its schema
-- Enforce the approval gate (a gated stage cannot be written `completed` without `human_approved=True`)
-- Archive any superseded checkpoint to `projects/<id>/history/` (stage versions and gate transitions are never destroyed)
-- Write the checkpoint JSON to disk
-- Include timestamp and stage metadata
+检查点工具会：
+- 按 schema 校验 artifact
+- 强制执行审批门禁（受门禁的阶段在没有 `human_approved=True` 时不能写成 `completed`）
+- 把被取代的检查点归档到 `projects/<id>/history/`（阶段版本与门禁变迁永不销毁）
+- 把检查点 JSON 写入磁盘
+- 附上时间戳与阶段元数据
 
-Canonical location: `projects/<project_id>/checkpoint_<stage>.json` — always
-pass the repo's `projects/` directory as `pipeline_dir` (or use
-`lib.checkpoint.PROJECTS_DIR`). Always pass `pipeline_type` — gate enforcement
-reads the manifest through it.
+规范位置：`projects/<project_id>/checkpoint_<stage>.json` —— 始终把仓库的
+`projects/` 目录作为 `pipeline_dir` 传入（或使用
+`lib.checkpoint.PROJECTS_DIR`）。始终传 `pipeline_type` —— 门禁执行
+要通过它来读取 manifest。
 
-At pipeline initialization (before any stage), call `init_project()`:
+在管线初始化时（任何阶段之前）调用 `init_project()`：
 
 ```python
 from lib.checkpoint import init_project
 init_project("my-project", title="My Project", pipeline_type="cinematic")
 ```
 
-This creates the canonical directory layout and writes `project.json` — the
-marker the Backlot board needs to show the project before its first
-checkpoint. Then launch the board: `python -m backlot open my-project`
-(non-fatal if unavailable — the board is an observer, never a blocker).
+这会创建规范的目录布局并写出 `project.json` —— 这是 Backlot 看板在
+第一个检查点出现之前显示该项目所需的标记文件。然后启动看板：`python -m backlot open my-project`
+（不可用时不致命 —— 看板只是观察者，绝不是阻塞项）。
 
-### Step 4: Intra-Stage Checkpointing (Resume Support + Liveness)
+### 第 4 步：阶段内检查点（续跑支持 + 存活信号）
 
-**On entering any stage, write an `in_progress` checkpoint first.** This is
-what tells the user (via the Backlot board) that the stage is live rather
-than stalled — certainty matters more than speed.
+**进入任何阶段时，先写一个 `in_progress` 检查点。** 正是它告诉用户
+（通过 Backlot 看板）这个阶段是活着的、而不是卡住了 ——
+确定性比速度更重要。
 
-Long-running stages (like `assets` or `compose` loops) can fail midway due to API errors, rate limits, or session interruptions. To allow resuming from the exact point of failure (e.g., Scene 4):
+长时间运行的阶段（如 `assets` 或 `compose` 循环）可能因 API 错误、限流或会话中断而中途失败。为了能从确切的失败点（例如第 4 个场景）续跑：
 
-1. **Write partial progress**: Every time you successfully generate a significant item (e.g., one scene's assets, one clip), write an `in_progress` checkpoint.
+1. **写入部分进度**：每当你成功生成一个有意义的单元（例如某个场景的素材、一个片段），就写一个 `in_progress` 检查点。
 
-   `in_progress` checkpoints may omit the stage's canonical artifact, but any artifact stored under a known artifact name is still schema-validated. If the partial data is not yet a valid canonical artifact, store it under `metadata.partial_progress` instead of `artifacts`.
+   `in_progress` 检查点可以省略该阶段的规范 artifact，但任何以已知 artifact 名存放的内容仍会按 schema 校验。若部分数据还不是合法的规范 artifact，就把它存进 `metadata.partial_progress`，而不是 `artifacts`。
    ```python
    write_checkpoint(
        pipeline_dir, project_name,
        stage="assets",
        status="in_progress",
-       artifacts={},  # no incomplete canonical artifact yet
+       artifacts={},  # 尚无完整的规范 artifact
        metadata={
            "partial_progress": {
                "asset_manifest_draft": partial_manifest_dict,
@@ -96,151 +95,151 @@ Long-running stages (like `assets` or `compose` loops) can fail midway due to AP
        },
    )
    ```
-   If the partial artifact already satisfies its schema (for example, an `asset_manifest` with `version: "1.0"` and valid `assets[]` entries), it may be stored in `artifacts` directly.
-2. **Resume from partial progress**: When starting a stage, ALWAYS check if an `in_progress` checkpoint exists for it. See Step 7 (Resume Protocol) for how to handle it.
+   若部分 artifact 已经满足其 schema（例如一个带 `version: "1.0"` 和合法 `assets[]` 条目的 `asset_manifest`），就可以直接放进 `artifacts`。
+2. **从部分进度续跑**：开始某个阶段时，**始终**检查是否已存在该阶段的 `in_progress` 检查点。处理方式见第 7 步（续跑协议）。
 
-### Step 5: Human Approval (If Required)
+### 第 5 步：人工审批（若需要）
 
-**The manifest value is binding.** `human_approval_default` in the pipeline
-manifest is the single source of truth for whether a stage gates. This skill
-never overrides it, and neither do you — there is no "this case is different."
-(`lib/checkpoint.py` enforces this: writing `status="completed"` for a gated
-stage without `human_approved=True` raises a `GATE VIOLATION` error.)
+**manifest 中的取值具有约束力。** 管线 manifest 中的
+`human_approval_default` 是"某阶段是否设门禁"的唯一事实来源。本技能
+从不推翻它，你也不行 —— 不存在"这次情况特殊"。
+（`lib/checkpoint.py` 会强制执行：为受门禁的阶段写 `status="completed"` 而
+没有 `human_approved=True` 时，会抛出 `GATE VIOLATION` 错误。）
 
-When `human_approval_default: true`:
+当 `human_approval_default: true` 时：
 
-1. **Write the checkpoint with `status="awaiting_human"`** (not `completed`).
+1. **把检查点写成 `status="awaiting_human"`**（不是 `completed`）。
 
-2. **Present a summary** to the human:
+2. **向人工呈现一份摘要**：
    ```
-   ## Stage Complete: [stage_name] — awaiting your approval
+   ## 阶段完成：[stage_name] —— 等待你的审批
 
-   ### Artifact Summary
-   [Key details from the artifact — title, duration, key decisions]
-   [If the Backlot board is running, point to it: the artifact renders there]
+   ### Artifact 摘要
+   [artifact 的关键细节 —— 标题、时长、关键决策]
+   [若 Backlot 看板正在运行，指向它：artifact 会在那里渲染]
 
-   ### Review Findings
-   [Summary from reviewer: N critical (all fixed), N suggestions]
+   ### 自评发现
+   [reviewer 的摘要：N 个 critical（已全部修复）、N 条建议]
 
-   ### Cost So Far
-   [Budget spent / total, breakdown by tool]
+   ### 目前成本
+   [已花费 / 总预算，按工具拆分]
 
-   ### Action Required
-   Please review and approve to continue, or provide feedback for revision.
+   ### 需要你做的事
+   请审阅并批准以继续，或给出修改意见。
    ```
 
-3. **END YOUR TURN.** Performing any further pipeline work in the same
-   response is a gate violation. "Present and continue" is not waiting —
-   the turn must end with the question, and the next pipeline action must
-   be caused by the user's reply.
+3. **结束你的回合。** 在同一次回复中做任何进一步的管线工作，都属于
+   门禁违规。"呈现完就继续"不算等待 ——
+   这一回合必须以提问结束，下一个管线动作必须是由
+   用户的回复触发的。
 
-4. **On the user's response:**
-   - **Approved** → re-write the checkpoint with `status="completed"`,
-     `human_approved=True`, then proceed to the next stage
-   - **Revision requested** → go back to the stage director skill with the
-     human's feedback, produce revised artifacts, re-review, re-checkpoint
-     (the superseded checkpoint is preserved automatically in `history/`)
-   - **Abort** → stop the pipeline
+4. **收到用户回复后：**
+   - **批准** → 把检查点重写为 `status="completed"`、
+     `human_approved=True`，然后进入下一阶段
+   - **要求修改** → 带着人工反馈回到该阶段的 director 技能，
+     产出修订后的 artifact，重新自评，重新写检查点
+     （被取代的检查点会自动保留在 `history/`）
+   - **中止** → 停止管线
 
-5. **Approval is per-gate.** A prior approval, however broad ("looks great,
-   go ahead and make the whole thing"), never covers a later gate. If the
-   user explicitly pre-authorizes the full run, record that as a
-   `decision_log` entry (`category: "approval_policy"`) at the moment they
-   say it — absent that entry, stop at every gate.
+5. **审批是逐门禁的。** 先前的批准，无论说得多宽泛（"看着挺好，
+   你继续把整个做完吧"），都不覆盖后面的门禁。若用户
+   明确对整轮运行做了预授权，就在他们说出那句话的当下把它
+   记成一条 `decision_log`（`category: "approval_policy"`）—— 没有那条记录，
+   就在每个门禁处停下。
 
-6. **The assets gate reviews the storyboard — before any draft render.**
-   `assets` now gates in every pipeline: present the generated assets
-   scene-by-scene (the Backlot board's filmstrip is the natural review
-   surface), including spend so far and the projected compose cost. A bad
-   asset caught here saves a full re-render.
+6. **assets 门禁审的是分镜 —— 在任何草稿渲染之前。**
+   现在每条管线的 `assets` 都设门禁：逐场景呈现生成的素材
+   （Backlot 看板的胶片条是天然的复看界面），
+   包括目前花费和预计的 compose 成本。在这里抓出一个
+   坏素材，能省下一次完整重渲染。
 
-   **Do not render a draft/full composition to earn this review.** The review
-   surface is the filmstrip populated with per-scene assets — stock picks,
-   generated stills, narration waveforms — *not* a rendered video. For scenes
-   whose "asset" is a bespoke/atelier composition (no thumbnailable file), the
-   agent writes one **per-scene review still** to
-   `projects/<id>/snapshots/<scene_id>.png` (a `remotion still` at a
-   representative frame — see `skills/meta/bespoke-composition.md`); the board
-   shows those on the filmstrip. Refresh `metadata.partial_progress` as stills
-   land, then STOP at the gate. The draft/final render is the **compose**
-   stage — it runs only after the assets gate is approved. Rendering a full
-   draft inside the assets stage jumps the gate the user is meant to hold.
+   **不要为了换取这次复看而去渲染草稿/完整 composition。** 复看的
+   界面是填满了逐场景素材的胶片条 —— 素材库选图、生成的静图、旁白波形 ——
+   **而不是**一支渲染好的视频。对于那些"素材"本身是定制/atelier
+   composition 的场景（没有可缩略的文件），
+   agent 要为每个场景写一张**复看用静帧**到
+   `projects/<id>/snapshots/<scene_id>.png`（在有代表性的帧上跑一次
+   `remotion still` —— 见 `skills/meta/bespoke-composition.md`）；看板
+   会把它们显示在胶片条上。静帧陆续落盘时刷新 `metadata.partial_progress`，
+   然后在门禁处**停下**。草稿/最终渲染属于 **compose**
+   阶段 —— 它只在 assets 门禁获批之后才运行。在 assets 阶段内渲染完整
+   草稿，就是越过了本该由用户把守的那道门。
 
-### Step 6: Determine Next Stage
+### 第 6 步：确定下一个阶段
 
-After checkpoint is written and approved (if needed):
+检查点写好并（如需要）获批之后：
 
 ```python
 next_stage = get_next_stage(pipeline_dir, project_name)
 ```
 
-This reads all existing checkpoints and returns the next stage that needs to run, or `None` if the pipeline is complete.
+它会读取所有已有检查点，返回下一个需要运行的阶段；若管线已完成则返回 `None`。
 
-### Step 7: Resume Protocol
+### 第 7 步：续跑协议
 
-At the START of any pipeline run (not just after a stage), always check for existing progress:
+在**任何**管线运行的开始（不只是某个阶段之后），始终检查是否已有进度：
 
 ```python
 next_stage = get_next_stage(pipeline_dir, project_name)
 ```
 
-If `next_stage` is not the first stage:
-1. Inform the human: "Found existing progress. Resuming from stage: [next_stage]"
-2. **Check for partial progress**: Read the checkpoint for `next_stage`:
+若 `next_stage` 不是第一个阶段：
+1. 告知人工："发现已有进度。从阶段 [next_stage] 续跑"
+2. **检查部分进度**：读取 `next_stage` 的检查点：
    ```python
    current_cp = read_checkpoint(pipeline_dir, project_name, next_stage)
    ```
-   If `current_cp` exists and its status is `"in_progress"`, inform the human you are resuming from the middle of the stage.
-3. **Load artifacts**: Load prior artifacts from checkpoints for context. If resuming from `"in_progress"`, first load any schema-valid partial artifact from `current_cp["artifacts"]`. If the partial data is stored in `current_cp["metadata"]["partial_progress"]`, use that draft data and its completion markers (such as `completed_scene_ids`) to skip sub-tasks that are already done.
-4. **Continue**: Continue generation from the next successful step, appending to the partial artifact.
+   若 `current_cp` 存在且状态为 `"in_progress"`，告知人工你正在从该阶段中途续跑。
+3. **加载 artifact**：从检查点加载先前的 artifact 作为上下文。若从 `"in_progress"` 续跑，先从 `current_cp["artifacts"]` 加载任何符合 schema 的部分 artifact。若部分数据存放在 `current_cp["metadata"]["partial_progress"]`，就使用那份草稿数据及其完成标记（例如 `completed_scene_ids`）来跳过已完成的子任务。
+4. **继续**：从下一个尚未成功的步骤继续生成，把结果追加到部分 artifact 中。
 
-If a checkpoint exists with status `"awaiting_human"`:
-1. Inform the human: "Stage [name] is awaiting your approval"
-2. Present the checkpoint data for review
-3. Wait for approval before proceeding
+若存在状态为 `"awaiting_human"` 的检查点：
+1. 告知人工："阶段 [name] 正在等待你的审批"
+2. 呈现检查点数据供审阅
+3. 在继续之前等待批准
 
-### Sample Checkpoint (Reference-Driven Productions)
+### Sample 检查点（reference-driven 类生产）
 
-When a production is reference-driven (VideoAnalysisBrief exists), there is an
-additional checkpoint between proposal approval and full production:
+当一次生产是 reference-driven 时（存在 VideoAnalysisBrief），在
+proposal 获批与全量生产之间会多出一道检查点：
 
-| Stage | checkpoint_required | human_approval_default | Notes |
+| 阶段 | checkpoint_required | human_approval_default | 备注 |
 |-------|--------------------|-----------------------|-------|
-| `sample` | true | true | Always requires human approval |
+| `sample` | true | true | 始终需要人工审批 |
 
-The sample checkpoint:
-1. Presents: rendered sample clip (10-15 seconds)
-2. Cost: sample cost vs. projected full-video cost
-3. Action: approve (→ proceed to script), revise (→ re-generate sample), abort
+Sample 检查点：
+1. 呈现：渲染好的样片（10-15 秒）
+2. 成本：样片成本 vs 预计的整片成本
+3. 措施：批准（→ 进入 script）、修改（→ 重新生成样片）、中止
 
-The sample checkpoint is NOT a pipeline stage — it's a sub-checkpoint within the
-proposal stage. It does not produce a canonical artifact. It produces a rendered
-preview clip stored at `projects/<name>/assets/sample/sample_v{N}.mp4`.
+Sample 检查点**不是**一个管线阶段 —— 它是 proposal 阶段内部的
+子检查点。它不产出规范 artifact。它产出一段渲染好的
+预览片，存放在 `projects/<name>/assets/sample/sample_v{N}.mp4`。
 
-**Presentation format:**
+**呈现格式：**
 ```
-## Sample Preview Ready
+## 样片已就绪
 
-**Sample clip:** [path to sample_v1.mp4]
-- Duration: [X] seconds (hook + 1 middle scene)
-- Voice: [TTS provider + voice name]
-- Visuals: [description — AI images, Remotion animations, etc.]
-- Music: [source]
+**样片文件：** [sample_v1.mp4 的路径]
+- 时长：[X] 秒（钩子 + 1 个中段场景）
+- 配音：[TTS provider + 音色名]
+- 画面：[说明 —— AI 图像、Remotion 动画等]
+- 音乐：[来源]
 
-**Sample cost:** $[X.XX]
-**Projected full video cost:** $[X.XX]
+**样片成本：** $[X.XX]
+**预计整片成本：** $[X.XX]
 
-Does this feel right? I can adjust: voice, visual style, pacing, music, colors.
+感觉对吗？我可以调整：配音、视觉风格、节奏、音乐、配色。
 ```
 
-## Key Principles
+## 关键原则
 
-1. **Always checkpoint completed work.** Even if `checkpoint_required: false`, consider checkpointing anyway if the stage took significant time or cost. Losing work is worse than an extra file on disk.
+1. **已完成的工作一律写检查点。** 即便 `checkpoint_required: false`，若该阶段耗费了大量时间或成本，也值得写一个。丢掉工作比磁盘上多一个文件糟糕得多。
 
-2. **Never skip human approval on creative stages.** `idea` and `script` shape everything. Rushing past them to save time produces videos nobody wants.
+2. **创意阶段绝不跳过人工审批。** `idea` 和 `script` 决定了后面的一切。为了省时间而匆匆略过，产出的会是没人想要的视频。
 
-3. **Include cost snapshots.** The human should know how much has been spent and how much remains before approving expensive downstream stages (assets, compose).
+3. **附上成本快照。** 在批准昂贵的下游阶段（assets、compose）之前，人工应当知道已经花了多少、还剩多少。
 
-4. **Checkpoints enable resume.** If the pipeline crashes at `compose`, the human can restart and it picks up from `compose` — not from `idea`. This is the whole point.
+4. **检查点让续跑成为可能。** 若管线在 `compose` 崩溃，人工可以重启并从 `compose` 接着跑 —— 而不是从 `idea` 重来。这正是检查点的全部意义。
 
-5. **Be transparent in approval requests.** Don't just show the artifact — show the review findings, the cost, and any concerns. Help the human make an informed decision.
+5. **请求审批时要透明。** 不要只把 artifact 摆出来 —— 把自评发现、成本和任何担忧一并给出。帮助人工做出知情的决定。

@@ -1,59 +1,59 @@
-# Publish Director - Hybrid Pipeline
+# 发布导演 —— Hybrid 管线
 
-## When To Use
+## 何时使用
 
-Package the hybrid outputs so the hero cut and its derivatives stay organized and the source/support mix remains clear.
+把混合项目的输出打包，让主剪辑及其衍生版保持有条理，并让源素材/辅助素材的构成保持清晰。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["compose"]["render_report"]`, `state.artifacts["idea"]["brief"]`, `state.artifacts["script"]["script"]` | Final outputs and hybrid framing |
-| Playbook | Active style playbook | Tone consistency |
+| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["compose"]["render_report"]`、`state.artifacts["idea"]["brief"]`、`state.artifacts["script"]["script"]` | 最终产出与混合框架 |
+| Playbook | 当前生效的风格 playbook | 调性一致性 |
 
-## Process
+## 流程
 
-### 1. Distinguish Master And Variants
+### 1. 区分母版与变体
 
-Group outputs as:
+把输出分组为：
 
-- master cut,
-- short-form derivatives,
-- format variants,
-- chaptered or contextual variants.
+- 母版剪辑，
+- 短视频衍生版，
+- 格式变体，
+- 带章节或带语境的变体。
 
-### 2. Preserve Source Truth In Packaging
+### 2. 在打包中保住源素材的事实
 
-If the project uses interview footage, screen recording, or product footage as its anchor, the metadata should reflect that instead of packaging it like a pure generated piece.
+若项目以访谈素材、屏幕录制或产品素材为主心骨，元数据就应当如实反映这一点，而不是把它当成纯生成作品来包装。
 
-### 3. Store Cross-Output Notes
+### 3. 记录跨输出的备注
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `master_output`
 - `derivative_outputs`
 - `source_mix_notes`
 - `platform_copy_map`
 
-### 4. Quality Gate
+### 4. 质量门
 
-- master and variants are clearly labeled,
-- metadata matches the true source mix,
-- export folders are organized by purpose,
-- the package is ready to use without manual cleanup.
+- 母版与变体标注清晰，
+- 元数据与真实的素材构成相符，
+- 导出目录按用途组织，
+- 这个包不需要人工清理就能用。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Hiding which output is the hero cut.
-- Packaging a source-led project like a generic generated asset.
-- Losing platform-specific copy and labeling across variants.
+- 让人看不出哪个输出是主剪辑。
+- 把一个源素材主导的项目包装成通用的生成素材。
+- 各变体之间丢失了平台专属的文案和标注。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

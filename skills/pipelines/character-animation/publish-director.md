@@ -1,35 +1,35 @@
-# Publish Director - Character Animation Pipeline
+# 发布导演 —— Character Animation 管线
 
-## Goal
+## 目标
 
-Package the final character-animation deliverable with honest metadata and a
-strong character-forward thumbnail concept.
+用如实的元数据和一个以角色为主体的有力封面构想，为最终的角色动画
+交付物打包。
 
-## Requirements
+## 要求
 
-- Mention the actual visual treatment: local rigged character animation,
-  procedural effects, Remotion/HyperFrames render, or mixed.
-- Pick a poster frame where the main character's emotion is readable.
-- If the output is a sample, label it as a sample.
-- If the final is inspired by a reference, describe the inspiration without
-  claiming duplication.
+- 说明实际采用的视觉处理：本地绑定骨骼的角色动画、
+  程序化特效、Remotion/HyperFrames 渲染，还是混合方式。
+- 挑一帧主角情绪清晰可读的画面作为定帧海报。
+- 若产出是样片，就标注它是样片。
+- 若成片受某个参考启发，就描述这份启发，但不要
+  声称是复刻。
 
-## Output
+## 产出
 
-Produce `publish_log` with:
+产出 `publish_log`，包含：
 
-- final video path,
-- thumbnail/poster-frame notes,
-- title ideas,
-- description,
-- platform-specific export notes,
-- limitations or follow-up recommendations.
+- 最终视频路径，
+- 封面/定帧海报备注，
+- 标题构想，
+- 简介，
+- 各平台的导出备注，
+- 局限或后续建议。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

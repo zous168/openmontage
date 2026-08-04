@@ -1,109 +1,108 @@
-# HyperFrames Skill (Layer 2)
+# HyperFrames 技能（Layer 2）
 
-This is the **OpenMontage-specific** guide to HyperFrames. It explains when
-OpenMontage pipelines should choose HyperFrames over Remotion, how OpenMontage
-artifacts map to HyperFrames project files, and how the compose stage drives
-the HyperFrames CLI.
+这是 HyperFrames 的 **OpenMontage 专属**指南。它讲清楚 OpenMontage
+管线在什么情况下应该选 HyperFrames 而不是 Remotion、OpenMontage
+artifact 如何映射到 HyperFrames 项目文件，以及 compose 阶段如何驱动
+HyperFrames CLI。
 
-For raw HyperFrames knowledge (authoring contract, `data-*` attributes, GSAP
-timeline rules, CLI flags, registry blocks, website-to-video), read the Layer 3
-skills:
+关于 HyperFrames 本身的原始知识（编写契约、`data-*` 属性、GSAP
+时间线规则、CLI 参数、registry blocks、website-to-video），请阅读 Layer 3
+技能：
 
-- `.agents/skills/hyperframes/` — router into the focused skills below (HF 0.7+ split the monolithic skill)
-- `.agents/skills/hyperframes-core/` — composition contract: `data-*` timing, tracks, sub-compositions, deterministic-render rules
-- `.agents/skills/hyperframes-creative/` — non-animation creative direction: palette, type, narration, beat planning
-- `.agents/skills/hyperframes-media/` — TTS/BGM/SFX/transcription/captions/background-removal
-- `.agents/skills/hyperframes-animation/` — all motion knowledge (rules, blueprints, transitions, runtime adapters)
-- `.agents/skills/hyperframes-cli/` — init, add, lint, validate, inspect, snapshot, preview, render, benchmark, lambda, doctor (0.7+)
-- `.agents/skills/hyperframes-registry/` — `hyperframes add` + block wiring
-- `.agents/skills/website-to-video/` — capture-to-video workflow (renamed from website-to-video in 0.7)
-- `.agents/skills/music-to-video/` — beat-synced music-driven video using `hyperframes beats`
-- `.agents/skills/motion-graphics/` — short design-led motion graphic patterns
-- `.agents/skills/media-use/` — `resolve` verb for BGM/SFX/image/icon (any pipeline, any runtime)
-- `.agents/skills/remotion-to-hyperframes/` — migration ONLY when user explicitly asks to port a Remotion source
+- `.agents/skills/hyperframes/` —— 通往下列细分技能的路由（HF 0.7+ 把原来的单体技能拆分了）
+- `.agents/skills/hyperframes-core/` —— composition 契约：`data-*` 时序、tracks、子 composition、确定性渲染规则
+- `.agents/skills/hyperframes-creative/` —— 非动画类创意指导：配色、字体、旁白、节拍规划
+- `.agents/skills/hyperframes-media/` —— TTS/BGM/SFX/转写/字幕/背景移除
+- `.agents/skills/hyperframes-animation/` —— 全部运动知识（规则、蓝图、转场、运行时适配器）
+- `.agents/skills/hyperframes-cli/` —— init、add、lint、validate、inspect、snapshot、preview、render、benchmark、lambda、doctor（0.7+）
+- `.agents/skills/hyperframes-registry/` —— `hyperframes add` + block 接线
+- `.agents/skills/website-to-video/` —— 捕获转视频工作流（0.7 中由 website-to-video 改名而来）
+- `.agents/skills/music-to-video/` —— 用 `hyperframes beats` 做节拍同步的音乐驱动视频
+- `.agents/skills/motion-graphics/` —— 短小的、设计主导的动态图形范式
+- `.agents/skills/media-use/` —— 用于 BGM/SFX/图像/图标的 `resolve` 动词（适用于任意管线、任意运行时）
+- `.agents/skills/remotion-to-hyperframes/` —— **仅当**用户明确要求移植某个 Remotion 源码时才使用的迁移指南
 
-This file teaches the bridge between the two.
+本文件教的是两者之间的桥梁。
 
 ---
 
-## When OpenMontage should pick HyperFrames (vs Remotion vs FFmpeg)
+## OpenMontage 何时应该选 HyperFrames（对比 Remotion 与 FFmpeg）
 
-OpenMontage separates two concepts:
+OpenMontage 区分两个概念：
 
-- **`renderer_family`** — the creative grammar (`explainer-data`,
-  `cinematic-trailer`, `product-reveal`, etc.). Chosen at proposal.
-- **`render_runtime`** — the technical engine that realizes that grammar
-  (`remotion`, `hyperframes`, `ffmpeg`). Also chosen at proposal.
+- **`renderer_family`** —— 创意语法（`explainer-data`、
+  `cinematic-trailer`、`product-reveal` 等）。在 proposal 阶段选定。
+- **`render_runtime`** —— 实现该语法的技术引擎
+  （`remotion`、`hyperframes`、`ffmpeg`）。同样在 proposal 阶段选定。
 
-Both are locked in `proposal_packet.schema.json` and carried through
-`edit_decisions` unchanged unless a `render_runtime_selection` decision is
-logged in `decision_log`. Silent runtime swaps are a contract violation.
+两者都锁定在 `proposal_packet.schema.json` 中，并原封不动地贯穿
+`edit_decisions`，除非在 `decision_log` 中记录了 `render_runtime_selection`
+决策。静默切换运行时属于违反契约。
 
-### Decision matrix
+### 决策矩阵
 
-| Scenario | Prefer | Why |
+| 场景 | 优先选 | 理由 |
 |----------|--------|-----|
-| Existing explainer, React scene component stack (text_card, stat_card, chart scenes, caption overlay, TalkingHead, CinematicRenderer) | **Remotion** | These compositions already exist in `remotion-composer/`. Reusing them is free; replicating them in HTML is not. |
-| Word-level caption burn / karaoke captions | **Remotion** | `remotion_caption_burn` is Remotion-specific and is NOT at parity on HyperFrames day 1. |
-| Avatar / lip-sync presenter | **Remotion** | `TalkingHead` composition lives in Remotion. No HyperFrames equivalent yet. |
-| Kinetic typography, heavy text motion, GSAP-native animation | **HyperFrames** | HTML/GSAP is the natural medium. Expressing this as Remotion `interpolate()` calls is slow and fragile. |
-| Product promo / launch reel / marketing title card | **HyperFrames** | CSS/GSAP composition grammar matches how designers already think about these. Templates (`kinetic-type`, `product-promo`, `swiss-grid`) give a strong starting point. |
-| Website-to-video / UI-driven composition | **HyperFrames** | The `website-to-video` workflow exists for exactly this. |
-| Registry block needed (data chart, grain overlay, shimmer sweep, shader transition) | **HyperFrames** | The registry is HyperFrames-only. Remotion does not have `hyperframes add`. |
-| Synthetic UI / fake terminal / fake browser demo | Either — depends on existing coverage | OpenMontage already ships Remotion `TerminalScene` (see `synthetic-screen-recording` Layer 3). For UI chrome beyond terminal, HyperFrames HTML is easier. |
-| Pure concat / trim of source clips, no composition | **FFmpeg** | Neither Remotion nor HyperFrames add value here. |
-| Remotion is not installed on this machine | **HyperFrames** (if available) or **FFmpeg** | Do not silently fall back. Tell the user before downgrading. |
+| 已有的讲解视频、React 场景组件栈（text_card、stat_card、图表场景、字幕叠加、TalkingHead、CinematicRenderer） | **Remotion** | 这些 composition 已经存在于 `remotion-composer/` 中。复用它们是免费的；用 HTML 重做一遍不是。 |
+| 词级字幕烧录 / 卡拉 OK 式字幕 | **Remotion** | `remotion_caption_burn` 是 Remotion 专属的，HyperFrames 在第一天并不具备对等能力。 |
+| 数字人 / 唇形同步主持人 | **Remotion** | `TalkingHead` composition 位于 Remotion。HyperFrames 目前还没有等价物。 |
+| 动态排版、大量文字运动、GSAP 原生动画 | **HyperFrames** | HTML/GSAP 就是这类内容的天然媒介。把它表达成 Remotion 的 `interpolate()` 调用既慢又脆弱。 |
+| 产品宣传片 / 发布短片 / 营销标题卡 | **HyperFrames** | CSS/GSAP 的合成语法契合设计师思考这类内容的方式。模板（`kinetic-type`、`product-promo`、`swiss-grid`）提供了扎实的起点。 |
+| Website-to-video / UI 驱动的合成 | **HyperFrames** | `website-to-video` 工作流正是为此而生。 |
+| 需要 registry block（数据图表、颗粒叠加、微光扫过、shader 转场） | **HyperFrames** | registry 是 HyperFrames 独有的。Remotion 没有 `hyperframes add`。 |
+| 合成 UI / 伪终端 / 伪浏览器演示 | 都可以 —— 取决于现有覆盖情况 | OpenMontage 已经内置了 Remotion `TerminalScene`（见 Layer 3 的 `synthetic-screen-recording`）。若需要终端以外的 UI 外壳，HyperFrames 的 HTML 更省事。 |
+| 纯粹的源片段拼接/修剪，不做合成 | **FFmpeg** | Remotion 和 HyperFrames 在这里都不产生价值。 |
+| 本机未安装 Remotion | **HyperFrames**（若可用）或 **FFmpeg** | 不要静默降级。降级前先告知用户。 |
 
-### Hard rule: present both runtimes when both are available
+### 硬规则：两个运行时都可用时必须都呈现给用户
 
-The decision matrix above is input for the conversation with the user, NOT
-a license to silently pick a "default." When both Remotion and HyperFrames
-are available on the machine, the proposal stage MUST:
+上面的决策矩阵是与用户对话的**输入**，**不是**静默选取某个"默认值"的
+许可证。当本机上 Remotion 与 HyperFrames 都可用时，proposal 阶段
+**必须**：
 
-1. Present both to the user with brief-specific pros/cons.
-2. Recommend one with rationale tied to `delivery_promise` and
-   `visual_approach`.
-3. Wait for approval.
-4. Log both in `options_considered` of a `render_runtime_selection`
-   decision.
+1. 结合本次 brief 的具体情况，把两者的优劣都呈现给用户。
+2. 推荐其中一个，并给出与 `delivery_promise` 和
+   `visual_approach` 挂钩的理由。
+3. 等待用户审批。
+4. 把两者都记入 `render_runtime_selection` 决策的
+   `options_considered`。
 
-See `AGENT_GUIDE.md` → "Present Both Composition Runtimes (HARD RULE)" for
-the full contract and `skills/meta/reviewer.md` for the CRITICAL-finding
-enforcement.
+完整契约见 `AGENT_GUIDE.md` → "Present Both Composition Runtimes (HARD RULE)"，
+CRITICAL 级发现的执行方式见 `skills/meta/reviewer.md`。
 
-### Hard rule: motion-required deliverables
+### 硬规则：以运动为必要条件的交付物
 
-If the brief's `delivery_promise.motion_required` is `true` (sci-fi trailer,
-cinematic teaser, hype edit, any brief whose promise depends on real motion),
-then the runtime chosen at proposal is a **commitment**, not a hint. Compose
-MUST NOT downgrade to FFmpeg Ken Burns. If the chosen runtime fails (Remotion
-not installed, `npx hyperframes doctor` reports a blocker), surface the blocker
-per `AGENT_GUIDE.md` > "Escalate Blockers Explicitly" and wait for user
-approval before switching runtime.
-
----
-
-## What stays Remotion-only (Phase 1)
-
-Do **not** attempt to port these to HyperFrames on day 1. They require
-dedicated parity work:
-
-- `remotion_caption_burn` (word-by-word burned captions)
-- `TalkingHead` composition (avatar/lip-sync presenter)
-- Existing documentary-montage end-tag overlay stack (relies on specific
-  Remotion components)
-- Anything that assumes assets are staged under `remotion-composer/public/`
-  and consumed by existing React scene components
-
-For these, keep `render_runtime = "remotion"` and proceed as today.
+若 brief 的 `delivery_promise.motion_required` 为 `true`（科幻预告片、
+电影感先导片、燃向剪辑，以及任何承诺依赖真实运动的 brief），
+那么 proposal 阶段选定的运行时就是一项**承诺**，而不是提示。compose
+**不得**降级为 FFmpeg 的 Ken Burns。若选定的运行时失败（Remotion
+未安装、`npx hyperframes doctor` 报告阻塞项），按
+`AGENT_GUIDE.md` > "Escalate Blockers Explicitly" 上报该阻塞，并在切换运行时前
+等待用户审批。
 
 ---
 
-## Project workspace layout
+## 哪些内容在 Phase 1 仍然只走 Remotion
 
-HyperFrames needs its own project workspace. Do **not** reuse
-`remotion-composer/public/` — that's Remotion's shared staging directory and
-mixing runtimes there causes cross-project collisions.
+第一天**不要**尝试把这些移植到 HyperFrames。它们需要
+专门的对等能力建设：
+
+- `remotion_caption_burn`（逐词烧录字幕）
+- `TalkingHead` composition（数字人/唇形同步主持人）
+- 现有的 documentary-montage 片尾标签叠加栈（依赖特定的
+  Remotion 组件）
+- 任何假定素材被暂存于 `remotion-composer/public/`
+  并由现有 React 场景组件消费的内容
+
+对于这些，保持 `render_runtime = "remotion"` 并照现状推进。
+
+---
+
+## 项目工作区布局
+
+HyperFrames 需要自己的项目工作区。**不要**复用
+`remotion-composer/public/` —— 那是 Remotion 的共享暂存目录，
+在那里混用运行时会造成跨项目冲突。
 
 ```
 projects/<project-name>/
@@ -113,98 +112,98 @@ projects/<project-name>/
 │   ├── video/
 │   ├── audio/
 │   └── music/
-├── hyperframes/                ← HyperFrames runtime workspace (when selected)
-│   ├── index.html              ← root composition
-│   ├── compositions/           ← sub-compositions and registry blocks
-│   │   └── components/         ← registry components (grain overlays, etc.)
-│   ├── assets/                 ← symlink or copy of project assets
-│   ├── hyperframes.json        ← CLI config (registry URL, install paths)
-│   ├── DESIGN.md               ← playbook-derived visual brief (optional)
-│   └── narration.wav           ← TTS output, when applicable
+├── hyperframes/                ← HyperFrames 运行时工作区（选用时才有）
+│   ├── index.html              ← 根 composition
+│   ├── compositions/           ← 子 composition 与 registry blocks
+│   │   └── components/         ← registry 组件（颗粒叠加等）
+│   ├── assets/                 ← 项目素材的符号链接或副本
+│   ├── hyperframes.json        ← CLI 配置（registry URL、安装路径）
+│   ├── DESIGN.md               ← 由 playbook 派生的视觉 brief（可选）
+│   └── narration.wav           ← TTS 输出（适用时）
 └── renders/
     └── final.mp4
 ```
 
-The workspace is generated at compose time by `hyperframes_compose` from
-`edit_decisions` + `asset_manifest` + the active playbook. It's regenerable
-and gitignored along with the rest of `projects/`.
+该工作区在 compose 时由 `hyperframes_compose` 依据
+`edit_decisions` + `asset_manifest` + 当前生效的 playbook 生成。它是可重新生成的，
+并与 `projects/` 的其余部分一起被 gitignore。
 
-### Why a dedicated workspace per project
+### 为什么每个项目要有独立工作区
 
-- HyperFrames resolves `data-composition-src`, `src=`, and registry blocks
-  relative to the project root. A shared workspace breaks this.
-- `npx hyperframes lint | validate | render` all operate on a project
-  directory. They don't take an abstract composition ID the way Remotion does.
-- Assets live next to the HTML that references them, matching the
-  `website-to-video` reference workflow.
+- HyperFrames 解析 `data-composition-src`、`src=` 和 registry blocks
+  时是相对项目根目录的。共享工作区会破坏这一点。
+- `npx hyperframes lint | validate | render` 全部作用于一个项目
+  目录。它们不像 Remotion 那样接受抽象的 composition ID。
+- 素材与引用它们的 HTML 放在一起，与
+  `website-to-video` 参考工作流保持一致。
 
 ---
 
-## Artifact → HyperFrames mapping
+## Artifact → HyperFrames 映射
 
-When `render_runtime = "hyperframes"`, the compose stage translates
-OpenMontage artifacts into HyperFrames project files:
+当 `render_runtime = "hyperframes"` 时，compose 阶段把
+OpenMontage artifact 翻译成 HyperFrames 项目文件：
 
-| OpenMontage artifact field | HyperFrames target |
+| OpenMontage artifact 字段 | HyperFrames 目标 |
 |---|---|
-| `edit_decisions.cuts[]` (sequence of scenes) | `index.html` timeline, one `<div data-composition-id data-composition-src>` per cut |
-| `edit_decisions.cuts[i].in_seconds / out_seconds` | `data-start` / `data-duration` on the clip element |
-| `edit_decisions.cuts[i].type` (scene kind) | Registry block installed via `hyperframes add`, OR a hand-authored sub-composition template |
-| `asset_manifest.assets[]` paths | Copied or symlinked into `projects/<p>/hyperframes/assets/` and referenced with relative `src=` |
-| `audio.narration.segments[]` | `<audio>` element with matching `data-start` / `data-duration` |
-| `audio.music` | Second `<audio>` element, lower `data-volume` |
-| `subtitles` (enabled + source) | Either a registry `captions` block or hand-authored per-word spans — NOT `remotion_caption_burn` |
-| Selected playbook (`flat-motion-graphics`, `clean-professional`, etc.) | `:root` CSS custom properties + `DESIGN.md`. See `lib/hyperframes_style_bridge.py`. |
-| `renderer_family` | Controls which top-level HTML template is used and which registry blocks are pre-installed |
+| `edit_decisions.cuts[]`（场景序列） | `index.html` 时间线，每个 cut 对应一个 `<div data-composition-id data-composition-src>` |
+| `edit_decisions.cuts[i].in_seconds / out_seconds` | 片段元素上的 `data-start` / `data-duration` |
+| `edit_decisions.cuts[i].type`（场景种类） | 通过 `hyperframes add` 安装的 registry block，或手工编写的子 composition 模板 |
+| `asset_manifest.assets[]` 路径 | 复制或符号链接到 `projects/<p>/hyperframes/assets/`，并用相对 `src=` 引用 |
+| `audio.narration.segments[]` | 带对应 `data-start` / `data-duration` 的 `<audio>` 元素 |
+| `audio.music` | 第二个 `<audio>` 元素，`data-volume` 更低 |
+| `subtitles`（启用 + 来源） | 要么用 registry 的 `captions` block，要么手写逐词 span —— **不是** `remotion_caption_burn` |
+| 选定的 playbook（`flat-motion-graphics`、`clean-professional` 等） | `:root` 上的 CSS 自定义属性 + `DESIGN.md`。见 `lib/hyperframes_style_bridge.py`。 |
+| `renderer_family` | 决定使用哪个顶层 HTML 模板，以及预装哪些 registry blocks |
 
-The concrete rendering is: `hyperframes_compose` writes files into the
-workspace, runs `lint → validate → render`, and returns a `render_report`
-with the path to the generated MP4. See `tools/video/hyperframes_compose.py`.
+具体的渲染过程是：`hyperframes_compose` 把文件写入
+工作区，依次运行 `lint → validate → render`，并返回一份 `render_report`，
+其中含生成的 MP4 路径。见 `tools/video/hyperframes_compose.py`。
 
-### Workspace-local authoring artifacts
+### 工作区内的编写辅助文件
 
-Upstream's `website-to-video` skill uses `DESIGN.md`, `SCRIPT.md`, and
-`STORYBOARD.md` as step-by-step workspace files. OpenMontage does **not**
-replace its canonical artifact contracts with these — `brief`, `script`,
-`scene_plan`, `edit_decisions`, etc. remain the source of truth under
-`projects/<p>/artifacts/`. Treat the upstream files as **convenience copies**
-written into the HyperFrames workspace so the runtime workflow feels natural:
+上游的 `website-to-video` 技能把 `DESIGN.md`、`SCRIPT.md` 和
+`STORYBOARD.md` 当作逐步推进的工作区文件。OpenMontage **不会**
+用这些文件替换自己的规范 artifact 契约 —— `brief`、`script`、
+`scene_plan`、`edit_decisions` 等仍然是位于
+`projects/<p>/artifacts/` 下的事实来源。把上游那些文件当作写进
+HyperFrames 工作区的**便利副本**，让运行时工作流用起来更顺手：
 
-- `DESIGN.md` — derived from the selected playbook, written by
-  `hyperframes_compose` or `lib/hyperframes_style_bridge.py`. Safe to use as
-  a working brief in the workspace.
-- `SCRIPT.md` — optional narration copy for human review. Canonical script
-  stays in `artifacts/script.json`.
-- `STORYBOARD.md` — optional per-beat creative direction. Canonical scene
-  plan stays in `artifacts/scene_plan.json`.
+- `DESIGN.md` —— 由选定的 playbook 派生，由
+  `hyperframes_compose` 或 `lib/hyperframes_style_bridge.py` 写出。可以放心地当作
+  工作区内的工作 brief 使用。
+- `SCRIPT.md` —— 供人工复看的可选旁白文案。规范脚本
+  仍在 `artifacts/script.json`。
+- `STORYBOARD.md` —— 可选的逐节拍创意指导。规范的场景
+  规划仍在 `artifacts/scene_plan.json`。
 
-If a workspace-local file and a canonical artifact disagree, the canonical
-artifact wins.
-
----
-
-## Runtime selection rules
-
-1. **Proposal stage** chooses `render_runtime` and logs the decision in
-   `decision_log` with category `render_runtime_selection`. It must consider
-   the decision matrix above and the actual availability of each runtime.
-2. **Preflight** reports which runtimes are available (see below). A
-   runtime that is not available is not a valid proposal choice unless the
-   user explicitly approves installing it.
-3. **Edit stage** carries `render_runtime` forward unchanged.
-4. **Compose stage** reads `edit_decisions.render_runtime` and routes via
-   `video_compose` → `hyperframes_compose` (for HyperFrames) or the existing
-   Remotion path (for Remotion). Compose may not swap runtime without a new
-   `render_runtime_selection` decision.
-5. **Final review** records `render_runtime_used` and sets
-   `runtime_swap_detected = true` if it differs from proposal.
+若工作区内的文件与规范 artifact 冲突，以规范
+artifact 为准。
 
 ---
 
-## Preflight — HyperFrames availability
+## 运行时选择规则
 
-At preflight, the provider menu reports HyperFrames availability. The
-`hyperframes_compose` tool's `get_info()` returns:
+1. **Proposal 阶段**选定 `render_runtime`，并以 `render_runtime_selection`
+   为 category 把决策记入 `decision_log`。它必须同时考虑
+   上面的决策矩阵与各运行时的实际可用性。
+2. **Preflight** 报告哪些运行时可用（见下文）。不可用的
+   运行时不构成合法的 proposal 选项，除非
+   用户明确同意去安装它。
+3. **Edit 阶段**原封不动地把 `render_runtime` 往下传。
+4. **Compose 阶段**读取 `edit_decisions.render_runtime`，并经由
+   `video_compose` → `hyperframes_compose`（HyperFrames）或既有的
+   Remotion 路径（Remotion）进行路由。没有新的
+   `render_runtime_selection` 决策，compose 不得切换运行时。
+5. **最终复查**记录 `render_runtime_used`，若与 proposal 不一致则把
+   `runtime_swap_detected` 设为 `true`。
+
+---
+
+## Preflight —— HyperFrames 可用性
+
+在 preflight 阶段，provider 菜单会报告 HyperFrames 的可用性。
+`hyperframes_compose` 工具的 `get_info()` 返回：
 
 ```json
 {
@@ -216,123 +215,119 @@ At preflight, the provider menu reports HyperFrames availability. The
 }
 ```
 
-Floor requirements (all must hold for `runtime_available: true`):
+底线要求（全部满足才有 `runtime_available: true`）：
 
-- Node.js major version ≥ 22
-- `ffmpeg` binary on PATH
-- `npx` on PATH (bundled with Node.js)
-- `npx hyperframes doctor` exits 0, OR a lightweight equivalent check passes
+- Node.js 主版本号 ≥ 22
+- PATH 中有 `ffmpeg` 二进制
+- PATH 中有 `npx`（随 Node.js 一起提供）
+- `npx hyperframes doctor` 退出码为 0，或某个等价的轻量检查通过
 
-`bun` is NOT required — HyperFrames is consumable via `npx hyperframes` (published npm package name is `hyperframes`; the monorepo-internal `@hyperframes/cli` name is NOT on the public npm registry and returns 404).
+**不**需要 `bun` —— HyperFrames 可通过 `npx hyperframes` 使用（发布到 npm 的包名是 `hyperframes`；monorepo 内部的 `@hyperframes/cli` 名称并不在公共 npm registry 上，访问会返回 404）。
 
-When `runtime_available: false`, preflight must surface the reason and the
-install instructions. Per `AGENT_GUIDE.md` Setup Offer Protocol, group the
-fix by effort:
+当 `runtime_available: false` 时，preflight 必须把原因和
+安装说明呈现出来。按 `AGENT_GUIDE.md` 的 Setup Offer Protocol，按
+所需工作量分组：
 
-- Missing Node 22 → 5-minute install, explain what it unlocks
-- Missing FFmpeg → 1-minute install on macOS/Linux, longer on Windows
-- `doctor` reports issues → show the doctor output verbatim
-
----
-
-## Validation protocol
-
-HyperFrames ships a real validation stack. Run **all** of these before
-declaring a render complete:
-
-1. **`npx hyperframes lint`** — static contract checks (duplicate ids,
-   overlapping tracks, missing `data-composition-id`, unregistered timelines).
-   MUST pass before render.
-2. **`npx hyperframes validate`** — browser-based runtime checks: seeks into
-   the paused composition, screenshots, samples pixels, computes WCAG
-   contrast ratios, verifies `window.__timelines` registration and
-   `class="clip"` on timed elements. MUST pass before render (contrast can
-   be deferred with `--no-contrast` during iteration, but not for final).
-3. **`npx hyperframes render --quality standard`** — produces the MP4.
-4. **Post-render final review** — probe with ffprobe, sample frames,
-   transcribe audio, compare to script. Same contract as the Remotion path.
-   See `final_review.schema.json`.
-
-If lint or validate fails, do **not** render. Fix the composition and re-run.
-Silent render from a failing composition is a contract violation — the whole
-point of HyperFrames is that validate catches issues that FFmpeg or Remotion
-cannot.
+- 缺 Node 22 → 5 分钟安装，说明它能解锁什么
+- 缺 FFmpeg → macOS/Linux 上 1 分钟安装，Windows 上耗时更长
+- `doctor` 报告问题 → 原样展示 doctor 的输出
 
 ---
 
-## Style bridge (playbook → CSS)
+## 校验协议
 
-OpenMontage playbooks currently translate into Remotion `themeConfig`
-objects. For HyperFrames, the equivalent translation produces:
+HyperFrames 自带一套真正的校验栈。在宣布渲染完成之前，**全部**
+运行以下步骤：
 
-- A block of CSS custom properties on `:root` (`--color-bg`, `--color-fg`,
-  `--color-accent`, `--font-heading`, `--font-body`, `--ease-primary`,
-  `--duration-primary`, etc.).
-- A short `DESIGN.md` that explains the visual system in plain language.
-- Optional typography `@import` statements (only for fonts the HyperFrames
-  font compiler supports).
+1. **`npx hyperframes lint`** —— 静态契约检查（重复 id、
+   轨道重叠、缺少 `data-composition-id`、未注册的时间线）。
+   渲染前必须通过。
+2. **`npx hyperframes validate`** —— 基于浏览器的运行时检查：seek 到
+   暂停的 composition、截图、采样像素、计算 WCAG
+   对比度、验证 `window.__timelines` 注册情况以及计时元素上的
+   `class="clip"`。渲染前必须通过（迭代过程中可用 `--no-contrast`
+   暂缓对比度检查，但最终成片不行）。
+3. **`npx hyperframes render --quality standard`** —— 产出 MP4。
+4. **渲染后最终复查** —— 用 ffprobe 探测、抽帧、
+   转写音频、与脚本比对。与 Remotion 路径同一套契约。
+   见 `final_review.schema.json`。
 
-See `lib/hyperframes_style_bridge.py`. Playbooks do NOT need to fork — the
-existing playbook schema carries enough information to drive both Remotion
-and HyperFrames output.
-
----
-
-## Cost model
-
-HyperFrames renders are local: $0 API cost, but CPU-intensive (headless
-Chrome + FFmpeg). Track via `cost_tracker`:
-
-- `estimate` — based on composition duration × resolution × `--workers`
-- `reserve` — 0 (no API spend)
-- `reconcile` — wall-clock render time
-
-Same pattern as Remotion.
+若 lint 或 validate 失败，**不要**渲染。修好 composition 再重跑。
+从一个校验失败的 composition 静默渲染属于违反契约 ——
+HyperFrames 的全部意义就在于 validate 能捕获 FFmpeg 或 Remotion
+捕获不到的问题。
 
 ---
 
-## Gotchas in practice (hard-earned)
+## 风格桥接（playbook → CSS）
 
-Things the upstream docs don't warn about but will cost you a 60-minute
-render to discover. Fix at author time, not at render time.
+OpenMontage 的 playbook 目前会翻译成 Remotion 的 `themeConfig`
+对象。对 HyperFrames 而言，等价的翻译产出：
 
-### Full-frame background video: source-resolution trap (NOT a framework bug)
+- `:root` 上的一组 CSS 自定义属性（`--color-bg`、`--color-fg`、
+  `--color-accent`、`--font-heading`、`--font-body`、`--ease-primary`、
+  `--duration-primary` 等）。
+- 一份简短的 `DESIGN.md`，用平实语言解释视觉体系。
+- 可选的排版 `@import` 语句（仅限 HyperFrames 字体
+  编译器支持的字体）。
 
-Symptom: background video renders as a small centered box with black
-around it, even though you've told HyperFrames the clip is 1920×1080.
-Six renders of debugging revealed this is **almost always a source
-quality issue, not a HyperFrames framework bug.** Fix the input, not
-the CSS.
+见 `lib/hyperframes_style_bridge.py`。playbook **不**需要分叉 ——
+现有的 playbook schema 携带的信息足以同时驱动 Remotion
+和 HyperFrames 的输出。
 
-Root cause (observed on Pexels + Pixabay stock): many free stock
-clips ship at 640×360 or 960×540 even when you ask for the "large"
-size tier. If your pre-transform does
-`scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:...`
-you'll produce a 1920×1080 file whose visible content is a centered
-640×360 rectangle with black padding. HyperFrames plays this clip
-faithfully — the small-video-in-black-frame you see is a correctly
-rendered letterboxed input.
+---
 
-Diagnostic first: before blaming CSS, run
-`ffprobe -v error -select_streams v -show_entries stream=width,height`
-on the source clip and on your pre-transformed clip. If the pre-
-transform already shows a 640×360 active region inside 1920×1080
-padding, the problem is upstream.
+## 成本模型
 
-Fix the pre-transform to scale-to-COVER and crop, not scale-to-FIT
-and pad:
+HyperFrames 的渲染是本地的：API 成本为 $0，但吃 CPU（无头
+Chrome + FFmpeg）。通过 `cost_tracker` 追踪：
+
+- `estimate` —— 基于 composition 时长 × 分辨率 × `--workers`
+- `reserve` —— 0（无 API 支出）
+- `reconcile` —— 渲染的墙钟时间
+
+与 Remotion 同一套范式。
+
+---
+
+## 实战中的坑（用血泪换来的）
+
+上游文档不会警告、但会让你花掉一次 60 分钟渲染才发现的问题。
+在编写阶段就修掉，别等到渲染阶段。
+
+### 全屏背景视频：源分辨率陷阱（这不是框架 bug）
+
+症状：背景视频渲染成画面中央的一个小方框，四周一圈黑边，
+尽管你已经告诉 HyperFrames 这个片段是 1920×1080。
+六次渲染的调试表明，这**几乎总是源素材的质量问题，而不是
+HyperFrames 的框架 bug**。要修的是输入素材，不是 CSS。
+
+根本原因（在 Pexels + Pixabay 素材上观察到）：许多免费素材
+片段即便你请求"large"尺寸档，实际交付的仍是 640×360 或
+960×540。如果你的预处理做的是
+`scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:...`，
+你会得到一个 1920×1080 的文件，但可见内容只是居中的
+640×360 矩形加黑色填充。HyperFrames 只是忠实地播放这个片段 ——
+你看到的"黑框里的小视频"是对一个加了黑边的输入所做的正确渲染。
+
+先做诊断：在怪罪 CSS 之前，对源片段和你预处理后的片段分别运行
+`ffprobe -v error -select_streams v -show_entries stream=width,height`。
+如果预处理后的文件已经显示为 1920×1080 填充里包着一个
+640×360 的有效区域，那问题出在上游。
+
+把预处理改成"缩放至 COVER 再裁切"，而不是"缩放至 FIT 再填充"：
 
 ```
 -vf "scale=1920:1080:force_original_aspect_ratio=increase,\
      crop=1920:1080,unsharp=3:3:0.6"
 ```
 
-This upscales the small clip to at least cover 1920×1080, crops the
-overflow, and sharpens (unsharp) to offset perceived softness. The
-output is full-bleed and HyperFrames will render it edge-to-edge.
+这会把小片段放大到至少覆盖 1920×1080，裁掉溢出部分，
+并做锐化（unsharp）以抵消观感上的发虚。输出是
+满幅的，HyperFrames 会把它渲染成铺满整个画面。
 
-The canonical wrapper-div pattern (`patterns.md`) is still the right
-HTML shape for backgrounds:
+规范的 wrapper-div 范式（`patterns.md`）依然是背景的正确
+HTML 结构：
 
 ```html
 <div style="position:absolute;top:0;left:0;width:1920px;height:1080px;overflow:hidden;">
@@ -344,112 +339,110 @@ HTML shape for backgrounds:
 </div>
 ```
 
-Use it because `overflow: hidden` on the wrapper crops gracefully when
-the video's aspect differs slightly from 16:9, and because
-`object-fit: cover` on the inner `<video>` handles the (rare) case
-where source aspect isn't 16:9. It is **not** a workaround for a
-framework layout bug — the framework will size `<video class="clip">`
-correctly too if the source file has content filling the full frame.
+之所以要用它，是因为当视频画幅比与 16:9 略有出入时，wrapper 上的
+`overflow: hidden` 能优雅地裁切；也因为内层 `<video>` 上的
+`object-fit: cover` 能处理源画幅比不是 16:9 的（少见）情况。它
+**不是**对某个框架布局 bug 的绕行方案 —— 只要源文件的内容填满整个画面，
+框架同样会把 `<video class="clip">` 的尺寸算对。
 
-Apply visual treatments (`filter`, `border-radius`, etc.) on the
-wrapper or on a scoped selector like `.bg-slot video { filter: ... }`.
+视觉处理（`filter`、`border-radius` 等）应施加在
+wrapper 上，或施加在像 `.bg-slot video { filter: ... }` 这样限定作用域的选择器上。
 
-Invisible-vs-obvious failure mode: this trap hides when you stack
-dim filters (`brightness(0.25–0.35)`) or full-bleed typography on top —
-the letterbox reads as "moody darkness." It becomes obvious the moment
-you go footage-forward (brightness > 0.5, lower-third typography). If
-you're planning footage-forward from the start, probe your source
-resolutions in the asset stage.
+隐蔽 vs 显眼的失败模式：当你在上面叠加压暗滤镜
+（`brightness(0.25–0.35)`）或满幅排版时，这个坑会被掩盖 ——
+黑边看起来像是"氛围感的暗调"。而一旦你转向素材优先的处理
+（brightness > 0.5、下三分之一排版），它就会立刻暴露。如果
+你从一开始就打算走素材优先路线，请在 assets 阶段探测源素材分辨率。
 
-When you truly can't source HD clips, switch pipelines: use FFmpeg
-hybrid-compositing (scale-to-cover + crop + unsharp in an external
-b-roll reel, then overlay HyperFrames typography via chromakey). That's
-the pattern `projects/quantum-willow-multiverse/` settled on after six
-HyperFrames renders with 640×360 Pexels sources.
+当你确实找不到 HD 片段时，就换管线：改用 FFmpeg
+混合合成（在外部的 b-roll 卷中做 缩放至 cover + 裁切 + unsharp，
+再通过色度键叠加 HyperFrames 排版）。这正是
+`projects/quantum-willow-multiverse/` 在用 640×360 Pexels 源素材做了六次
+HyperFrames 渲染之后最终采用的范式。
 
-### Always preview-scrub footage-forward scenes before render
+### 素材优先的场景，渲染前一定要先在预览里拖动检查
 
-60-minute renders are expensive. Before committing to a full render,
-open the Launch preview panel (or `npx hyperframes preview`) and scrub
-to at least one scene per chapter where b-roll should dominate. The
-tiny-video bug — and similar layout issues like "lower-third text sits
-off-screen at 1080p" — are 2-second visual checks at preview time and
-60-minute regression costs at render time.
+60 分钟的渲染很昂贵。在投入整段渲染之前，
+打开 Launch 预览面板（或 `npx hyperframes preview`），
+在每一章里至少拖到一个 b-roll 应当占主导的场景。小视频这个 bug ——
+以及诸如"下三分之一文字在 1080p 下跑到画面外"这类布局问题 ——
+在预览阶段只是 2 秒的目视检查，在渲染阶段却是 60 分钟的回归代价。
 
-### Bump stock-footage legibility, not opacity
+### 提升素材片段的可读性，而不是调低不透明度
 
-When layering typography over b-roll, don't just lower video opacity —
-that muddies both layers. Instead:
+在 b-roll 之上叠加排版时，不要只是降低视频的不透明度 ——
+那会把两层都弄浑浊。正确做法是：
 
-- Keep `filter: brightness(0.55) saturate(0.85)` on the video (visible
-  but dimmed).
-- Add a local CSS scrim (`radial-gradient` or `linear-gradient` with
-  `rgba(7,7,12,0.5)`) behind the specific text, sized to the text block.
-- Use `text-shadow: 0 2px 24px rgba(0,0,0,0.8)` on the text itself for a
-  local halo independent of the background.
+- 视频保持 `filter: brightness(0.55) saturate(0.85)`（可见
+  但已压暗）。
+- 在特定文字后面加一层局部 CSS 遮罩（`radial-gradient` 或
+  `rgba(7,7,12,0.5)` 的 `linear-gradient`），尺寸贴合该文字块。
+- 在文字自身上使用 `text-shadow: 0 2px 24px rgba(0,0,0,0.8)`，形成
+  独立于背景的局部光晕。
 
-This keeps the footage feeling alive while ensuring captions and titles
-remain readable on any frame.
+这样既保留素材的鲜活感，又能确保字幕和标题
+在任何一帧上都保持可读。
 
-### Stock clips need dense keyframes before render
+### 素材片段在渲染前需要更密集的关键帧
 
-Render fails with `video_heavy_parallel_timeout` or produces frame
-freezes when stock clips have keyframe intervals > 5s. Always re-encode
-downloaded stock via `ffmpeg ... -c:v libx264 -r 30 -g 30 -keyint_min 30
--sc_threshold 0 -movflags +faststart` before staging into the
-workspace. See `hyperframes_compose`'s existing workspace prep — it
-doesn't do this automatically yet.
+当素材片段的关键帧间隔 > 5 秒时，渲染会以
+`video_heavy_parallel_timeout` 失败，或产生画面卡顿。下载的素材在
+暂存进工作区之前，务必用
+`ffmpeg ... -c:v libx264 -r 30 -g 30 -keyint_min 30
+-sc_threshold 0 -movflags +faststart` 重新编码。参见
+`hyperframes_compose` 现有的工作区预处理 —— 它目前还
+不会自动做这件事。
 
-### Render with `--workers 1` for video-heavy compositions
+### 视频密集的 composition 用 `--workers 1` 渲染
 
-Default parallel capture overwhelms headless Chrome when many videos
-load simultaneously. For any composition with >5 background video
-elements, always pass `--workers 1` to `hyperframes render`.
+当大量视频同时加载时，默认的并行捕获会压垮无头 Chrome。
+对于任何包含 5 个以上背景视频元素的 composition，务必给
+`hyperframes render` 传 `--workers 1`。
 
-### Use Outfit / Inter / JetBrains Mono, not Space Grotesk
+### 用 Outfit / Inter / JetBrains Mono，不要用 Space Grotesk
 
-HyperFrames' deterministic-font compiler only inlines fonts it has a
-mapping for. `Space Grotesk` renders as a fallback (often Arial) even
-when loaded via Google Fonts. Check the compiler's warning output or
-the `deterministicFonts.ts` mapping table. Safe bets: `Outfit`,
-`Montserrat`, `Inter`, `JetBrains Mono`, `Poppins`, `Playfair Display`.
+HyperFrames 的确定性字体编译器只会内联它有映射表的字体。
+即便通过 Google Fonts 加载，`Space Grotesk` 也会退化为
+回退字体（通常是 Arial）。检查编译器的警告输出或
+`deterministicFonts.ts` 映射表。稳妥的选择：`Outfit`、
+`Montserrat`、`Inter`、`JetBrains Mono`、`Poppins`、`Playfair Display`。
 
-## Anti-patterns
+## 反模式
 
-- ❌ Forking playbook data for HyperFrames when the current schema already
-  carries colors, typography, and motion.
-- ❌ Writing HyperFrames compositions that reference `remotion-composer/public/`
-  — the HyperFrames workspace is separate and self-contained.
-- ❌ Running `hyperframes init` from the OpenMontage orchestrator. `init`
-  creates its own project semantics and installs agent skills — it's meant
-  for humans bootstrapping a project, not for the pipeline. `hyperframes_compose`
-  generates the project files directly.
-- ❌ Using HyperFrames as "React without Remotion." HyperFrames is
-  HTML-first with GSAP. If your scene is authored as React JSX, it belongs
-  in Remotion.
-- ❌ Using `repeat: -1` in GSAP inside HyperFrames. Infinite tweens break the
-  deterministic seek-and-capture render. Always bounded repeats.
-- ❌ Animating from `async` context, `setTimeout`, or Promises during
-  timeline construction. `window.__timelines` must be fully populated
-  synchronously after page load.
+- ❌ 当现有 schema 已经携带颜色、排版和运动信息时，还为 HyperFrames
+  分叉一份 playbook 数据。
+- ❌ 编写引用 `remotion-composer/public/` 的 HyperFrames composition
+  —— HyperFrames 工作区是独立且自包含的。
+- ❌ 从 OpenMontage 编排器运行 `hyperframes init`。`init`
+  会创建它自己的一套项目语义并安装 agent skills —— 它是给
+  人类初始化项目用的，不是给管线用的。`hyperframes_compose`
+  会直接生成项目文件。
+- ❌ 把 HyperFrames 当作"不带 Remotion 的 React"。HyperFrames 是
+  以 HTML 为先、配合 GSAP 的。如果你的场景是用 React JSX 写的，它属于
+  Remotion。
+- ❌ 在 HyperFrames 内的 GSAP 中使用 `repeat: -1`。无限循环的 tween 会破坏
+  确定性的 seek-and-capture 渲染。始终使用有界的重复次数。
+- ❌ 在构建时间线的过程中，从 `async` 上下文、`setTimeout` 或 Promise
+  中触发动画。页面加载后，`window.__timelines` 必须被
+  同步地完整填充。
 
 ---
 
-## Pipelines adopting HyperFrames
+## 已接入 HyperFrames 的管线
 
-| Pipeline | Status |
+| 管线 | 状态 |
 |----------|--------|
-| `animation` | Wave 1 — HyperFrames is a first-class option for motion-graphics-heavy briefs |
-| `animated-explainer` | Wave 1 — HyperFrames viable when the concept is HTML/GSAP-native; Remotion remains default for data-chart-heavy explainers |
-| `screen-demo` | Wave 1 — HyperFrames viable for synthetic product UI; `TerminalScene` (Remotion) remains preferred for terminal-specific demos |
+| `animation` | Wave 1 —— 对于动态图形密集的 brief，HyperFrames 是一等选项 |
+| `animated-explainer` | Wave 1 —— 当概念本身就是 HTML/GSAP 原生的时候 HyperFrames 可行；数据图表密集的讲解视频仍以 Remotion 为默认 |
+| `screen-demo` | Wave 1 —— 合成产品 UI 用 HyperFrames 可行；终端专属演示仍优先用 `TerminalScene`（Remotion） |
 | `cinematic` | Wave 2 |
 | `hybrid` | Wave 2 |
 | `documentary-montage` | Wave 2 |
-| `talking-head` | Deferred — depends on TalkingHead parity |
-| `avatar-spokesperson` | Deferred — depends on TalkingHead parity |
-| `clip-factory`, `podcast-repurpose`, `localization-dub` | Deferred — current compose paths rely on Remotion caption burn |
-| `framework-smoke` | N/A (test pipeline) |
+| `talking-head` | 推迟 —— 取决于 TalkingHead 的对等能力 |
+| `avatar-spokesperson` | 推迟 —— 取决于 TalkingHead 的对等能力 |
+| `clip-factory`、`podcast-repurpose`、`localization-dub` | 推迟 —— 当前的 compose 路径依赖 Remotion 的字幕烧录 |
+| `framework-smoke` | 不适用（测试管线） |
 
-Proposal and compose directors for adopted pipelines describe runtime choice
-explicitly — see each pipeline's `proposal-director.md` and
-`compose-director.md`.
+已接入管线的 proposal 与 compose director 会显式描述运行时选择 ——
+见各管线的 `proposal-director.md` 与
+`compose-director.md`。

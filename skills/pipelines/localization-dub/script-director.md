@@ -1,37 +1,37 @@
-# Script Director - Localization Dub Pipeline
+# 脚本导演 —— Localization Dub 管线
 
-## When To Use
+## 何时使用
 
-Turn the approved localization brief into a transcript-backed, reviewable script package for every target language. This stage should create text truth before any dubbing audio is generated.
+把已获批的本地化 brief 转化成一份有转写稿支撑、可供审校的逐语种脚本包。本阶段应当在生成任何配音音频之前先建立文本上的事实基准。
 
-## Reference Inputs
+## 参考输入
 
 - `docs/localization-dubbing-best-practices.md`
 - `skills/creative/storytelling.md`
 
-## Process
+## 流程
 
-### 1. Build Source Transcript Truth
+### 1. 建立源转写稿的事实基准
 
-Start with the source transcript and fix obvious errors in:
+从源转写稿出发，修正以下方面的明显错误：
 
-- names,
-- terminology,
-- speaker allocation,
-- numbers,
-- CTA phrasing.
+- 人名，
+- 术语，
+- 说话人归属，
+- 数字，
+- CTA 措辞。
 
-### 2. Produce Reviewable Target Copy
+### 2. 产出可供审校的目标语文案
 
-For each target language, generate text that can be reviewed before synthesis. Record where terms should remain unchanged.
+对每个目标语种，生成可以在合成之前被审校的文本。记录哪些术语应当保持不变。
 
-### 3. Preserve Structure Where Practical
+### 3. 在可行处保留结构
 
-Keep section timing and sequence aligned to the source unless the translation clearly needs a different pacing strategy.
+除非译文明显需要另一种节奏策略，否则让段落时序和顺序与源片保持一致。
 
-### 4. Use Metadata For Localization Control
+### 4. 用元数据做本地化管控
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `source_transcript_status`
 - `target_language_sections`
@@ -40,35 +40,34 @@ Recommended metadata keys:
 - `pronunciation_notes`
 - `review_status_by_language`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- the source transcript is strong enough to trust,
-- target-language copy exists for every planned deliverable,
-- glossary terms are preserved,
-- the script package can be reviewed before audio generation.
+- 源转写稿足够可靠、值得信任，
+- 每个计划中的交付物都有对应的目标语文案，
+- 术语表中的术语得以保留，
+- 这份脚本包能在音频生成之前被审校。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during script writing:
-- Use `web_search` to verify factual claims before committing them to the script
-- Use `web_search` to find reference images for visual accuracy
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在写脚本时遇到不确定之处：
+- 在把某个事实性论断写进脚本之前，用 `web_search` 核实它
+- 用 `web_search` 找参考图以保证视觉准确性
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Every factual claim in the script should be traceable to the `research_brief`.
-If you make a claim that isn't in the research, do additional research and
-add the source. Do not invent statistics, dates, or attributions.
+脚本中的每一条事实性论断都应当能追溯到 `research_brief`。
+若你做出了调研中没有的论断，就补做调研并补上来源。不要编造统计数字、日期或出处。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Generating audio from an unreviewed transcript.
-- Letting product names drift across languages.
-- Treating translation text as final timing without acknowledging length drift.
+- 用未经审校的转写稿去生成音频。
+- 让产品名在不同语言之间发生漂移。
+- 把译文当成最终时序，却不承认长度会漂移。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

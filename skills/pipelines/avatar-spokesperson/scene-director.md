@@ -1,91 +1,91 @@
-# Scene Director - Avatar Spokesperson Pipeline
+# 场景导演 —— Avatar Spokesperson 管线
 
-## When To Use
+## 何时使用
 
-Plan the visual system for the presenter-led cut. This stage decides how the speaker sits in frame, what support layers appear, and which aspect ratios are actually worth building.
+为这支以出镜人为主导的片子规划视觉体系。本阶段决定讲述者在画面中如何摆放、出现哪些辅助层，以及哪些画幅比真的值得去做。
 
-## Reference Inputs
+## 参考输入
 
 - `docs/avatar-spokesperson-best-practices.md`
 - `skills/creative/typography.md`
 
-## Process
+## 流程
 
-### 1. Lock The Presenter Layout
+### 1. 锁定出镜人版式
 
-Choose a primary layout:
+选定一个主版式：
 
-- full presenter center frame,
-- presenter plus side panel,
-- presenter plus lower-third system,
-- presenter over branded background.
+- 出镜人满幅居中，
+- 出镜人加侧栏，
+- 出镜人加下三分之一条体系，
+- 出镜人置于品牌背景之上。
 
-Keep the hero layout simple and reusable.
+主版式要简单且可复用。
 
-### 2. Choose Background Discipline
+### 2. 选定背景纪律
 
-Use one family:
+只用一个家族：
 
-- clean solid or gradient background,
-- branded office or set,
-- product UI or image plate,
-- transparent-avatar composite plan.
+- 干净的纯色或渐变背景，
+- 品牌化的办公室或布景，
+- 产品 UI 或图像底板，
+- 透明数字人合成方案。
 
-Background changes should mark real section changes, not compensate for weak copy.
+背景变化应当标记真正的段落切换，而不是用来弥补文案的乏力。
 
-### 3. Map Support Layers
+### 3. 映射辅助层
 
-For each scene, decide whether the support layer is:
+对每个场景，决定辅助层是：
 
-- none,
-- subtitle only,
-- lower third,
-- product image,
-- side-panel proof point,
-- CTA card.
+- 无，
+- 仅字幕，
+- 下三分之一条，
+- 产品图，
+- 侧栏佐证点，
+- 还是 CTA 卡。
 
-### 4. Plan Variants Late
+### 4. 变体留到最后再规划
 
-Default to one hero cut first. Only plan vertical or square variants if the presenter layout and text system can survive the crop.
+默认先做一版主剪辑。只有当出镜人版式和文字体系能扛住裁剪时，才去规划竖屏或方形变体。
 
-### 5. Quality Gate
+### 5. 质量门
 
-- the presenter remains primary,
-- support layers solve specific communication needs,
-- the background system is consistent,
-- variant ambition stays realistic.
+- 出镜人始终是主体，
+- 辅助层解决的是具体的传达需求，
+- 背景体系一致，
+- 变体的野心保持现实。
 
-## Narration-Over-Graphics Fallback
+## 旁白配图形的兜底方案
 
-When the EP triggers a no-avatar pivot (no `talking_head` or `lip_sync` available), redesign the visual system to carry the story with graphics and voice-over instead of a presenter:
+当 EP 触发了无数字人转向（`talking_head` 和 `lip_sync` 都不可用）时，重新设计视觉体系，用图形加配音而不是出镜人来承载故事：
 
-### Layout changes:
-- **Primary frame**: full-screen visual (background, image, diagram, or motion graphic) with voice-over narration underneath.
-- **Support layers**: key-point text cards, lower-third stats, illustrated diagrams, product screenshots.
-- **CTA scene**: dedicated end card with clear CTA text, no presenter needed.
+### 版式变化：
+- **主画面**：全屏视觉（背景、图像、图解或动态图形），下面配旁白配音。
+- **辅助层**：关键点文字卡、下三分之一数据条、图解、产品截图。
+- **CTA 场景**：专门的结尾卡，CTA 文案清晰，不需要出镜人。
 
-### What stays the same:
-- The script and scene breaks are unchanged — the narration drives pacing.
-- Subtitle planning is unchanged.
-- Background discipline still applies (consistent family, not random).
+### 保持不变的部分：
+- 脚本和场景切分不变 —— 由旁白驱动节奏。
+- 字幕规划不变。
+- 背景纪律仍然适用（保持一致家族，不要随机）。
 
-### What changes:
-- No presenter framing decisions (center, left-third, etc.) — replaced with full-frame visual compositions.
-- Each scene needs a **primary visual** that reinforces the spoken content, since there's no face to anchor attention.
-- Plan more visual variety per scene — without a presenter, static backgrounds feel empty.
+### 变化的部分：
+- 没有出镜人构图决策（居中、左三分之一等）—— 改为全画幅的视觉构图。
+- 每个场景都需要一个**主视觉**来强化口播内容，因为没有一张脸来锚定注意力。
+- 每个场景要规划更多视觉变化 —— 没有出镜人时，静态背景会显得空。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Switching backgrounds every few seconds.
-- Filling empty space with decorative panels.
-- Assuming a landscape presenter layout will survive a vertical crop untouched.
-- (Fallback mode) Producing a wall of text on screen to compensate for no presenter — let the narration carry the content.
+- 每隔几秒就换背景。
+- 用装饰性面板填满空白区域。
+- 想当然地以为横屏出镜人版式原封不动就能扛住竖屏裁剪。
+- （兜底模式）为了弥补没有出镜人而在屏幕上堆满文字 —— 让旁白去承载内容。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

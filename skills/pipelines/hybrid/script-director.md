@@ -1,79 +1,78 @@
-# Script Director - Hybrid Pipeline
+# 脚本导演 —— Hybrid 管线
 
-## When To Use
+## 何时使用
 
-This stage maps the story across source-led beats and support-led beats. You are deciding where the source carries the message and where support assets clarify it.
+本阶段把故事映射到源素材主导的节拍和辅助素材主导的节拍上。你要决定哪些地方由源素材承载信息、哪些地方由辅助素材来把它讲清楚。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/script.schema.json` | Artifact validation |
-| Prior artifact | `state.artifacts["idea"]["brief"]` | Anchor medium and deliverable mix |
-| Tools | `transcriber`, `scene_detect`, `audio_enhance` | Optional source analysis |
+| Schema | `schemas/artifacts/script.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["idea"]["brief"]` | 主导媒介与交付物组合 |
+| 工具 | `transcriber`、`scene_detect`、`audio_enhance` | 可选的源素材分析 |
 
-## Process
+## 流程
 
-### 1. Mark Source-Led Versus Support-Led Beats
+### 1. 标出源素材主导 vs 辅助素材主导的节拍
 
-For each section, state whether it is:
+对每一段，写明它由什么承载：
 
-- carried by source dialogue or footage,
-- carried by narration,
-- carried by diagrams or overlays,
-- carried by text only.
+- 源素材的对白或画面，
+- 旁白，
+- 图解或叠加层，
+- 还是仅靠文字。
 
-### 2. Use Source Speech When It Is Better Than Rewriting
+### 2. 当源素材的语音好过重写时，就用它
 
-If the supplied footage already contains strong lines, use `transcriber` and keep the authenticity. Do not replace good source material with unnecessary narration.
+若提供的素材里已经有有力的台词，就用 `transcriber` 把它取出来，保住那份真实感。不要用不必要的旁白去替换好的源素材。
 
-### 3. Use Support Only To Clarify
+### 3. 辅助素材只用来澄清
 
-Support-led beats should answer:
+辅助素材主导的节拍应当回答：
 
-- what is not visible,
-- what needs summarizing,
-- what needs emphasis,
-- what changes for a different platform.
+- 什么是看不见的，
+- 什么需要被总结，
+- 什么需要被强调，
+- 换到另一个平台时什么会变。
 
-### 4. Use Metadata For Structure
+### 4. 用元数据表达结构
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `anchor_sections`
 - `support_sections`
 - `narration_sections`
 - `required_support_assets`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- source-led beats are clearly marked,
-- support-led beats are justified,
-- the script does not depend on fake or unavailable assets without saying so,
-- the structure can produce the intended deliverables.
+- 源素材主导的节拍被清楚标出，
+- 辅助素材主导的节拍有正当理由，
+- 脚本不会在不说明的情况下依赖虚构或不可用的素材，
+- 这个结构能产出预期的交付物。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during script writing:
-- Use `web_search` to verify factual claims before committing them to the script
-- Use `web_search` to find reference images for visual accuracy
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在写脚本时遇到不确定之处：
+- 在把某个事实性论断写进脚本之前，用 `web_search` 核实它
+- 用 `web_search` 找参考图以保证视觉准确性
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Every factual claim in the script should be traceable to the `research_brief`.
-If you make a claim that isn't in the research, do additional research and
-add the source. Do not invent statistics, dates, or attributions.
+脚本中的每一条事实性论断都应当能追溯到 `research_brief`。
+若你做出了调研中没有的论断，就补做调研并补上来源。不要编造统计数字、日期或出处。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Rewriting strong source dialogue into weaker narration.
-- Adding diagrams or cards where the footage already explains the point.
-- Hiding unsupported requirements until asset generation.
+- 把有力的源素材对白改写成更弱的旁白。
+- 在画面已经把论点讲清楚的地方还加图解或卡片。
+- 把没有素材支撑的需求藏到素材生成阶段才暴露。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

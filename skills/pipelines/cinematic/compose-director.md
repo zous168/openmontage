@@ -1,42 +1,42 @@
-# Compose Director - Cinematic Pipeline
+# 合成导演 —— Cinematic 管线
 
-## When To Use
+## 何时使用
 
-Render the cinematic piece with careful attention to grade, audio dynamics, and frame treatment. This is not a generic export step.
+渲染这件电影感作品，重点关注调色、音频动态和画面处理。这不是一个通用的导出步骤。
 
-## Runtime Routing (MANDATORY first step)
+## 运行时路由（强制的第一步）
 
-Read `edit_decisions.render_runtime`. Cinematic work routes to:
+读 `edit_decisions.render_runtime`。电影感作品路由到：
 
-- **`render_runtime="remotion"`** — default for video-led trailers using `CinematicRenderer`. Keeps video clips, transitions, and ambient overlays in one React-based pass.
-- **`render_runtime="hyperframes"`** — for kinetic title cards, HTML/GSAP-driven trailers, or launch-reel-style compositions where the visual grammar is HTML/CSS. See `skills/core/hyperframes.md`. `hyperframes lint` and `hyperframes validate` must both pass before render.
-- **`render_runtime="ffmpeg"`** — simple source-footage concat with no composition.
+- **`render_runtime="remotion"`** —— 使用 `CinematicRenderer` 的视频主导预告片的默认项。把视频片段、转场和环境叠加层放在同一次基于 React 的渲染中完成。
+- **`render_runtime="hyperframes"`** —— 用于动态标题卡、HTML/GSAP 驱动的预告片，或视觉语法本身就是 HTML/CSS 的发布短片式合成。见 `skills/core/hyperframes.md`。渲染之前 `hyperframes lint` 和 `hyperframes validate` 都必须通过。
+- **`render_runtime="ffmpeg"`** —— 简单的源素材拼接，不做合成。
 
-`delivery_promise.motion_required=true` means the locked runtime is a commitment. Silent swap to another runtime (including FFmpeg Ken Burns) is a CRITICAL governance violation. If the locked runtime fails, escalate per AGENT_GUIDE.md > "Escalate Blockers Explicitly."
+`delivery_promise.motion_required=true` 意味着被锁定的运行时是一项承诺。静默切换到另一个运行时（包括 FFmpeg 的 Ken Burns）属于 CRITICAL 级的治理违规。若锁定的运行时失败了，按 AGENT_GUIDE.md > "Escalate Blockers Explicitly" 上报。
 
-**Pass `proposal_packet` to `video_compose.execute()`** so the tool's `runtime_swap_detected` check compares directly against `proposal_packet.production_plan.render_runtime`. Without it the swap check is skipped in-tool and only the reviewer skill catches the drift.
+**把 `proposal_packet` 传给 `video_compose.execute()`**，好让工具的 `runtime_swap_detected` 检查能直接与 `proposal_packet.production_plan.render_runtime` 比对。不传的话，这项切换检查在工具内会被跳过，只能靠 reviewer 技能来抓漂移。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/render_report.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["edit"]["edit_decisions"]`, `state.artifacts["assets"]["asset_manifest"]` | Edit plan and media assets |
-| Tools | `video_compose`, `audio_mixer`, `video_stitch`, `video_trimmer`, `color_grade`, `audio_enhance` | Render and finishing |
-| Playbook | Active style playbook | Finish consistency |
+| Schema | `schemas/artifacts/render_report.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["edit"]["edit_decisions"]`、`state.artifacts["assets"]["asset_manifest"]` | 剪辑方案与媒体素材 |
+| 工具 | `video_compose`、`audio_mixer`、`video_stitch`、`video_trimmer`、`color_grade`、`audio_enhance` | 渲染与收尾 |
+| Playbook | 当前生效的风格 playbook | 收尾的一致性 |
 
-## Process
+## 流程
 
-### 0. Check Hard Requirements Before Rendering
+### 0. 渲染前先核对硬性要求
 
-If the approved brief or scene plan makes motion a hard requirement, verify that the render path still preserves that promise.
+若已获批的 brief 或场景方案把运动定为硬性要求，就要确认渲染路径仍然兑现这个承诺。
 
-- If Remotion is required and unavailable or failing, stop and bubble the issue to the user immediately.
-- Do not switch to an FFmpeg-only still-image fallback for a motion-led trailer, teaser, or agent video.
-- Do not convert the piece into an animatic unless the user explicitly approves that downgrade.
-- If the render engine changes materially, tell the user before rendering and explain why.
+- 若需要 Remotion 而它不可用或正在失败，立刻停下并把问题抛给用户。
+- 不要为一支以运动为主的预告片、先导片或 agent 视频切换到只用 FFmpeg 的静图兜底。
+- 除非用户明确批准这种降级，否则不要把作品变成动态分镜。
+- 若渲染引擎发生实质变化，在渲染之前告诉用户并解释原因。
 
-**Mandatory Remotion preflight (run before every render when the scene plan includes any Remotion scene type — title cards, stat cards, anime/hero_title, end-tag, overlays):**
+**强制的 Remotion preflight（当场景方案包含任何 Remotion 场景类型 —— 标题卡、数据卡、anime/hero_title、片尾标签、叠加层 —— 时，每次渲染前都跑一遍）：**
 
 ```bash
 python -c "
@@ -48,42 +48,42 @@ print('Remotion note:', info.get('remotion_note'))
 "
 ```
 
-If Remotion is not in the available render engines, stop and report to the user per the Decision Communication Contract. Do not substitute a reduced-fidelity render path without approval.
+若 Remotion 不在可用渲染引擎里，停下并按决策沟通契约向用户报告。未经批准，不要替换成保真度更低的渲染路径。
 
-### 1. Use Frame Treatment Deliberately
+### 1. 有意识地使用画面处理
 
-Only use letterbox, 24fps intent, or heavy grading if they help the piece. Do not apply them because the pipeline name says cinematic.
+只有当黑边、24fps 的取向或重度调色确实对作品有帮助时才用。不要因为管线名字里有 cinematic 就套上它们。
 
-### 2. Preserve Audio Dynamics
+### 2. 保住音频动态
 
-The mix should allow:
+混音应当允许：
 
-- quiet moments,
-- impact moments,
-- clear dialogue or narration,
-- controlled music swells.
+- 安静的时刻，
+- 冲击的时刻，
+- 清晰的对白或旁白，
+- 受控的音乐涌起。
 
-### 3. Verify The Final Mood
+### 3. 验证最终情绪
 
-Check:
+检查：
 
-- opening frame,
-- reveal beat,
-- final landing,
-- subtitle readability where relevant.
+- 开场画面，
+- 揭示节拍，
+- 最终落地，
+- 相关处的字幕可读性。
 
-### 4. Use Render Metadata
+### 4. 使用渲染元数据
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `frame_treatment`
 - `grade_profile`
 - `mix_notes`
 - `variant_outputs`
 
-## Common Pitfalls
+## 常见陷阱
 
-- Flattening the audio so the piece loses dynamics.
-- Applying letterbox to footage that needs every pixel.
-- Letting grading or sharpening damage faces or text.
-- Silently swapping a blocked Remotion render for a lower-fidelity still-image export.
+- 把音频压平，导致作品失去动态。
+- 给需要每一个像素的素材加黑边。
+- 让调色或锐化损害了人脸或文字。
+- 在 Remotion 渲染受阻时，静默换成保真度更低的静图导出。

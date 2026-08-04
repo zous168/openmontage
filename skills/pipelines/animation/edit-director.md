@@ -1,54 +1,54 @@
-# Edit Director - Animation Pipeline
+# 剪辑导演 —— Animation 管线
 
-## When To Use
+## 何时使用
 
-This stage turns the scene plan into an animatic-grade edit plan. Timing is the product.
+本阶段把场景方案转化成一份动态分镜级别的剪辑方案。时序就是产品本身。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["assets"]["asset_manifest"]`, `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]` | Assets, timing plan, and beats |
-| Playbook | Active style playbook | Motion and typography rules |
+| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["assets"]["asset_manifest"]`、`state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]` | 素材、时序方案与节拍 |
+| Playbook | 当前生效的风格 playbook | 运动与排版规则 |
 
-## Process
+## 流程
 
-### 1. Protect Hold Time
+### 1. 保护停留时长
 
-After key reveals, plan enough time for the viewer to process the frame. Do not stack every scene edge to edge with motion.
+在关键揭示之后，给观众留出足够时间去消化这一帧。不要把每个场景都塞满、首尾相接全是运动。
 
-### 2. Stagger Secondary Elements
+### 2. 让次要元素错峰
 
-Primary element first, supporting elements second. The edit decisions should reinforce hierarchy.
+主元素先，辅助元素后。剪辑决策应当强化层级关系。
 
-### 3. Keep Motion Meaningful
+### 3. 让运动有意义
 
-Motion should signal:
+运动应当传达：
 
-- emphasis,
-- transition,
-- transformation,
-- contrast.
+- 强调，
+- 转场，
+- 变形，
+- 对比。
 
-### 4. Use Metadata For Timing Detail
+### 4. 用元数据表达时序细节
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `hold_windows`
 - `stagger_rules`
 - `transition_map`
 - `scene_timing_notes`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- key information has enough dwell time,
-- movement clarifies hierarchy,
-- transitions stay consistent,
-- the edit remains readable on the target platform.
+- 关键信息有足够的停留时间，
+- 运动澄清了层级关系，
+- 转场保持一致，
+- 剪辑在目标平台上依然可读。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Overcrowding the timeline with continuous motion.
-- Revealing all elements at once.
-- Letting stylistic motion reduce readability.
+- 用连续不断的运动把时间线塞满。
+- 一次性揭示所有元素。
+- 让风格化的运动损害了可读性。

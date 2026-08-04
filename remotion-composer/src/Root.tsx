@@ -110,13 +110,16 @@ export const THEMES: Record<string, ThemeConfig> = {
 export const DEFAULT_THEME = THEMES["flat-motion-graphics"];
 
 export function resolveTheme(props: Record<string, unknown>): ThemeConfig {
+  // Explicit full theme object wins — video_compose injects themeConfig derived
+  // from the playbook's actual colors. Checking it first prevents the merged
+  // defaultProps theme name (e.g. fixture `theme: "flat-motion-graphics"`)
+  // from silently overriding a project's custom palette.
+  if (props.themeConfig && typeof props.themeConfig === "object") {
+    return { ...DEFAULT_THEME, ...(props.themeConfig as Partial<ThemeConfig>) };
+  }
   const themeName = (props.theme as string) || (props.playbook as string);
   if (themeName && THEMES[themeName]) {
     return THEMES[themeName];
-  }
-  // Allow custom theme passed as full object
-  if (props.themeConfig && typeof props.themeConfig === "object") {
-    return { ...DEFAULT_THEME, ...(props.themeConfig as Partial<ThemeConfig>) };
   }
   return DEFAULT_THEME;
 }

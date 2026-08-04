@@ -1,102 +1,102 @@
-# Stock Sourcing Usage for OpenMontage
+# OpenMontage 中的素材库取材用法
 
-> How to use the stock image and video tools effectively — query construction,
-> provider selection, license awareness, and integration with the asset pipeline.
+> 如何有效使用素材图像与素材视频工具 —— 检索词构造、
+> provider 选择、授权意识，以及与素材管线的衔接。
 
-## Available Stock Tools
+## 可用的素材库工具
 
-| Tool | Provider | Content | Cost | Rate Limit | Best For |
+| 工具 | Provider | 内容 | 成本 | 速率限制 | 适用于 |
 |------|----------|---------|------|-----------|----------|
-| `pexels_image` | Pexels | Photos | Free | 200/hr | High-quality photography, diverse library |
-| `pixabay_image` | Pixabay | Photos, illustrations, vectors | Free | 100/min | Category filtering, large library (5M+) |
-| `pexels_video` | Pexels | Video clips | Free | 200/hr | HD/4K real-world footage |
-| `pixabay_video` | Pixabay | Video clips | Free | 100/min | Category-filtered video, animation clips |
+| `pexels_image` | Pexels | 照片 | 免费 | 200/小时 | 高质量摄影，题材多样 |
+| `pixabay_image` | Pixabay | 照片、插画、矢量图 | 免费 | 100/分钟 | 按分类筛选，库容量大（500 万+） |
+| `pexels_video` | Pexels | 视频片段 | 免费 | 200/小时 | HD/4K 真实世界素材 |
+| `pixabay_video` | Pixabay | 视频片段 | 免费 | 100/分钟 | 按分类筛选的视频、动画片段 |
 
-## Provider Selection Guide
+## Provider 选择指南
 
-### When to Use Pexels
-- Need **high-quality photography** (curated, professional)
-- Need **video** (larger video library than Pixabay)
-- Want **orientation filtering** (landscape/portrait/square)
-- Want **color filtering** (match playbook palette)
-- Need results in **multiple languages** (28 locales)
+### 何时用 Pexels
+- 需要**高质量摄影**（有策展、专业）
+- 需要**视频**（视频库比 Pixabay 更大）
+- 想要**按画幅方向筛选**（横/竖/方）
+- 想要**按颜色筛选**（匹配 playbook 配色）
+- 需要**多语种**结果（28 个区域设置）
 
-### When to Use Pixabay
-- Need **category-based filtering** (nature, business, science, etc.)
-- Want **illustrations or vectors** in addition to photos
-- Want **editor's choice** curated results
-- Need **higher rate limits** (100/min vs 200/hr)
-- Need **video type filtering** (film vs animation)
+### 何时用 Pixabay
+- 需要**按分类筛选**（自然、商业、科学等）
+- 除照片外还想要**插画或矢量图**
+- 想要**编辑精选**的策展结果
+- 需要**更高的速率限制**（100/分钟 vs 200/小时）
+- 需要**按视频类型筛选**（实拍 vs 动画）
 
-### Decision Flow
+### 决策流程
 ```
-Need stock image?
-├── Need specific category (science, business, etc.)? → pixabay_image
-├── Need illustration/vector? → pixabay_image
-├── Need color matching? → pexels_image
-└── General photo? → pexels_image (higher quality curation)
+需要素材图像？
+├── 需要特定分类（科学、商业等）？ → pixabay_image
+├── 需要插画/矢量图？ → pixabay_image
+├── 需要颜色匹配？ → pexels_image
+└── 普通照片？ → pexels_image（策展质量更高）
 
-Need stock video?
-├── Need 4K? → pexels_video (supports 4K via size="large")
-├── Need animation clips? → pixabay_video (video_type="animation")
-├── Need category filter? → pixabay_video
-└── General footage? → pexels_video (better HD quality)
+需要素材视频？
+├── 需要 4K？ → pexels_video（通过 size="large" 支持 4K）
+├── 需要动画片段？ → pixabay_video（video_type="animation"）
+├── 需要分类筛选？ → pixabay_video
+└── 普通素材？ → pexels_video（HD 质量更好）
 ```
 
-## Input Parameters Guide
+## 输入参数指南
 
 ### pexels_image / pexels_video
 ```python
 {
-    "query": "city skyline sunset",      # Required: search term
-    "orientation": "landscape",           # Optional: landscape/portrait/square
-    "size": "large",                      # Optional: large/medium/small
-    "color": "FF6B35",                    # Optional: hex without # or color name
-    "per_page": 5,                        # Results per page (1-80)
-    "download_size": "large2x",           # Image: original/large2x/large/medium
-    "preferred_quality": "hd",            # Video: hd/sd
-    "output_path": "assets/images/s3.jpg" # Where to save
+    "query": "city skyline sunset",      # 必填：检索词
+    "orientation": "landscape",           # 可选：landscape/portrait/square
+    "size": "large",                      # 可选：large/medium/small
+    "color": "FF6B35",                    # 可选：不带 # 的十六进制或颜色名
+    "per_page": 5,                        # 每页结果数（1-80）
+    "download_size": "large2x",           # 图像：original/large2x/large/medium
+    "preferred_quality": "hd",            # 视频：hd/sd
+    "output_path": "assets/images/s3.jpg" # 保存位置
 }
 ```
 
 ### pixabay_image / pixabay_video
 ```python
 {
-    "query": "server room",              # Required: search term (max 100 chars)
-    "image_type": "photo",               # Image: all/photo/illustration/vector
-    "video_type": "film",                # Video: all/film/animation
+    "query": "server room",              # 必填：检索词（最多 100 字符）
+    "image_type": "photo",               # 图像：all/photo/illustration/vector
+    "video_type": "film",                # 视频：all/film/animation
     "orientation": "horizontal",          # all/horizontal/vertical
-    "category": "computer",              # One of 20 categories
-    "colors": "blue,gray",              # Comma-separated color names
-    "editors_choice": true,              # Curated high-quality only
-    "safesearch": true,                  # Always true for production
-    "output_path": "assets/video/s5.mp4" # Where to save
+    "category": "computer",              # 20 个分类之一
+    "colors": "blue,gray",              # 逗号分隔的颜色名
+    "editors_choice": true,              # 仅取精选高质量
+    "safesearch": true,                  # 生产环境一律为 true
+    "output_path": "assets/video/s5.mp4" # 保存位置
 }
 ```
 
-## Gotchas and Best Practices
+## 坑与最佳实践
 
-### 1. Pixabay URLs Expire
-Pixabay download URLs contain embedded tokens that expire. **Always download immediately** after searching. The tools handle this automatically, but never cache Pixabay URLs for later use.
+### 1. Pixabay 的 URL 会过期
+Pixabay 的下载 URL 内嵌了会过期的令牌。检索之后**务必立即下载**。工具已自动处理这一点，但绝不要缓存 Pixabay 的 URL 留待以后使用。
 
-### 2. Pixabay Resolution Limit
-Standard Pixabay API users get max 1280px wide images (`largeImageURL`). Full resolution requires approved API access. For most video production overlays, 1280px is sufficient.
+### 2. Pixabay 的分辨率上限
+标准的 Pixabay API 用户最多拿到宽 1280px 的图像（`largeImageURL`）。完整分辨率需要经过审批的 API 权限。对多数视频制作的叠加用途，1280px 已经够用。
 
-### 3. Pexels Auth Header
-Pexels uses a bare API key in the `Authorization` header (NOT `Bearer`). The tool handles this, but be aware if debugging.
+### 3. Pexels 的鉴权头
+Pexels 在 `Authorization` 头中直接使用裸 API key（**不是** `Bearer`）。工具已处理这一点，但调试时要知道。
 
-### 4. Search Results Vary by Locale
-Pexels supports 28 locales. If searching for culturally specific content, set the locale parameter.
+### 4. 检索结果随区域设置而变
+Pexels 支持 28 个区域设置。若要检索具有文化特定性的内容，请设置 locale 参数。
 
-### 5. Stock Images Are Deterministic
-Unlike AI generation, searching "ocean waves" twice returns the same results. If the first result isn't good enough, try different keywords — don't retry the same query.
+### 5. 素材库检索是确定性的
+与 AI 生成不同，检索两次 "ocean waves" 会得到相同结果。若第一次的结果不够好，就换关键词 —— 不要用同样的检索词重试。
 
-### 6. Duration Filtering for Video
-Both stock video tools support `min_duration` and `max_duration` parameters. Use these to avoid downloading 30-second clips when you only need 4 seconds — it saves bandwidth and time.
+### 6. 视频的时长筛选
+两个素材视频工具都支持 `min_duration` 与 `max_duration` 参数。用它们来避免在只需要 4 秒时下载 30 秒的片段 —— 能省带宽和时间。
 
-## Integration with Asset Pipeline
+## 与素材管线的衔接
 
-Stock tools integrate exactly like generation tools. In the asset manifest:
+素材库工具的接入方式与生成类工具完全相同。在 asset manifest 中：
 
 ```json
 {
@@ -115,13 +115,13 @@ Stock tools integrate exactly like generation tools. In the asset manifest:
 }
 ```
 
-The Edit Director and Compose Director treat stock assets identically to generated ones — they just reference the file path from the manifest.
+Edit Director 与 Compose Director 对素材库资源与生成资源一视同仁 —— 它们只是从 manifest 中引用文件路径而已。
 
-## Licensing Summary
+## 授权摘要
 
-| Provider | Commercial Use | Attribution | Restrictions |
+| Provider | 商用 | 署名 | 限制 |
 |----------|---------------|-------------|-------------|
-| Pexels | Yes, free | Not required (appreciated) | Cannot sell unaltered; cannot imply endorsement |
-| Pixabay | Yes, free | Not required | Cannot sell unaltered; cannot create competing stock service |
+| Pexels | 是，免费 | 不强制（但欢迎） | 不得原样售卖；不得暗示背书 |
+| Pixabay | 是，免费 | 不强制 | 不得原样售卖；不得创建竞争性素材库服务 |
 
-Both are safe for all OpenMontage use cases. No licensing fees, no per-use royalties, no attribution obligations.
+两者对 OpenMontage 的所有使用场景都是安全的。没有授权费、没有按次版税、没有署名义务。

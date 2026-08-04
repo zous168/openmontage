@@ -1,49 +1,49 @@
-# Script Director - Avatar Spokesperson Pipeline
+# 脚本导演 —— Avatar Spokesperson 管线
 
-## When To Use
+## 何时使用
 
-Turn the approved brief into scene-safe spoken copy for an avatar presenter. The quality bar is not literary flourish. It is spoken clarity, believable pacing, and one clean point per scene.
+把已获批的 brief 转化成适配场景的口播文案，供数字人出镜人演绎。质量底线不是文采，而是口语上的清晰、可信的节奏，以及每个场景一个干净的论点。
 
-## Reference Inputs
+## 参考输入
 
 - `docs/avatar-spokesperson-best-practices.md`
 - `skills/creative/storytelling.md`
 
-## Process
+## 流程
 
-### 1. Write For Speech, Not For Slides
+### 1. 为口语而写，不是为幻灯片而写
 
-Prefer:
+优先使用：
 
-- short sentences,
-- direct verbs,
-- one idea per beat,
-- explicit transitions,
-- conversational emphasis.
+- 短句，
+- 直接的动词，
+- 每个节拍一个想法，
+- 明确的过渡，
+- 对话式的重音。
 
-If the copy sounds like a brochure when read aloud, rewrite it.
+若文案读出来像宣传册，就重写。
 
-### 2. Break Into Scene-Safe Chunks
+### 2. 切成适配场景的小块
 
-Avatar scenes are easier to manage when each section is compact. A useful starting point is:
+当每一段都紧凑时，数字人场景更好管理。一个有用的起点是：
 
-- hook,
-- value statement,
-- proof or feature beat,
-- CTA.
+- 钩子，
+- 价值陈述，
+- 佐证或功能节拍，
+- CTA。
 
-### 3. Keep On-Screen Text Light
+### 3. 屏幕文字保持轻量
 
-The presenter is already carrying attention. Use on-screen text only for:
+出镜人本身已经在承载注意力。屏幕文字只用于：
 
-- product names,
-- short proof points,
-- CTA copy,
-- legal or compliance text that must appear.
+- 产品名，
+- 简短的佐证点，
+- CTA 文案，
+- 必须出现的法务或合规文字。
 
-### 4. Use Metadata For Delivery Notes
+### 4. 用元数据记录演绎备注
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `scene_copy_map`
 - `cta_language`
@@ -51,35 +51,34 @@ Recommended metadata keys:
 - `supplied_script_source`
 - `legal_text_requirements`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- the copy sounds spoken,
-- scene lengths are realistic,
-- CTA placement is clear,
-- text overlays are restrained.
+- 文案听起来像口语，
+- 场景长度现实，
+- CTA 的位置清晰，
+- 文字叠加克制。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during script writing:
-- Use `web_search` to verify factual claims before committing them to the script
-- Use `web_search` to find reference images for visual accuracy
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在写脚本时遇到不确定之处：
+- 在把某个事实性论断写进脚本之前，用 `web_search` 核实它
+- 用 `web_search` 找参考图以保证视觉准确性
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Every factual claim in the script should be traceable to the `research_brief`.
-If you make a claim that isn't in the research, do additional research and
-add the source. Do not invent statistics, dates, or attributions.
+脚本中的每一条事实性论断都应当能追溯到 `research_brief`。
+若你做出了调研中没有的论断，就补做调研并补上来源。不要编造统计数字、日期或出处。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Overstuffing one scene because the script reads well on paper.
-- Duplicating the same sentence in speech and large text overlays.
-- Writing humor or improvisational beats the avatar path cannot sell.
+- 因为脚本在纸面上读着不错，就把一个场景塞得过满。
+- 同一句话既在口播里说，又在大号文字叠加里再写一遍。
+- 写下数字人路径演绎不了的幽默或即兴节拍。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

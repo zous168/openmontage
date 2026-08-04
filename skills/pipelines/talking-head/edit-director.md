@@ -1,22 +1,22 @@
-# Edit Director — Talking Head Pipeline
+# 剪辑导演 —— Talking Head 管线
 
-## When to Use
+## 何时使用
 
-You have a scene plan and asset manifest. Your job is to assemble the edit decision list for a talking-head video: primarily keeping the full footage with subtitle overlay and optional enhancements.
+你手上有一份场景方案和素材清单。你的工作是为口播视频组装剪辑决策表：主要是保留完整素材，叠上字幕，并施加可选的强化处理。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact validation |
-| Prior artifacts | Scene plan, Asset manifest, Script | Edit inputs |
-| Playbook | Active style playbook | Transition and pacing rules |
+| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact 校验 |
+| 上游 artifact | 场景方案、素材清单、脚本 | 剪辑输入 |
+| Playbook | 当前生效的风格 playbook | 转场与节奏规则 |
 
-## Process
+## 流程
 
-### Step 1: Apply Silence Cuts (if planned)
+### 第 1 步：施加静音剪切（若已规划）
 
-If the scene plan includes silence removal, run `silence_cutter` before defining cuts:
+若场景方案里含有静音删除，就在定义各刀之前先跑 `silence_cutter`：
 
 ```
 silence_cutter.execute({
@@ -29,48 +29,48 @@ silence_cutter.execute({
 })
 ```
 
-**Choosing the mode:**
-- `remove` — Hard jump cuts. Best for fast-paced social content (Reels, TikTok, Shorts)
-- `speed_up` — Fast-forwards through silence at 6x. Less jarring for longer-form content (YouTube, LinkedIn)
+**如何选模式：**
+- `remove` —— 硬跳切。最适合快节奏的社交内容（Reels、TikTok、Shorts）
+- `speed_up` —— 以 6 倍速快进掠过静音。对长视频内容（YouTube、LinkedIn）观感更不突兀
 
-Present the result to the user: "Removed X seconds of silence (Y%) — output is now Z seconds."
+把结果呈现给用户："删掉了 X 秒静音（Y%）—— 现在输出是 Z 秒。"
 
-Use the cut footage as the source for all subsequent steps.
+把剪过的素材作为后续所有步骤的源。
 
-### Step 2: Define Primary Cut
+### 第 2 步：定义主剪辑
 
-For talking-head, the primary cut is usually the full footage (or trimmed segments). Create cuts that:
-- Reference the raw footage (or silence-cut footage) as source
-- Use timestamps from the script sections
-- Apply any trim decisions (cut dead air, false starts)
+对 talking-head 而言，主剪辑通常就是完整素材（或裁切后的片段）。创建的各刀应当：
+- 以原始素材（或静音剪切后的素材）为源
+- 使用来自脚本 section 的时间戳
+- 施加任何裁切决策（剪掉空白、口误重来）
 
-### Step 3: Configure Subtitles
+### 第 3 步：配置字幕
 
-- Enable subtitles with playbook-compatible styling
-- Reference the subtitle asset from the manifest
-- Set position (usually bottom-center)
+- 启用字幕，样式与 playbook 相容
+- 引用清单中的字幕素材
+- 设定位置（通常是底部居中）
 
-### Step 4: Configure Audio
+### 第 4 步：配置音频
 
-- Set narration to the raw footage audio
-- If background music is desired, configure ducking
-- Set music volume per playbook
+- 把旁白设为原始素材的音频
+- 若需要背景音乐，配置好闪避
+- 按 playbook 设定音乐音量
 
-### Step 5: Plan Enhancements
+### 第 5 步：规划强化处理
 
-If the scene plan includes overlays:
-- Add overlay cuts for text cards, lower thirds
-- Time them to match speech content
+若场景方案里含有叠加层：
+- 为文字卡、下三分之一条添加叠加层刀口
+- 把它们与语音内容对时
 
-### Step 6: Self-Evaluate
+### 第 6 步：自评
 
-| Criterion | Question |
+| 判据 | 问题 |
 |-----------|----------|
-| **Coverage** | Do cuts span the full intended duration? |
-| **Silence** | Were silence cuts applied if planned? What % was removed? |
-| **Subtitles** | Are subtitles enabled and styled? |
-| **Audio** | Is audio configuration complete? |
+| **覆盖度** | 各刀覆盖了完整的目标时长吗？ |
+| **静音** | 若已规划，静音剪切施加了吗？删掉了百分之多少？ |
+| **字幕** | 字幕启用了、也设了样式吗？ |
+| **音频** | 音频配置完整吗？ |
 
-### Step 7: Submit
+### 第 7 步：提交
 
-Validate the edit_decisions against the schema and persist via checkpoint.
+对照 schema 校验 edit_decisions，并通过检查点持久化。

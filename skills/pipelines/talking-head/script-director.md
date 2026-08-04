@@ -1,76 +1,76 @@
-# Script Director — Talking Head Pipeline
+# 脚本导演 —— Talking Head 管线
 
-## When to Use
+## 何时使用
 
-You have a brief and raw talking-head footage. Your job is to transcribe the footage and structure it into a script artifact with timestamped sections.
+你手上有一份 brief 和一段口播原始素材。你的工作是转写这段素材，并把它结构化成一份带时间戳分段的 script artifact。
 
-Unlike the explainer pipeline (which writes a script from scratch), you're extracting and structuring existing speech.
+与 explainer 管线（从零写脚本）不同，你是在**提取并结构化已有的语音**。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/script.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["idea"]["brief"]` | Content context |
-| Tools | `transcriber` (WhisperX) | Speech-to-text with timestamps |
+| Schema | `schemas/artifacts/script.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["idea"]["brief"]` | 内容语境 |
+| 工具 | `transcriber`（WhisperX） | 带时间戳的语音转文字 |
 
-## Process
+## 流程
 
-### Step 1: Transcribe
+### 第 1 步：转写
 
-Use the transcriber tool to get word-level timestamps:
-- Model: `large-v3` for best quality, `base` for speed
-- Enable word-level alignment for precise timing
-- Note language detection result
+用 transcriber 工具拿到词级时间戳：
+- 模型：追求最佳质量用 `large-v3`，追求速度用 `base`
+- 打开词级对齐，以获得精确时序
+- 记下语言检测结果
 
-### Step 2: Segment into Sections
+### 第 2 步：切分成 section
 
-Group the transcript into logical sections:
-- Detect topic changes by content
-- Respect natural pauses (> 1.5s silence = potential section break)
-- Each section gets: id, text, start_seconds, end_seconds
+把转写按逻辑分组成若干 section：
+- 按内容检测话题切换
+- 尊重自然停顿（> 1.5 秒静音 = 潜在的段落分界）
+- 每个 section 都要有：id、text、start_seconds、end_seconds
 
-### Step 3: Enhance Section Metadata
+### 第 3 步：丰富 Section 元数据
 
-For each section, add:
-- Enhancement cues (where overlays, b-roll, or text cards could go)
-- Speaker notes (emphasis, pace changes detected in audio)
+为每个 section 补上：
+- 强化提示（叠加层、B-roll 或文字卡可以放在哪儿）
+- 说话人备注（从音频中检测到的重音、语速变化）
 
-### Step 4: Build Script Artifact
+### 第 4 步：搭建 Script Artifact
 
-Assemble the structured script with:
-- Total duration (from transcript)
-- All sections with timestamps
-- Enhancement cues per section
+把结构化脚本组装起来，包含：
+- 总时长（来自转写）
+- 全部带时间戳的 section
+- 每个 section 的强化提示
 
-### Step 5: Self-Evaluate
+### 第 5 步：自评
 
-| Criterion | Question |
+| 判据 | 问题 |
 |-----------|----------|
-| **Transcription accuracy** | Are the words correct? (Spot-check a few sections) |
-| **Timestamp accuracy** | Do section boundaries align with actual speech? |
-| **Coverage** | Does the script span the full footage duration? |
+| **转写准确性** | 词写对了吗？（抽查几个段落） |
+| **时间戳准确性** | Section 边界与实际语音对齐吗？ |
+| **覆盖度** | 脚本是否覆盖了完整的素材时长？ |
 
-### Step 6: Submit
+### 第 6 步：提交
 
-Validate the script against the schema and persist via checkpoint.
+对照 schema 校验 script，并通过检查点持久化。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during script writing:
-- Use `web_search` to verify factual claims before committing them to the script
-- Use `web_search` to find reference images for visual accuracy
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在写脚本过程中遇到不确定：
+- 用 `web_search` 在把事实性主张写进脚本之前先核验
+- 用 `web_search` 找参考图，保证视觉准确性
+- 把核验记入 decision log：`category="visual_accuracy_check"`
 
-Every factual claim in the script should be traceable to the `research_brief`.
-If you make a claim that isn't in the research, do additional research and
-add the source. Do not invent statistics, dates, or attributions.
+脚本中的每一条事实性主张都应能追溯到 `research_brief`。
+若你提出了调研中没有的主张，就补做调研并补上来源。
+不要杜撰统计数字、日期或出处。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

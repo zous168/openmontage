@@ -1,90 +1,90 @@
-# HunyuanVideo 1.5 — Prompting Guide
+# HunyuanVideo 1.5 —— 提示词指南
 
-> Source: [Tencent Prompt Handbook](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md)
-> For universal vocabulary, see: `skills/creative/video-gen-prompting.md`
+> 来源：[腾讯提示词手册](https://github.com/Tencent-Hunyuan/HunyuanVideo-1.5/blob/main/assets/HunyuanVideo_1_5_Prompt_Handbook_EN.md)
+> 通用词汇表见：`skills/creative/video-gen-prompting.md`
 
-**Word count:** Hunyuan 1.5 reads well at 80–200 words; doesn't reward 400-word essays.
+**字数：** Hunyuan 1.5 在 80–200 词时表现良好；写 400 词的长文并不会带来回报。
 
-## HunyuanVideo Prompt Formula
+## HunyuanVideo 提示词公式
 
-### Text-to-Video
+### 文生视频
 ```
 Subject + Motion + Scene + [Shot Type] + [Camera Movement] + [Lighting] + [Style] + [Atmosphere]
 ```
 
-### Image-to-Video
+### 图生视频
 ```
 Subject Motion Dynamics + Scene Motion Dynamics + [Camera Movement]
 ```
 
-For I2V, focus on describing MOTION, not appearance (the image provides appearance).
+做 I2V 时，重点描述**运动**，不是外观（外观由图像提供）。
 
-## HunyuanVideo-Specific Strengths
+## HunyuanVideo 的专属长处
 
-### Lighting as Atmosphere
-Tencent emphasizes: **"Light is the soul of atmosphere."**
+### 用光照塑造氛围
+腾讯强调：**"光是氛围的灵魂。"**
 
-Describe lighting with multiple dimensions:
-- **Style**: soft, hard, neon, ambient
-- **Direction**: side-lit, backlit, overhead, underlighting
-- **Quality**: harsh spotlight, diffuse glow
-- **Shadows**: long dramatic shadows, soft shadow edges
-- **Color temperature**: golden hour warmth, cool daylight blue
-- **Reflections**: wet surface reflections, metallic glints
+从多个维度描述光照：
+- **风格**：soft、hard、neon、ambient
+- **方向**：side-lit、backlit、overhead、underlighting
+- **质感**：harsh spotlight、diffuse glow
+- **阴影**：long dramatic shadows、soft shadow edges
+- **色温**：golden hour warmth、cool daylight blue
+- **反射**：wet surface reflections、metallic glints
 
-### Camera Movement Library
+### 镜头运动库
 
-| Movement | Type | HunyuanVideo Prompt |
+| 运动 | 类型 | HunyuanVideo 提示词 |
 |----------|------|-------------------|
-| Crane / Pedestal | Translation (vertical) | "camera rises vertically" |
-| Truck / Tracking | Translation (horizontal) | "camera tracks left alongside subject" |
-| Dolly In | Translation (push) | "camera pushes forward toward subject" |
-| Dolly Out | Translation (pull) | "camera pulls back from subject" |
-| Pan | Rotation (yaw) | "camera pans right across the scene" |
-| Tilt | Rotation (pitch) | "camera tilts upward to follow the rocket" |
-| Roll | Rotation (Z-axis / Dutch) | "camera rolls clockwise into a Dutch tilt" |
-| Orbit | Circular | "camera orbits around subject" |
-| Follow | Lock-on | "camera follows subject from behind" |
-| Zoom | Lens-only (focal length) | "camera slowly zooms in on the figure" |
-| Rack focus | Lens-only (focal plane, snap) | "rack focus from the foreground bottle to the figure in the background" |
-| Pull focus | Lens-only (focal plane, gradual) | "camera shifts focus from foreground X to background Y" |
-| Static | Fixed | "static camera, no movement" |
+| 升降 / 垂直移机 | 平移（垂直） | "camera rises vertically" |
+| 横移 / 跟踪 | 平移（水平） | "camera tracks left alongside subject" |
+| 推近 | 平移（推） | "camera pushes forward toward subject" |
+| 拉远 | 平移（拉） | "camera pulls back from subject" |
+| 横摇 | 旋转（偏航） | "camera pans right across the scene" |
+| 纵摇 | 旋转（俯仰） | "camera tilts upward to follow the rocket" |
+| 滚转 | 旋转（Z 轴 / 荷兰角） | "camera rolls clockwise into a Dutch tilt" |
+| 环绕 | 圆周 | "camera orbits around subject" |
+| 跟随 | 锁定 | "camera follows subject from behind" |
+| 变焦 | 纯镜头（焦距） | "camera slowly zooms in on the figure" |
+| Rack focus | 纯镜头（焦平面，快速切换） | "rack focus from the foreground bottle to the figure in the background" |
+| Pull focus | 纯镜头（焦平面，渐进） | "camera shifts focus from foreground X to background Y" |
+| 静止 | 固定 | "static camera, no movement" |
 
-### Focal-plane labels at start AND end of dynamic-DoF shots
+### 动态景深镜头要同时标注起点和终点的焦平面
 
-Hunyuan benefits when both endpoints of focus-changing shots are stated. State where focus starts AND where it lands — don't leave one implicit.
+对于对焦会变化的镜头，把两个端点都写出来对 Hunyuan 有帮助。写清焦点从哪里开始**以及**落到哪里 —— 不要让其中一端只靠隐含。
 
-Example: "shallow DoF; focus on the foreground bottle at start; focus pulls to the figure in the background by end."
+示例："shallow DoF; focus on the foreground bottle at start; focus pulls to the figure in the background by end."
 
-Without both endpoints, Hunyuan often defaults to deep focus or holds on the wrong plane.
+缺了任一端点，Hunyuan 往往会退回深焦，或者停在错误的焦平面上。
 
-### Style Keywords
+### 风格关键词
 
-**Photorealistic / Cinematic**:
-- Film noir, hard sci-fi, cinematic photography
-- Period drama, war documentary, nature documentary
+**写实 / 电影感**：
+- Film noir、hard sci-fi、cinematic photography
+- Period drama、war documentary、nature documentary
 
-**Animation / Illustration**:
-- 2D animation, Japanese anime
-- Watercolor painting, Chinese ink wash
-- Low-poly 3D, pixel art
+**动画 / 插画**：
+- 2D animation、Japanese anime
+- Watercolor painting、Chinese ink wash
+- Low-poly 3D、pixel art
 
-## I2V Best Practice
+## I2V 最佳实践
 
-When using image-to-video, the input image defines appearance. Your prompt should ONLY describe:
-1. How the subject moves
-2. How the environment changes
-3. Camera motion
+使用图生视频时，输入图像已经定义了外观。你的提示词应当**只**描述：
+1. 主体如何运动
+2. 环境如何变化
+3. 镜头运动
 
-**Good I2V prompt**: "The woman's hair blows in the wind as she turns to face the camera. Leaves scatter across the path. Camera slowly dollies in."
+**好的 I2V 提示词**："The woman's hair blows in the wind as she turns to face the camera. Leaves scatter across the path. Camera slowly dollies in."
 
-**Bad I2V prompt**: "A beautiful woman in a red dress standing in a forest" — this repeats what the image already shows.
+**差的 I2V 提示词**："A beautiful woman in a red dress standing in a forest" —— 这只是在重复图像里已经有的东西。
 
-### Order motions temporally
+### 按时间顺序排列运动
 
-Describe motion in temporal order; if multiple movements occur, separate them ("first the camera pans right, then tilts upward"). Hunyuan executes motion in the order it appears in the prompt — bundling two movements into one clause causes one of them to be dropped or blended.
+按时间顺序描述运动；若发生多个动作，就把它们分开写（"first the camera pans right, then tilts upward"）。Hunyuan 会按提示词中出现的顺序执行运动 —— 把两个动作塞进同一个从句，会导致其中一个被丢掉或被混合。
 
-## Example (T2V)
+## 示例（T2V）
 
 ```
 A young woman in a flowing white dress walks barefoot along
@@ -97,7 +97,7 @@ photography style, shallow depth of field. Peaceful,
 contemplative atmosphere.
 ```
 
-## Example (I2V)
+## 示例（I2V）
 
 ```
 The cat stretches lazily, then leaps from the windowsill

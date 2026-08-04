@@ -1,60 +1,60 @@
-# Edit Director - Podcast Repurpose Pipeline
+# 剪辑导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-This stage creates the actual timeline logic for short clips and any optional full-episode companion asset. The audio remains the primary content.
+本阶段为短片段以及任何可选的整集配套素材，建立真正的时间线逻辑。音频始终是主要内容。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["assets"]["asset_manifest"]`, `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]` | Assets, layouts, transcript timing |
-| Playbook | Active style playbook | Motion and subtitle rules |
+| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["assets"]["asset_manifest"]`、`state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]` | 素材、版式、转写时序 |
+| Playbook | 当前生效的风格 playbook | 运动与字幕规则 |
 
-## Process
+## 流程
 
-### 1. Build Clip Timelines Fast
+### 1. 快速搭出片段时间线
 
-For short-form clips:
+对短视频片段：
 
-- open on the hook,
-- start captions immediately,
-- make speaker attribution obvious,
-- let the ending land cleanly.
+- 用钩子开场，
+- 字幕立刻出现，
+- 让说话人署名一目了然，
+- 让结尾干净落地。
 
-### 2. Match The Edit To The Treatment
+### 2. 让剪辑匹配处理方式
 
-- source-video clips should emphasize speaker framing and reactions,
-- audiogram clips should emphasize captions, speaker identity, and pacing,
-- quote-led clips should preserve enough reading time after the line lands.
+- 源视频片段应当突出说话人构图和反应，
+- 音频波形图片段应当突出字幕、说话人身份和节奏，
+- 语录主导的片段应当在那句话落地之后留出足够的阅读时间。
 
-### 3. Keep Full-Episode Companion Simple
+### 3. 整集配套要保持简洁
 
-If producing one:
+若要做一版：
 
-- use chapter cards,
-- use limited recurring visual systems,
-- do not force constant visual novelty if the assets are not there.
+- 使用章节卡，
+- 使用少量反复出现的视觉体系，
+- 若素材不足，就不要硬凑持续不断的视觉新意。
 
-### 4. Use Metadata For Richer Timeline Notes
+### 4. 用元数据记录更丰富的时间线备注
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `clip_timelines`
 - `quote_hold_times`
 - `speaker_change_markers`
 - `chapter_card_windows`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- every short clip hooks quickly,
-- captions and attribution are present,
-- quote-led clips hold long enough to read,
-- the long-form companion stays editorially honest and technically feasible.
+- 每条短片段都能快速抓住人，
+- 字幕和署名都在，
+- 语录主导的片段停留时间足够读完，
+- 长视频配套在剪辑上诚实、在技术上可行。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Building generic audiograms that ignore who is speaking.
-- Ending quote clips as soon as the audio ends, before the text can be read.
-- Turning a long-form companion into a weak imitation of a fully produced video podcast.
+- 做出无视"是谁在说话"的通用音频波形图。
+- 音频一结束就把语录片段掐掉，文字还没来得及被读完。
+- 把长视频配套做成一支制作精良的视频播客的拙劣模仿。

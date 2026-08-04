@@ -1,91 +1,91 @@
-# FFmpeg Skill
+# FFmpeg 技能
 
-## When to Use
+## 何时使用
 
-Use FFmpeg-backed tools for any video/audio processing that does not require AI inference:
-cutting, trimming, speed adjustment, concatenation, audio extraction, mixing,
-subtitle burn-in, overlay compositing, encoding, face enhancement, color grading,
-and audio cleanup.
+任何不需要 AI 推理的视频/音频处理都使用基于 FFmpeg 的工具：
+剪切、修剪、变速、拼接、音频提取、混音、
+字幕烧录、叠加层合成、编码、面部增强、调色，
+以及音频清理。
 
-## Tools That Use FFmpeg
+## 使用 FFmpeg 的工具
 
-### Core Pipeline
+### 核心管线
 
-| Tool | Capability |
+| 工具 | 能力 |
 |------|-----------|
-| `video_trimmer` | Cut, trim, speed adjust, concat video segments |
-| `video_compose` | Full composition: cuts + subtitles + overlays + encode |
-| `audio_mixer` | Mix speech/music/SFX, ducking, fades, extract audio |
-| `frame_sampler` | Extract representative frames from video |
+| `video_trimmer` | 剪切、修剪、变速、拼接视频片段 |
+| `video_compose` | 完整合成：剪辑 + 字幕 + 叠加层 + 编码 |
+| `audio_mixer` | 混合人声/音乐/音效、闪避、淡入淡出、提取音频 |
+| `frame_sampler` | 从视频中抽取有代表性的帧 |
 
-### Enhancement Layer
+### 增强层
 
-| Tool | Capability | Key Presets |
+| 工具 | 能力 | 关键预设 |
 |------|-----------|-------------|
-| `face_enhance` | Skin smoothing, sharpening, warm/cool tones | `talking_head_standard`, `soft_skin`, `sharpen` |
-| `color_grade` | Cinematic color grading with intensity control | `cinematic_warm`, `cinematic_cool`, `moody_dark` |
-| `audio_enhance` | Noise reduction, loudness normalization, EQ | `clean_speech`, `voice_clarity`, `podcast` |
+| `face_enhance` | 皮肤柔化、锐化、暖/冷色调 | `talking_head_standard`、`soft_skin`、`sharpen` |
+| `color_grade` | 带强度控制的电影感调色 | `cinematic_warm`、`cinematic_cool`、`moody_dark` |
+| `audio_enhance` | 降噪、响度归一化、EQ | `clean_speech`、`voice_clarity`、`podcast` |
 
-## Key Patterns
+## 关键范式
 
-### Enhancement Chain Order
+### 增强链顺序
 
-Apply enhancements in this order to avoid filter interactions:
+按此顺序应用增强，避免滤镜之间相互干扰：
 
-1. **Subtitles first** — burn into the base video
-2. **Face enhance** — smoothing/sharpening works best on ungraded footage
-3. **Color grade** — applies look after face is already enhanced
-4. **Audio enhance** — independent of video, apply last
+1. **字幕最先** —— 烧录进基础视频
+2. **面部增强** —— 柔化/锐化在未调色的素材上效果最好
+3. **调色** —— 在面部已增强之后再施加整体风格
+4. **音频增强** —— 与视频无关，放在最后
 
-Each step is optional and gracefully skipped if the tool is unavailable.
+每一步都是可选的；工具不可用时会被优雅跳过。
 
-### Lossless vs Re-encode
+### 无损 vs 重编码
 
-- Use `-c copy` (codec copy) when you only need to cut or concat without altering frames. This is instant and lossless.
-- Re-encode (`-c:v libx264`) when applying filters (speed change, subtitles, overlays, scaling).
-- Default CRF is 23. Use 18-20 for higher quality when the output is the final deliverable.
+- 当你只需要剪切或拼接、不改变帧内容时，使用 `-c copy`（codec copy）。这是瞬时且无损的。
+- 施加滤镜（变速、字幕、叠加层、缩放）时需要重编码（`-c:v libx264`）。
+- 默认 CRF 为 23。当输出是最终交付物时，使用 18-20 以获得更高质量。
 
-### Subtitle Burn-in
+### 字幕烧录
 
-- Prefer SRT format for simple word subtitles.
-- Use `force_style` with full ASS color format: `&H00FFFFFF` (not `&HFFFFFF`).
-- Always escape Windows paths (`C\:` not `C:`) in the subtitles filter.
-- Vertical video: `font_size: 18`, `max 3 words/cue`, `margin_v: 50`.
-- Horizontal video: `font_size: 22`, `max 6 words/cue`, `margin_v: 40`.
+- 简单的逐词字幕优先使用 SRT 格式。
+- `force_style` 要用完整的 ASS 颜色格式：`&H00FFFFFF`（而不是 `&HFFFFFF`）。
+- 在 subtitles 滤镜中，Windows 路径必须转义（写作 `C\:` 而非 `C:`）。
+- 竖屏视频：`font_size: 18`、每条字幕最多 3 个词、`margin_v: 50`。
+- 横屏视频：`font_size: 22`、每条字幕最多 6 个词、`margin_v: 40`。
 
-### Audio Enhancement Targets
+### 音频增强目标
 
-| Platform | Target LUFS | Loudness Range |
+| 平台 | 目标 LUFS | 响度范围 |
 |----------|-------------|----------------|
-| Social media (TikTok, Reels) | -14 LUFS | 5-7 LU |
-| YouTube | -14 to -16 LUFS | 7-11 LU |
-| Podcast | -16 LUFS | 7-11 LU |
-| Broadcast | -24 LUFS | 7 LU |
+| 社交媒体（TikTok、Reels） | -14 LUFS | 5-7 LU |
+| YouTube | -14 到 -16 LUFS | 7-11 LU |
+| 播客 | -16 LUFS | 7-11 LU |
+| 广播电视 | -24 LUFS | 7 LU |
 
-The `clean_speech` preset targets -16 LUFS with 11 LU range — good for YouTube/social media.
+`clean_speech` 预设的目标是 -16 LUFS、11 LU 范围 —— 适合 YouTube/社交媒体。
 
-### Color Grade Intensity
+### 调色强度
 
-- `intensity: 0.85` — recommended default for cinematic_warm on talking heads
-- `intensity: 0.5` — subtle, barely noticeable
-- `intensity: 1.0` — full effect, may look over-processed on some footage
+- `intensity: 0.85` —— 在口播人像上使用 cinematic_warm 的推荐默认值
+- `intensity: 0.5` —— 微妙，几乎察觉不到
+- `intensity: 1.0` —— 全强度，在某些素材上可能显得过度处理
 
-### Audio Ducking
+### 音频闪避
 
-- Use `sidechaincompress` with speech as the key signal to lower music volume during dialogue.
-- Typical settings: threshold=0.02, ratio=9, attack=200ms, release=500ms.
+- 使用 `sidechaincompress`，以人声作为触发信号，在对白期间压低音乐音量。
+- 典型参数：threshold=0.02、ratio=9、attack=200ms、release=500ms。
 
-### Concatenation
+### 拼接
 
-- Use the concat demuxer (`-f concat -safe 0`) for same-codec segments.
-- For mixed codecs or different resolutions, re-encode all segments first.
+- 对同编码的片段使用 concat 解复用器（`-f concat -safe 0`）。
+- 若编码格式混杂或分辨率不同，先把所有片段重编码。
 
-## Quality Checklist
+## 质量检查清单
 
-- [ ] Output plays without artifacts on desktop and mobile
-- [ ] Audio and video remain in sync after processing
-- [ ] Subtitles are in the bottom 20% of frame, never covering the face
-- [ ] Audio loudness is within target range for the platform
-- [ ] Enhancement is visible but natural — skin tones look healthy, not orange
-- [ ] No audio clipping or silence gaps at cut points
-- [ ] File size is reasonable for the target platform
+- [ ] 输出在桌面端与移动端播放均无画面瑕疵
+- [ ] 处理之后音画仍然同步
+- [ ] 字幕位于画面底部 20% 区域，绝不遮挡人脸
+- [ ] 音频响度落在目标平台的区间内
+- [ ] 增强效果可见但自然 —— 肤色健康，不发橙
+- [ ] 剪切点上没有音频削波或静音断层
+- [ ] 文件体积对目标平台而言合理

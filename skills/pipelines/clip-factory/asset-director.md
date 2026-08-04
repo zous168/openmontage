@@ -1,61 +1,61 @@
-# Asset Director - Clip Factory Pipeline
+# 素材导演 —— Clip Factory 管线
 
-## When To Use
+## 何时使用
 
-This stage builds the shared visual and audio kit for the entire clip batch. The key is reuse, not bespoke design per clip.
+本阶段为整批片段构建共享的视觉与音频套件。关键是复用，而不是逐条片段做定制设计。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Clip plans and rankings |
-| Tools | `subtitle_gen`, `audio_enhance` | Batch-ready subtitles and audio cleanup |
-| Playbook | Active style playbook | Subtitle and overlay consistency |
+| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 片段方案与排序 |
+| 工具 | `subtitle_gen`、`audio_enhance` | 适配批量的字幕与音频清理 |
+| Playbook | 当前生效的风格 playbook | 字幕与叠加层的一致性 |
 
-## Process
+## 流程
 
-### 1. Build Shared Assets First
+### 1. 先做共享素材
 
-Prefer reusable assets over per-clip reinvention:
+优先做可复用素材，而不是逐条片段重新发明：
 
-- one subtitle style system,
-- one hook text treatment,
-- one lower-third treatment,
-- one watermark / brand frame,
-- one CTA / end-tag treatment if needed.
+- 一套字幕样式体系，
+- 一种钩子文字处理，
+- 一种下三分之一条处理，
+- 一个水印 / 品牌画框，
+- 若需要，一种 CTA / 片尾标签处理。
 
-### 1b. Hero Scene Sample (Mandatory)
+### 1b. 主场景样片（强制）
 
-Before batch asset generation:
-1. Identify the hero scene (the visual peak of the batch)
-2. Generate ONE sample visual asset for that scene
-3. Present it: "This is the visual direction for the most important clip. Does this match what you're imagining? I'll generate the rest in this style."
-4. Wait for approval before proceeding to batch generation
+批量生成素材之前：
+1. 找出主场景（这一批的视觉高点）
+2. 为那个场景生成**一个**样本视觉素材
+3. 呈现它："这是最重要那条片段的视觉方向。这符合你的设想吗？我会按这个风格生成其余的。"
+4. 在进入批量生成之前等待批准
 
-This prevents the most expensive mistake: generating 10+ assets in a direction the user doesn't like.
+这可以避免代价最高的错误：朝着用户并不喜欢的方向生成了 10 多个素材。
 
-### 2. Generate Per-Clip Subtitles
+### 2. 生成逐片段的字幕
 
-Each approved clip needs its own subtitle asset, timed from clip start rather than source start. This timestamp rebasing is critical.
+每条获选片段都需要它自己的字幕资源，时间基准要从片段开头算起，而不是从源素材开头算起。这个时间戳重定基准至关重要。
 
-Store clip-relative timing details in `asset_manifest.metadata.subtitle_map`.
+把片段相对时序的细节存进 `asset_manifest.metadata.subtitle_map`。
 
-### 3. Normalize Audio Consistently
+### 3. 一致地做音频归一化
 
-Use `audio_enhance` across the clip set so the batch feels like one series:
+在整批片段上使用 `audio_enhance`，让这一批感觉像同一个系列：
 
-- similar loudness,
-- similar noise floor,
-- similar vocal clarity.
+- 相近的响度，
+- 相近的本底噪声，
+- 相近的人声清晰度。
 
-### 4. Keep Hook Assets Lightweight
+### 4. 让钩子素材保持轻量
 
-Most hook overlays should be text-first and template-based. Do not spend time or budget generating bespoke art unless the batch truly benefits.
+多数钩子叠加层应当以文字为先、基于模板。除非这一批确实能因此受益，否则不要花时间或预算去生成定制美术。
 
-### 5. Use Metadata For Batch Structure
+### 5. 用元数据表达批次结构
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `shared_assets`
 - `subtitle_map`
@@ -63,55 +63,55 @@ Recommended metadata keys:
 - `clip_asset_index`
 - `style_tokens`
 
-### 6. Quality Gate
+### 6. 质量门
 
-- every clip has subtitles,
-- every clip has a clean audio asset or verified source audio path,
-- shared assets are referenced consistently,
-- the asset count stays practical for the batch size.
+- 每条片段都有字幕，
+- 每条片段都有干净的音频素材或经过验证的源音频路径，
+- 共享素材被一致地引用，
+- 素材数量对这个批次规模而言仍然实用。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during asset generation:
-- Use `web_search` to verify visual accuracy of subjects (e.g. what does this building actually look like?)
-- Use `web_search` to find reference images before generating illustrations
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在素材生成过程中遇到不确定之处：
+- 用 `web_search` 核实对象的视觉准确性（例如：这栋建筑实际上长什么样？）
+- 在生成插画之前用 `web_search` 找参考图
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Visual accuracy matters. If the script mentions a specific place, person, or object,
-verify what it actually looks like before generating images. Don't rely on
-the AI model's training data — it may be wrong or outdated.
+视觉准确性很重要。若脚本提到某个具体的地点、人物或物件，
+先核实它实际长什么样，再去生成图像。不要依赖
+AI 模型的训练数据 —— 它可能是错的或过时的。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Forgetting to rebase subtitle timing per clip.
-- Overdesigning hook assets so the batch becomes inconsistent.
-- Normalizing some clips and not others.
-- Treating a 10-clip batch like 10 unrelated projects.
+- 忘了给每条片段的字幕做时间重定基准。
+- 把钩子素材设计得过度，导致这一批变得不一致。
+- 只对部分片段做了归一化。
+- 把一批 10 条片段当成 10 个互不相干的项目来做。
 
 
-## When You Do Not Know How
+## 当你不知道该怎么做时
 
-If you encounter a generation technique, provider behavior, or prompting pattern you are unsure about:
+若你遇到一种拿不准的生成技法、provider 行为或提示词范式：
 
-1. **Search the web** for current best practices — models and APIs change frequently, and the agent's training data may be stale
-2. **Check `.agents/skills/`** for existing Layer 3 knowledge (provider-specific prompting guides, API patterns)
-3. **If neither helps**, write a project-scoped skill at `projects/<project-name>/skills/<name>.md` documenting what you learned
-4. **Reference source URLs** in the skill so the knowledge is traceable
-5. **Log it** in the decision log: `category: "capability_extension"`, `subject: "learned technique: <name>"`
+1. **上网检索**当前最佳实践 —— 模型和 API 变动频繁，agent 的训练数据可能已经过时
+2. **查 `.agents/skills/`** 中已有的 Layer 3 知识（provider 专属提示词指南、API 范式）
+3. **若两者都无济于事**，在 `projects/<project-name>/skills/<name>.md` 写一份项目作用域的技能，记录你学到的东西
+4. 在技能中**引用来源 URL**，让知识可追溯
+5. 在 decision log 中**记录它**：`category: "capability_extension"`、`subject: "learned technique: <name>"`
 
-This is especially important for:
-- **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
-- **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
-- **Remotion component patterns** — new composition techniques emerge as the framework evolves
+这对以下情况尤其重要：
+- **视频生成提示词** —— 模型响应的是随版本变化的特定词汇
+- **图像模型参数** —— FLUX、GPT Image、Imagen 的最优设置各不相同且在演进
+- **音频 provider 的怪癖** —— 音色克隆、音乐生成和 TTS 各有其模型专属的最佳实践
+- **Remotion 组件范式** —— 随框架演进会出现新的合成技法
 
-Do not rely on stale knowledge. When in doubt, search first.
+不要依赖过时的知识。拿不准就先检索。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

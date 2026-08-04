@@ -1,73 +1,73 @@
-# Sora 2 — Prompting Guide
+# Sora 2 —— 提示词指南
 
-> Source: [OpenAI Sora 2 Cookbook](https://developers.openai.com/cookbook/examples/sora/sora2_prompting_guide)
-> For universal vocabulary, see: `skills/creative/video-gen-prompting.md`
+> 来源：[OpenAI Sora 2 Cookbook](https://developers.openai.com/cookbook/examples/sora/sora2_prompting_guide)
+> 通用词汇表见：`skills/creative/video-gen-prompting.md`
 
-**Word count:** Sora 2 plateaus around 100–250 words. Past 250, additional detail rarely improves output.
+**字数：** Sora 2 在 100–250 词左右收益趋平。超过 250 词后，再加细节很少能改善输出。
 
-## Sora-Specific Prompt Template
+## Sora 专属提示词模板
 
-Sora responds best to a structured format with prose + cinematography block + action beats:
+Sora 对"散文 + 摄影参数块 + 动作节拍"这种结构化格式响应最好：
 
 ```
-[Prose scene description — characters, costumes, scenery, weather, details.
- Be as descriptive as possible to match your vision.]
+[散文式场景描述 —— 角色、服装、景物、天气、细节。
+ 尽可能描述得具体，以贴合你的构想。]
 
 Cinematography:
-Camera shot: [framing and angle]
-Lens: [focal length, type]
-Lighting: [key, fill, rim, practical sources with color temp]
-Mood: [overall tone]
+Camera shot: [构图与角度]
+Lens: [焦距、类型]
+Lighting: [主光、补光、轮廓光、带色温的实用光源]
+Mood: [整体基调]
 
 Actions:
-- [Beat 1: specific gesture or movement]
-- [Beat 2: another distinct beat]
-- [Beat 3: reaction or dialogue]
+- [节拍 1：具体的手势或动作]
+- [节拍 2：另一个明确的节拍]
+- [节拍 3：反应或对白]
 
 Dialogue:
-[Short natural lines, kept brief for clip length]
+[简短自然的台词，控制在片段长度以内]
 ```
 
-## Advanced Optional Fields
+## 进阶可选字段
 
-Sora uniquely responds to these production-level details that most models ignore:
+Sora 对这些制作级细节有独特响应，而多数模型会忽略它们：
 
-| Field | Example |
+| 字段 | 示例 |
 |-------|---------|
-| **Lens spec** | "40mm spherical", "85mm", "Anamorphic 2.0x" |
-| **Filtration** | "Black Pro-Mist 1/4", "slight CPL rotation" |
-| **Grade / palette** | "Warm Kodak-inspired grade", "teal-and-orange LUT" |
-| **Film stock emulation** | "16mm black-and-white", "35mm photochemical contrast" |
-| **Diegetic sound** | "faint rail screech, rain patters window, clock ticks" |
-| **Wardrobe** | "navy coat, sleeves rolled, suspenders loose" |
-| **Finishing** | "fine-grain overlay, mild halation, gate weave, soft vignette" |
-| **Shutter** | "180° shutter angle" |
-| **Playback speed** | "speed ramp from 1x to 0.25x mid-shot", "stop-motion staccato", "time-reversed exhale" |
-| **Lens distortion** | "fisheye barrel distortion at the edges", "subtle barrel curvature on straight lines" |
-| **Focus mode** | "rack focus from foreground bottle to background figure", "deep focus, FG to BG sharp" |
+| **镜头规格** | "40mm spherical"、"85mm"、"Anamorphic 2.0x" |
+| **滤镜** | "Black Pro-Mist 1/4"、"slight CPL rotation" |
+| **调色 / 配色** | "Warm Kodak-inspired grade"、"teal-and-orange LUT" |
+| **胶片模拟** | "16mm black-and-white"、"35mm photochemical contrast" |
+| **有源声** | "faint rail screech, rain patters window, clock ticks" |
+| **服装** | "navy coat, sleeves rolled, suspenders loose" |
+| **后期收尾** | "fine-grain overlay, mild halation, gate weave, soft vignette" |
+| **快门** | "180° shutter angle" |
+| **播放速度** | "speed ramp from 1x to 0.25x mid-shot"、"stop-motion staccato"、"time-reversed exhale" |
+| **镜头畸变** | "fisheye barrel distortion at the edges"、"subtle barrel curvature on straight lines" |
+| **对焦模式** | "rack focus from foreground bottle to background figure"、"deep focus, FG to BG sharp" |
 
-## What Sora Does Differently
+## Sora 的不同之处
 
-- **Prose-first**: Write a rich paragraph, then add technical blocks. Don't lead with camera specs.
-- **Character references**: Can lock onto up to 2 uploaded character IDs via API.
-- **Dialogue sync**: Short lines work. Complex multi-character dialogue does not.
-- **Edit commands**: "Same shot, switch to 85mm" or "Same lighting, new palette: teal, sand, rust" — Sora supports iterative refinement on existing generations.
-- **Creative freedom**: Shorter prompts → more creative latitude. Longer → more control.
+- **散文先行**：先写一段丰富的文字，再加技术块。不要一上来就写相机参数。
+- **角色参照**：可通过 API 锁定最多 2 个已上传的角色 ID。
+- **对白同步**：短句有效。复杂的多角色对白不行。
+- **编辑指令**："Same shot, switch to 85mm" 或 "Same lighting, new palette: teal, sand, rust" —— Sora 支持在已有生成结果上迭代精修。
+- **创作自由度**：提示词越短 → 创作余地越大。越长 → 控制力越强。
 
-## Color Palette Technique
+## 配色技法
 
-Name 3-5 anchor colors instead of vague "warm tones":
-- "Amber, cream, walnut brown" (vintage warmth)
-- "Teal, sand, rust" (coastal desert)
-- "Cool blues with warm tungsten accents" (noir)
+点名 3-5 个锚点颜色，而不是含糊的 "warm tones"：
+- "Amber, cream, walnut brown"（复古暖调）
+- "Teal, sand, rust"（海岸沙漠）
+- "Cool blues with warm tungsten accents"（黑色电影）
 
-## Sora API Parameters (cannot be set in prompt)
+## Sora API 参数（无法在提示词中设置）
 
-- `model`: `sora-2` or `sora-2-pro`
-- `size`: 720x1280, 1280x720, 1080x1920, 1920x1080, 1024x1792, 1792x1024
-- `seconds`: 4, 8, 12, 16, 20
+- `model`：`sora-2` 或 `sora-2-pro`
+- `size`：720x1280、1280x720、1080x1920、1920x1080、1024x1792、1792x1024
+- `seconds`：4、8、12、16、20
 
-## Example
+## 示例
 
 ```
 Style: Hand-painted 2D/3D hybrid animation with soft brush textures,

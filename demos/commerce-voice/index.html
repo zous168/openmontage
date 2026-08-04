@@ -117,73 +117,73 @@
 <body>
   <!-- 切片重组:视频与音频同一批边界(词间隙),视频 -an 静音,声音全走独立 m4a 轨。
        时间线:S1 0 / S2 2.8 / S3 7.6 / S4 10.7 / S5 17.2 / S6 19.5(源 21.4 起,删冗余句) -->
-  <div data-composition-id="root" data-start="0" data-duration="25.5" data-width="1080" data-height="1920">
-    <video id="v1" class="bg-video" src="assets/clips/v1.mp4" data-start="0.0" data-duration="2.6" data-track-index="1" muted playsinline></video>
-    <video id="v2" class="bg-video" src="assets/clips/v2.mp4" data-start="2.8" data-duration="4.8" data-track-index="1" muted playsinline></video>
-    <video id="v3" class="bg-video" src="assets/clips/v3.mp4" data-start="7.6" data-duration="3.0" data-track-index="1" muted playsinline></video>
-    <video id="v4" class="bg-video" src="assets/clips/v4.mp4" data-start="10.7" data-duration="6.5" data-track-index="1" muted playsinline></video>
-    <video id="v5" class="bg-video" src="assets/clips/v5.mp4" data-start="17.2" data-duration="2.2" data-track-index="1" muted playsinline></video>
-    <video id="v6" class="bg-video" src="assets/clips/v6.mp4" data-start="19.5" data-duration="6.0" data-track-index="1" muted playsinline></video>
+  <div data-hf-id="hf-xmyn" data-composition-id="root" data-start="0" data-duration="25.5" data-width="1080" data-height="1920">
+    <video data-hf-id="hf-ovr5" id="v1" class="bg-video" src="assets/clips/v1.mp4" data-start="0.0" data-duration="2.6" data-track-index="1" muted playsinline></video>
+    <video data-hf-id="hf-v3hj" id="v2" class="bg-video" src="assets/clips/v2.mp4" data-start="2.8" data-duration="4.8" data-track-index="1" muted playsinline></video>
+    <video data-hf-id="hf-y1wh" id="v3" class="bg-video" src="assets/clips/v3.mp4" data-start="7.6" data-duration="3.0" data-track-index="1" muted playsinline></video>
+    <video data-hf-id="hf-0lzi" id="v4" class="bg-video" src="assets/clips/v4.mp4" data-start="10.7" data-duration="6.5" data-track-index="1" muted playsinline></video>
+    <video data-hf-id="hf-f8b9" id="v5" class="bg-video" src="assets/clips/v5.mp4" data-start="17.2" data-duration="2.2" data-track-index="1" muted playsinline></video>
+    <video data-hf-id="hf-cz4s" id="v6" class="bg-video" src="assets/clips/v6.mp4" data-start="19.5" data-duration="6.0" data-track-index="1" muted playsinline></video>
 
-    <audio id="a1" data-start="0.0" data-duration="2.6" data-track-index="2" src="assets/clips/v1.m4a" data-volume="1"></audio>
-    <audio id="a2" data-start="2.8" data-duration="4.8" data-track-index="2" src="assets/clips/v2.m4a" data-volume="1"></audio>
-    <audio id="a3" data-start="7.6" data-duration="3.0" data-track-index="2" src="assets/clips/v3.m4a" data-volume="1"></audio>
-    <audio id="a4" data-start="10.7" data-duration="6.5" data-track-index="2" src="assets/clips/v4.m4a" data-volume="1"></audio>
-    <audio id="a5" data-start="17.2" data-duration="2.2" data-track-index="2" src="assets/clips/v5.m4a" data-volume="1"></audio>
-    <audio id="a6" data-start="19.5" data-duration="6.0" data-track-index="2" src="assets/clips/v6.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-jijl" id="a1" data-start="0.0" data-duration="2.6" data-track-index="2" src="assets/clips/v1.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-yxyj" id="a2" data-start="2.8" data-duration="4.8" data-track-index="2" src="assets/clips/v2.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-hb85" id="a3" data-start="7.6" data-duration="3.0" data-track-index="2" src="assets/clips/v3.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-aa8w" id="a4" data-start="10.7" data-duration="6.5" data-track-index="2" src="assets/clips/v4.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-7zy3" id="a5" data-start="17.2" data-duration="2.2" data-track-index="2" src="assets/clips/v5.m4a" data-volume="1"></audio>
+    <audio data-hf-id="hf-qh2q" id="a6" data-start="19.5" data-duration="6.0" data-track-index="2" src="assets/clips/v6.m4a" data-volume="1"></audio>
 
-    <div id="shade"></div>
-    <div id="brandbar">主播进阶课 · 第 3 讲</div>
+    <div data-hf-id="hf-pwjg" id="shade"></div>
+    <div data-hf-id="hf-rzde" id="brandbar">主播进阶课 · 第 3 讲</div>
 
     <!-- 字幕(时间戳 = 转录词间隙) -->
-    <div id="cap1" class="caption clip" data-start="0.1" data-duration="2.4" data-track-index="3">拉开主播差距的,<br>真是<span class="hl">话术</span>吗?</div>
-    <div id="cap2" class="caption clip" data-start="2.9" data-duration="4.6" data-track-index="3">话术框架,只是<span class="hl">最基础</span>的技能</div>
-    <div id="cap3" class="caption clip" data-start="7.7" data-duration="2.8" data-track-index="3">真正拉开差距的,<br>是<span class="hl">穿透力</span>和<span class="hl">感染力</span></div>
-    <div id="cap4" class="caption clip" data-start="10.9" data-duration="2.9" data-track-index="3">非常重要的<span class="hl">前提</span></div>
-    <div id="cap5" class="caption clip" data-start="13.9" data-duration="3.2" data-track-index="3">建立在对<span class="hl">自家话术绝对熟悉</span>之上</div>
-    <div id="cap6" class="caption clip" data-start="17.3" data-duration="1.9" data-track-index="3">首先,你得有自己的<span class="hl">话术框架</span></div>
+    <div data-hf-id="hf-0rjt" id="cap1" class="caption clip" data-start="0.1" data-duration="2.4" data-track-index="3">拉开主播差距的,<br data-hf-id="hf-x5px">真是<span data-hf-id="hf-xx61" class="hl">话术</span>吗?</div>
+    <div data-hf-id="hf-1nie" id="cap2" class="caption clip" data-start="2.9" data-duration="4.6" data-track-index="3">话术框架,只是<span data-hf-id="hf-cxtl" class="hl">最基础</span>的技能</div>
+    <div data-hf-id="hf-7s31" id="cap3" class="caption clip" data-start="7.7" data-duration="2.8" data-track-index="3">真正拉开差距的,<br data-hf-id="hf-rsrt">是<span data-hf-id="hf-14ec" class="hl">穿透力</span>和<span data-hf-id="hf-9t7s" class="hl">感染力</span></div>
+    <div data-hf-id="hf-ngti" id="cap4" class="caption clip" data-start="10.9" data-duration="2.9" data-track-index="3">非常重要的<span data-hf-id="hf-z1jo" class="hl">前提</span></div>
+    <div data-hf-id="hf-h8d9" id="cap5" class="caption clip" data-start="13.9" data-duration="3.2" data-track-index="3">建立在对<span data-hf-id="hf-hypr" class="hl">自家话术绝对熟悉</span>之上</div>
+    <div data-hf-id="hf-hq1f" id="cap6" class="caption clip" data-start="17.3" data-duration="1.9" data-track-index="3">首先,你得有自己的<span data-hf-id="hf-his1" class="hl">话术框架</span></div>
 
     <!-- 核心卡 S3 -->
-    <div id="focus1" class="focus-card clip" data-start="7.6" data-duration="3.0" data-track-index="4">
-      <div class="card-shade"></div>
-      <div class="line1">语言<span class="hl">穿透力</span><br>×<br>镜头<span class="hl">感染力</span></div>
-      <div class="line2">拉开差距的关键</div>
-      <div id="shine"></div>
+    <div data-hf-id="hf-us30" id="focus1" class="focus-card clip" data-start="7.6" data-duration="3.0" data-track-index="4">
+      <div data-hf-id="hf-jwm2" class="card-shade"></div>
+      <div data-hf-id="hf-584z" class="line1">语言<span data-hf-id="hf-mgu4" class="hl">穿透力</span><br data-hf-id="hf-szow">×<br data-hf-id="hf-sldv">镜头<span data-hf-id="hf-gj6o" class="hl">感染力</span></div>
+      <div data-hf-id="hf-ti7l" class="line2">拉开差距的关键</div>
+      <div data-hf-id="hf-svny" id="shine"></div>
     </div>
 
     <!-- 结尾对比卡 S6 -->
-    <div id="endcard" class="end-card clip" data-start="19.6" data-duration="5.9" data-track-index="4">
-      <div class="vs-shade"></div>
-      <div id="halo"></div>
-      <div class="end-row good"><span class="tag">脑里有话术</span><span>→</span><span>境界天花板</span></div>
-      <div class="end-row bad"><span class="tag">脑里没话术</span><span>→</span><span>画蛇添足</span></div>
+    <div data-hf-id="hf-rqcr" id="endcard" class="end-card clip" data-start="19.6" data-duration="5.9" data-track-index="4">
+      <div data-hf-id="hf-7by1" class="vs-shade"></div>
+      <div data-hf-id="hf-tyg7" id="halo"></div>
+      <div data-hf-id="hf-14rf" class="end-row good"><span data-hf-id="hf-6tr5" class="tag">脑里有话术</span><span data-hf-id="hf-p70p">→</span><span data-hf-id="hf-iscp">境界天花板</span></div>
+      <div data-hf-id="hf-7bgd" class="end-row bad"><span data-hf-id="hf-ksdl" class="tag">脑里没话术</span><span data-hf-id="hf-v3ct">→</span><span data-hf-id="hf-icex">画蛇添足</span></div>
     </div>
 
     <!-- 画中画 -->
-    <div id="pip1" class="pip pip-l3 clip" data-start="3.0" data-duration="4.4" data-track-index="4">
-      <div class="pip-title">话术框架</div>
-      <div class="pip-sub">基础技能 · 结构 · 套路</div>
-      <div class="bars">
-        <div class="bar"><i style="width:55%"></i></div>
-        <div class="bar"><i style="width:78%"></i></div>
-        <div class="bar"><i style="width:64%"></i></div>
+    <div data-hf-id="hf-0gvr" id="pip1" class="pip pip-l3 clip" data-start="3.0" data-duration="4.4" data-track-index="4">
+      <div data-hf-id="hf-toti" class="pip-title">话术框架</div>
+      <div data-hf-id="hf-ax72" class="pip-sub">基础技能 · 结构 · 套路</div>
+      <div data-hf-id="hf-umx2" class="bars">
+        <div data-hf-id="hf-ufsv" class="bar"><i data-hf-id="hf-tn5m" style="width:55%"></i></div>
+        <div data-hf-id="hf-c51b" class="bar"><i data-hf-id="hf-kq1r" style="width:78%"></i></div>
+        <div data-hf-id="hf-bqqa" class="bar"><i data-hf-id="hf-amuq" style="width:64%"></i></div>
       </div>
     </div>
-    <div id="pip2" class="pip pip-l2 ladder clip" data-start="11.0" data-duration="6.0" data-track-index="4">
-      <div class="pip-title">熟悉度阶梯</div>
-      <div class="pip-sub">穿透力与感染力的地基</div>
-      <div class="bars">
-        <div class="bar"><i style="width:30%"></i></div>
-        <div class="bar"><i style="width:52%"></i></div>
-        <div class="bar"><i style="width:76%"></i></div>
-        <div class="bar"><i style="width:100%"></i></div>
+    <div data-hf-id="hf-1fxa" id="pip2" class="pip pip-l2 ladder clip" data-start="11.0" data-duration="6.0" data-track-index="4">
+      <div data-hf-id="hf-w0rb" class="pip-title">熟悉度阶梯</div>
+      <div data-hf-id="hf-l5zi" class="pip-sub">穿透力与感染力的地基</div>
+      <div data-hf-id="hf-rgy2" class="bars">
+        <div data-hf-id="hf-bcf9" class="bar"><i data-hf-id="hf-m8f7" style="width:30%"></i></div>
+        <div data-hf-id="hf-e4kg" class="bar"><i data-hf-id="hf-xbkb" style="width:52%"></i></div>
+        <div data-hf-id="hf-dq9f" class="bar"><i data-hf-id="hf-yq0t" style="width:76%"></i></div>
+        <div data-hf-id="hf-dbye" class="bar"><i data-hf-id="hf-3jld" style="width:100%"></i></div>
       </div>
     </div>
 
     <!-- 贴纸 -->
-    <div id="st1" class="sticker clip" data-start="0.3" data-duration="2.0" data-track-index="5">?</div>
-    <div id="st2" class="sticker clip" data-start="17.5" data-duration="1.7" data-track-index="5">框架</div>
-    <div id="st3" class="sticker clip" data-start="24.3" data-duration="1.1" data-track-index="5">✕</div>
+    <div data-hf-id="hf-x9hq" id="st1" class="sticker clip" data-start="0.3" data-duration="2.0" data-track-index="5">?</div>
+    <div data-hf-id="hf-lr8m" id="st2" class="sticker clip" data-start="17.5" data-duration="1.7" data-track-index="5">框架</div>
+    <div data-hf-id="hf-wyb8" id="st3" class="sticker clip" data-start="24.3" data-duration="1.1" data-track-index="5">✕</div>
 
     <script>
       window.__timelines = window.__timelines || {};
@@ -221,7 +221,7 @@
       tl.fromTo('#st3', { scale: 0.2, opacity: 0, rotate: -20 }, { scale: 1, opacity: 1, rotate: 8, duration: 0.45, ease: 'elastic.out(1, 0.6)' }, 24.35);
 
       // ---- 片段切换:尾淡出 → 黑场(词间隙)→ 首淡入,全部窗口内,不跨 data-start ----
-      tl.to('#v1', { opacity: 0, duration: 0.2, ease: 'power1.in' }, 2.4);
+      tl.to('#v1', { duration: 0.2, ease: "none", opacity: 1 }, 2.4);
       tl.fromTo('#v2', { opacity: 0 }, { opacity: 1, duration: 0.2, ease: 'power1.out' }, 2.8);
       tl.to('#v2', { opacity: 0, duration: 0.2, ease: 'power1.in' }, 7.4);
       tl.set('#v2', { opacity: 0 }, 7.6);

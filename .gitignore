@@ -54,6 +54,7 @@ pexels_video_*.mp4
 
 # Scratch/debug scripts
 scratch/
+_drive_pipeline*
 
 # Internal docs (strategy, handoffs, playbooks — not shipped)
 internal/
@@ -104,6 +105,9 @@ demos/*/out/
 demos/*/assets/clips/
 demos/*/assets/*.mp4
 demos/*/assets/*.m4a
+demos/**/.hyperframes/
+demos/**/.thumbnails/
+demos/**/.waveform-cache/
 
 # 取证分析快照(只读工具的基线数据)
 _forensics_store/

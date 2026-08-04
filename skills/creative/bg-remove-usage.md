@@ -1,113 +1,113 @@
-# Background Removal Usage for OpenMontage
+# OpenMontage 中的背景移除用法
 
-> Sources: rembg library documentation, U2Net paper (Qin et al. 2020), IS-Net paper
-> (Qin et al. 2022), OpenMontage `tools/bg_remove.py` implementation
+> 资料来源：rembg 库文档、U2Net 论文（Qin et al. 2020）、IS-Net 论文
+> （Qin et al. 2022）、OpenMontage `tools/bg_remove.py` 的实现
 
-## Quick Reference Card
+## 速查卡
 
 ```
-DEFAULT MODEL:    u2net (general purpose, fast)
-FOR PEOPLE:       u2net_human_seg (optimized for human silhouettes)
-FINE EDGES:       Enable alpha_matting (hair, fur, leaves)
-OUTPUT:           Transparent PNG by default; set bg_color for solid replacement
-RUNTIME:          ~1-3s per image (CPU), <0.5s (GPU with onnxruntime-gpu)
-INSTALL:          pip install rembg (CPU) | pip install rembg[gpu] (CUDA)
+默认模型：       u2net（通用，速度快）
+用于人物：       u2net_human_seg（针对人体轮廓优化）
+精细边缘：       启用 alpha_matting（头发、毛发、树叶）
+输出：           默认为透明 PNG；设置 bg_color 可换成纯色背景
+运行时间：       每张图约 1-3 秒（CPU），<0.5 秒（GPU 配 onnxruntime-gpu）
+安装：           pip install rembg（CPU） | pip install rembg[gpu]（CUDA）
 ```
 
-## When to Use bg_remove
+## 何时使用 bg_remove
 
-Background removal is an **asset-prep** step. Use it before the compose stage.
+背景移除属于**素材准备**步骤。在 compose 阶段之前使用它。
 
-- **Product demos / e-commerce videos** -- isolate a product on a clean background
-- **Compositing** -- layer a speaker over generated backgrounds or diagrams
-- **Thumbnail generation** -- clean cutouts for YouTube thumbnails
-- **Green-screen replacement** -- achieve green-screen results without an actual green screen
-- **B-roll preparation** -- clean up raw photos for overlay use
+- **产品演示 / 电商视频** —— 把产品从干净背景中抠出来
+- **合成** —— 把讲述者叠在生成的背景或图表之上
+- **封面图制作** —— 为 YouTube 封面做干净的抠图
+- **绿幕替换** —— 不需要真绿幕也能达到绿幕效果
+- **B-roll 准备** —— 清理原始照片以便作叠加使用
 
-## Model Selection Guide
+## 模型选择指南
 
-| Model | Best For | Speed | Notes |
+| 模型 | 适用于 | 速度 | 备注 |
 |-------|----------|-------|-------|
-| `u2net` | General objects, products, scenes | Fast | Default; good all-rounder |
-| `u2net_human_seg` | People, portraits, speakers | Fast | More accurate masks for human silhouettes |
-| `isnet-general-use` | Complex edges, hair, fur | Slower | Higher detail on fine boundaries |
+| `u2net` | 通用物体、产品、场景 | 快 | 默认；全能型 |
+| `u2net_human_seg` | 人物、肖像、讲述者 | 快 | 对人体轮廓的遮罩更准确 |
+| `isnet-general-use` | 复杂边缘、头发、毛发 | 较慢 | 在精细边界上细节更好 |
 
-**Decision rule:** If the subject is a person, use `u2net_human_seg`. If the subject has intricate edges (hair, fur, foliage) and you need maximum quality, use `isnet-general-use`. Otherwise, use the default `u2net`.
+**决策规则：** 若主体是人，用 `u2net_human_seg`。若主体有复杂边缘（头发、毛发、枝叶）且你需要最高质量，用 `isnet-general-use`。其他情况用默认的 `u2net`。
 
-## Alpha Matting
+## Alpha 抠图（Alpha Matting）
 
-Alpha matting refines the edge mask by computing soft transparency at boundaries. It produces more natural edges but costs approximately 2x processing time.
+Alpha 抠图通过在边界处计算柔和的透明度来细化边缘遮罩。它能产生更自然的边缘，但处理时间大约翻倍。
 
-| Subject Type | Alpha Matting | Reason |
+| 主体类型 | Alpha 抠图 | 理由 |
 |-------------|---------------|--------|
-| Hair, fur, feathers | Enable | Fine semi-transparent strands need soft edges |
-| Leaves, trees, grass | Enable | Irregular organic boundaries benefit from matting |
-| Products, devices | Disable | Clean geometric edges; matting adds no value |
-| Text, logos, shapes | Disable | Hard edges are correct for these subjects |
+| 头发、毛发、羽毛 | 启用 | 精细的半透明发丝需要柔和边缘 |
+| 树叶、树木、草地 | 启用 | 不规则的有机边界能从抠图中受益 |
+| 产品、设备 | 关闭 | 边缘是干净的几何形状；抠图没有价值 |
+| 文字、Logo、形状 | 关闭 | 这类主体本就应该是硬边缘 |
 
-## Common Workflows
+## 常见工作流
 
-### 1. Speaker Cutout for Compositing
+### 1. 讲述者抠图用于合成
 
-Extract a speaker from their background and layer over a diagram or slide.
+把讲述者从背景中抠出来，叠到图表或幻灯片之上。
 
 ```
 bg_remove(input_path="speaker.png", model="u2net_human_seg")
-  --> speaker_nobg.png (transparent)
-  --> compose over diagram/slide in compose stage
+  --> speaker_nobg.png（透明）
+  --> 在 compose 阶段叠加到图表/幻灯片上
 ```
 
-### 2. Product Isolation
+### 2. 产品单独抠出
 
-Isolate a product and optionally place on a brand-colored background.
+抠出产品，并可选地放到品牌色背景上。
 
 ```
 bg_remove(input_path="product.jpg", model="u2net")
-  --> product_nobg.png (transparent)
+  --> product_nobg.png（透明）
 
-# Or with brand background:
+# 或者带品牌背景：
 bg_remove(input_path="product.jpg", model="u2net", bg_color="#FFFFFF")
-  --> product_nobg.png (white background)
+  --> product_nobg.png（白色背景）
 ```
 
-### 3. Thumbnail Prep
+### 3. 封面图准备
 
-Remove background, upscale, then compose with text overlays.
+移除背景，放大，然后与文字叠加层合成。
 
 ```
 bg_remove(input_path="subject.png", model="u2net_human_seg", alpha_matting=True)
   --> subject_nobg.png
-  --> upscale --> compose with text overlays in compose stage
+  --> 放大 --> 在 compose 阶段与文字叠加层合成
 ```
 
-### 4. Batch Frame Processing
+### 4. 批量帧处理
 
-When preparing multiple frames for a compositing sequence, process all source frames before entering the compose stage.
+为一段合成序列准备多帧时，在进入 compose 阶段之前把所有源帧处理完。
 
 ```
-for each source frame:
+对每一个源帧：
     bg_remove(input_path=frame, model="u2net_human_seg")
     --> frame_nobg.png
-then: compose all transparent frames over background sequence
+然后：把所有透明帧合成到背景序列之上
 ```
 
-## Quality Checklist
+## 质量检查清单
 
-Before moving to the compose stage, verify each bg_remove output:
+进入 compose 阶段之前，逐一核对每个 bg_remove 输出：
 
-- [ ] **Edge quality is clean** -- no halo artifacts around the subject
-- [ ] **Fine details preserved** -- hair, fingers, and thin features are intact
-- [ ] **Transparency is complete** -- no residual background bleed in transparent areas
-- [ ] **Subject integrity** -- no parts of the subject were incorrectly removed
-- [ ] **Compositing test** -- when layered over the target background, the subject blends naturally
+- [ ] **边缘质量干净** —— 主体周围没有光晕伪影
+- [ ] **精细细节得以保留** —— 头发、手指和细小特征完好
+- [ ] **透明度彻底** —— 透明区域内没有残留的背景渗色
+- [ ] **主体完整** —— 主体没有任何部分被错误移除
+- [ ] **合成测试** —— 叠到目标背景上时，主体融合自然
 
-## Applying to OpenMontage
+## 应用到 OpenMontage
 
-When using the `bg_remove` tool in asset preparation:
+在素材准备阶段使用 `bg_remove` 工具时：
 
-1. **Use `u2net_human_seg` for any frame containing people** -- it produces tighter masks around human silhouettes than the general model
-2. **Enable `alpha_matting` only for subjects with complex edges** like hair, fur, or foliage -- skip it for clean-edged subjects to save processing time
-3. **For compositing workflows, output transparent PNG** (omit `bg_color`) and layer in the compose stage -- this preserves maximum flexibility
-4. **For solid-background replacements, set `bg_color`** to match the playbook's background color token -- keeps outputs consistent with the project style
-5. **Process source frames BEFORE the compose stage** -- bg_remove is an asset-prep step, not a compose-time operation
-6. **Check output edges at full resolution before compositing** -- halo artifacts and edge bleed are visible in final video and must be caught early
+1. **任何含人物的画面都用 `u2net_human_seg`** —— 它在人体轮廓周围产生的遮罩比通用模型更贴合
+2. **只对边缘复杂的主体启用 `alpha_matting`**，比如头发、毛发或枝叶 —— 边缘干净的主体跳过它以节省处理时间
+3. **合成类工作流请输出透明 PNG**（省略 `bg_color`），到 compose 阶段再叠加 —— 这样保留最大灵活性
+4. **需要换成纯色背景时，把 `bg_color` 设为** playbook 背景色 token 的值 —— 保持输出与项目风格一致
+5. **在 compose 阶段之前处理源帧** —— bg_remove 是素材准备步骤，不是合成期的操作
+6. **合成前先在完整分辨率下检查输出边缘** —— 光晕伪影和边缘渗色在成片视频里看得出来，必须尽早发现

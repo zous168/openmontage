@@ -1,69 +1,69 @@
-# Scene Director - Screen Demo Pipeline
+# 场景导演 —— Screen Demo 管线
 
-## When To Use
+## 何时使用
 
-You are planning how the viewer's attention moves through an existing screen capture. The source video already exists; your job is to decide when to stay wide, when to crop in, and when to add minimal guidance.
+你要规划的是：观众的注意力如何在一段既有的屏幕录制中移动。源视频已经存在；你的工作是决定什么时候保持全景、什么时候裁切放大、什么时候加上最低限度的引导。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Script timing and source notes |
-| Tools | `frame_sampler`, `scene_detect` | Extract reference frames and transitions |
-| Playbook | Active style playbook | Overlay style and pacing rules |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 脚本时序与源素材备注 |
+| 工具 | `frame_sampler`、`scene_detect` | 提取参考帧与转场 |
+| Playbook | 当前生效的风格 playbook | 叠加层风格与节奏规则 |
 
-## Process
+## 流程
 
-### 1. Plan Attention, Not Constant Motion
+### 1. 规划注意力，而不是持续运动
 
-Modern screen-demo tools converge on click-led zoom because it reduces random camera motion. Use that principle here:
+现代屏幕演示工具都收敛到「以点击为引导的缩放」，因为这样能减少随机的镜头运动。这里沿用这个原则：
 
-- zoom when the viewer truly needs help reading or locating something,
-- stay steady during comprehension,
-- zoom manually when the key event has no click anchor,
-- reset to a wider context between major steps.
+- 只在观众确实需要帮助阅读或定位时才缩放，
+- 在理解过程中保持稳定，
+- 当关键事件没有点击锚点时，手动缩放，
+- 在主要步骤之间回到更宽的语境。
 
-Use `frame_sampler` for exact reference frames around each key action and store detailed crop notes in `scene_plan.metadata`.
+用 `frame_sampler` 取每个关键操作附近的精确参考帧，并把详细的裁切备注存进 `scene_plan.metadata`。
 
-### 2. Choose Scene Shapes
+### 2. 选择场景形态
 
-Use simple scene types that match the schema:
+使用与 schema 匹配的简单场景类型：
 
-- `screen_recording` for live UI capture sections
-- `text_card` for step labels, title cards, or recap slides
-- `diagram` only when the UI alone cannot explain the concept
-- `transition` sparingly between major workflow phases
+- `screen_recording` 用于实时 UI 录制段落
+- `text_card` 用于步骤标签、标题卡或回顾页
+- `diagram` 仅在光靠 UI 无法解释概念时使用
+- `transition` 在主要工作流阶段之间节制使用
 
-### 3. Plan Crop Strategy In Metadata
+### 3. 在 Metadata 中规划裁切策略
 
-The schema does not have first-class zoom objects, so keep the scene descriptions concise and place the detailed crop plan in `scene_plan.metadata.crop_regions`.
+schema 里没有一等公民的缩放对象，所以要让场景描述保持简洁，把详细的裁切方案放进 `scene_plan.metadata.crop_regions`。
 
-Recommended `crop_regions` fields:
+推荐的 `crop_regions` 字段：
 
 - `section_id`
 - `start_seconds`
 - `end_seconds`
 - `region`
 - `zoom_level`
-- `trigger` (`click_cluster`, `typing`, `result`, `manual_focus`)
+- `trigger`（`click_cluster`、`typing`、`result`、`manual_focus`）
 - `transition_duration`
 - `rationale`
 
-Useful heuristics:
+有用的经验法则：
 
-| UI Element | Zoom Level | Region Sizing | Notes |
+| UI 元素 | 缩放级别 | 区域尺寸 | 备注 |
 |------------|-----------|---------------|-------|
-| Terminal / code | 1.5-2.2x | keep enough surrounding context to orient the viewer |
-| Small button / icon | 2.0-3.0x | show padding so the viewer knows where it lives |
-| Modal / dialog | 1.4-2.0x | capture the full modal, not a partial crop |
-| Full-page result | 1.0-1.3x | show more context before zooming again |
+| 终端 / 代码 | 1.5-2.2x | 保留足够的周边语境，让观众能定位 |
+| 小按钮 / 图标 | 2.0-3.0x | 留出留白，让观众知道它在哪儿 |
+| 模态框 / 对话框 | 1.4-2.0x | 拍全整个模态框，而不是局部裁切 |
+| 整页结果 | 1.0-1.3x | 在再次放大之前展示更多语境 |
 
-### 4. Plan Callouts With Restraint
+### 4. 有节制地规划标注
 
-Document overlay needs in `required_assets` and `metadata.callout_plan`.
+把叠加层需求写进 `required_assets` 和 `metadata.callout_plan`。
 
-Use only the patterns that clarify the action:
+只使用那些能澄清操作的模式：
 
 - `highlight_box`
 - `arrow`
@@ -71,70 +71,70 @@ Use only the patterns that clarify the action:
 - `keystroke_badge`
 - `blur_mask`
 
-Rules:
+规则：
 
-- no more than two attention cues at once,
-- show the cue just before the action,
-- remove it quickly after the action,
-- prefer highlight or zoom; do not stack both unless readability truly demands it.
+- 同时最多两个注意力提示，
+- 提示要在操作之前刚好出现，
+- 操作结束后迅速移除，
+- 优先用高亮**或**缩放；除非可读性真的需要，否则不要两者叠加。
 
-### 5. Plan Speed Treatment
+### 5. 规划变速处理
 
-Mark repetitive segments as either:
+把重复性片段标记为以下之一：
 
 - `speed_up`
 - `cut`
 - `realtime`
 
-Useful visual treatments for sped-up sections:
+加速片段可用的视觉处理：
 
-- progress label,
-- small status text,
-- simple dissolve over the removed wait.
+- 进度标签，
+- 小号状态文字，
+- 在被删掉的等待处做简单叠化。
 
-Do not invent flashy transition behavior for installs, builds, or long typing stretches.
+不要给安装、构建或长段打字发明花哨的转场行为。
 
-### 6. Choose Aspect Ratio Per Segment
+### 6. 逐段选择画幅比
 
-If the whole project targets multiple outputs, note in metadata which scene crops are viable for:
+若整个项目面向多种输出，就在 metadata 中注明哪些场景裁切适用于：
 
 - `16:9`
 - `1:1`
 - `9:16`
 
-If a step cannot survive vertical, say so. The correct answer is sometimes to ship landscape only or create a separate simplified vertical cut.
+若某个步骤扛不住竖屏，就直说。正确答案有时就是「只出横屏」，或者「另做一个简化的竖屏版本」。
 
-### 7. Quality Gate
+### 7. 质量门
 
-**Zoom coherence:**
-- [ ] motion is intentional, not constant
-- [ ] every zoom exists for legibility or orientation
-- [ ] every major section gets a wider re-establishing view
-- [ ] crops do not cut off the relevant text or control
+**缩放连贯性：**
+- [ ] 运动是有意为之，而不是持续不停
+- [ ] 每次缩放都是为了可读性或定位
+- [ ] 每个主要段落都有一次更宽的重新建立视角
+- [ ] 裁切没有切掉相关文字或控件
 
-**Callout coherence:**
-- [ ] every critical action has either a crop or a callout
-- [ ] callouts do not obscure the UI
-- [ ] subtitle and callout zones do not collide
-- [ ] sensitive data has a planned mask
+**标注连贯性：**
+- [ ] 每个关键操作要么有裁切、要么有标注
+- [ ] 标注没有遮挡 UI
+- [ ] 字幕区与标注区不冲突
+- [ ] 敏感数据有规划好的遮罩
 
-**Pacing coherence:**
-- [ ] result moments stay at normal speed
-- [ ] waiting and repetitive typing are compressed or removed
-- [ ] the output duration still matches the brief
+**节奏连贯性：**
+- [ ] 结果时刻保持正常速度
+- [ ] 等待和重复性输入被压缩或删除
+- [ ] 输出时长仍与 brief 相符
 
-## Common Pitfalls
+## 常见陷阱
 
-- Staying zoomed in so long that the viewer loses the interface map.
-- Planning vertical crops for wide UI without admitting they fail.
-- Adding highlight layers everywhere instead of choosing the single clearest cue.
-- Ignoring sensitive data revealed in seemingly minor frames.
+- 放大状态维持太久，观众丢失了对界面的整体地图。
+- 给宽幅 UI 规划竖屏裁切，却不承认它根本不成立。
+- 到处加高亮层，而不是挑出最清晰的那**一个**提示。
+- 忽略了在看似无关紧要的帧里露出的敏感数据。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

@@ -1,161 +1,161 @@
-# Color Grading for Video Production
+# 视频制作中的调色
 
-> Sources: BBC Academy color standards, Filmmaker IQ color science series, DaVinci Resolve
-> color theory (Blackmagic documentation), WCAG 2.1 contrast guidelines, FFmpeg filter
-> documentation, Adobe color accessibility research, Wong (2011) colorblind-safe palette
+> 资料来源：BBC Academy 色彩标准、Filmmaker IQ 色彩科学系列、DaVinci Resolve
+> 色彩理论（Blackmagic 官方文档）、WCAG 2.1 对比度指南、FFmpeg 滤镜
+> 文档、Adobe 色彩无障碍研究、Wong (2011) 色盲友好配色
 
-## Quick Reference Card
+## 速查卡
 
 ```
-PROFILES:       cinematic_warm | cinematic_cool | moody_dark | bright_clean | vintage_film | high_contrast | neutral
-LUT FORMAT:     .cube (3D LUT) — industry standard, FFmpeg lut3d filter
-INTENSITY:      0.6-0.85 for subtle grades, 1.0 for full effect
-SKIN TONE:      Vectorscope should fall on the "skin tone line" (~123° on I-line)
-COLOR SPACE:    BT.709 for web delivery, BT.2020 for HDR only
-BIT DEPTH:      Grade in 10-bit when possible, deliver in 8-bit for web
+配置文件：       cinematic_warm | cinematic_cool | moody_dark | bright_clean | vintage_film | high_contrast | neutral
+LUT 格式：       .cube（3D LUT）— 行业标准，对应 FFmpeg lut3d 滤镜
+强度：           微妙的调色用 0.6-0.85，全效果用 1.0
+肤色：           矢量示波器上应落在"肤色线"（I 轴约 123°）
+色彩空间：       网络交付用 BT.709，仅 HDR 用 BT.2020
+位深：           尽可能以 10-bit 调色，网络交付输出 8-bit
 ```
 
-## FFmpeg Filter Reference
+## FFmpeg 滤镜参考
 
-The `color_grade` tool uses these FFmpeg filters. Understanding them helps you craft `custom_vf` chains.
+`color_grade` 工具使用下列 FFmpeg 滤镜。理解它们有助于你编写 `custom_vf` 滤镜链。
 
-### Core Filters
+### 核心滤镜
 
-| Filter | Purpose | Key Parameters |
+| 滤镜 | 用途 | 关键参数 |
 |--------|---------|----------------|
-| `eq` | Brightness, contrast, saturation, gamma | `contrast=1.0:saturation=1.0:brightness=0.0:gamma=1.0` |
-| `colorbalance` | RGB adjustments in shadows/mids/highlights | `rs/gs/bs` (shadows), `rm/gm/bm` (mids), `rh/gh/bh` (highlights) — range -1.0 to 1.0 |
-| `curves` | Tone curves per channel | `all='0/0 0.5/0.5 1/1'` or per-channel `red=`, `green=`, `blue=` |
-| `colortemperature` | White balance shift | `temperature=6500` (neutral) — lower = cooler, higher = warmer |
-| `lut3d` | Apply external .cube LUT | `lut3d='path/to/file.cube'` |
-| `hue` | Hue rotation and saturation | `h=0:s=1` — h in degrees, s as multiplier |
-| `normalize` | Auto-stretch histogram to full range | `blackpt=black:whitept=white:smoothing=0` |
+| `eq` | 亮度、对比度、饱和度、gamma | `contrast=1.0:saturation=1.0:brightness=0.0:gamma=1.0` |
+| `colorbalance` | 在暗部/中间调/高光中调整 RGB | `rs/gs/bs`（暗部）、`rm/gm/bm`（中间调）、`rh/gh/bh`（高光）—— 取值范围 -1.0 到 1.0 |
+| `curves` | 逐通道的色调曲线 | `all='0/0 0.5/0.5 1/1'`，或逐通道的 `red=`、`green=`、`blue=` |
+| `colortemperature` | 白平衡偏移 | `temperature=6500`（中性）—— 数值越低越冷，越高越暖 |
+| `lut3d` | 应用外部 .cube LUT | `lut3d='path/to/file.cube'` |
+| `hue` | 色相旋转与饱和度 | `h=0:s=1` —— h 单位为度，s 为乘数 |
+| `normalize` | 自动把直方图拉伸到全范围 | `blackpt=black:whitept=white:smoothing=0` |
 
-### Filter Chain Order
+### 滤镜链顺序
 
-Apply filters in this order for predictable results:
+按此顺序应用滤镜可获得可预测的结果：
 
 ```
-1. normalize          (auto-levels if source is flat/log)
-2. colortemperature   (white balance correction)
-3. colorbalance       (shadow/mid/highlight color shifts)
-4. curves             (contrast and tone shaping)
-5. eq                 (final contrast/saturation/brightness tweak)
-6. lut3d              (creative LUT — applied LAST, on corrected footage)
+1. normalize          （若源素材是平坦/log 曲线，做自动色阶）
+2. colortemperature   （白平衡校正）
+3. colorbalance       （暗部/中间调/高光的色彩偏移）
+4. curves             （对比度与色调塑形）
+5. eq                 （最终的对比度/饱和度/亮度微调）
+6. lut3d              （创意 LUT —— 最后应用，作用于已校正的素材）
 ```
 
-## Profile Selection by Content Type
+## 按内容类型选择配置文件
 
-| Content Type | Recommended Profile | Intensity | Why |
+| 内容类型 | 推荐配置 | 强度 | 理由 |
 |-------------|-------------------|-----------|-----|
-| Corporate / SaaS explainer | `bright_clean` | 0.8 | Clean, professional, approachable |
-| Science / educational | `neutral` | 1.0 | Accurate color representation matters |
-| Storytelling / narrative | `cinematic_warm` | 0.85 | Warmth builds emotional connection |
-| Tech / dark theme | `cinematic_cool` | 0.7 | Complements dark UI screenshots |
-| Drama / serious topic | `moody_dark` | 0.6-0.7 | Atmosphere without crushing detail |
-| Lifestyle / social media | `high_contrast` | 0.8 | Punchy, attention-grabbing on mobile |
-| Retro / nostalgic | `vintage_film` | 0.7 | Subtle faded look, not overdone |
+| 企业 / SaaS 讲解 | `bright_clean` | 0.8 | 干净、专业、亲和 |
+| 科学 / 教育 | `neutral` | 1.0 | 准确的色彩还原很重要 |
+| 故事 / 叙事 | `cinematic_warm` | 0.85 | 暖调建立情感连接 |
+| 技术 / 深色主题 | `cinematic_cool` | 0.7 | 与深色 UI 截图相衬 |
+| 剧情 / 严肃话题 | `moody_dark` | 0.6-0.7 | 营造氛围但不压死细节 |
+| 生活方式 / 社交媒体 | `high_contrast` | 0.8 | 冲击力强，在手机上抓眼球 |
+| 复古 / 怀旧 | `vintage_film` | 0.7 | 微妙的褪色感，不过火 |
 
-## Mood-Specific Parameter Recipes
+## 按情绪定制的参数配方
 
-When the built-in profiles don't match, use these as starting points for `custom_vf`:
+当内置配置文件不匹配时，把这些当作 `custom_vf` 的起点：
 
-### Warm / Inviting
+### 温暖 / 亲和
 ```
 colorbalance=rs=0.06:gs=0.02:bs=-0.04:rh=0.05:gh=0.01:bh=-0.03,
 eq=contrast=1.05:saturation=1.08:brightness=0.01
 ```
 
-### Cool / Technical
+### 冷峻 / 技术感
 ```
 colorbalance=rs=-0.03:gs=-0.01:bs=0.06:rh=-0.02:gh=0.01:bh=0.04,
 eq=contrast=1.06:saturation=0.95
 ```
 
-### High Energy
+### 高能量
 ```
 curves=all='0/0 0.15/0.08 0.5/0.52 0.85/0.92 1/1',
 eq=contrast=1.15:saturation=1.2
 ```
 
-### Subdued / Serious
+### 克制 / 严肃
 ```
 curves=all='0/0.04 0.25/0.22 0.5/0.47 0.75/0.73 1/0.94',
 eq=contrast=1.03:saturation=0.75:brightness=-0.02
 ```
 
-## LUT Workflow
+## LUT 工作流
 
-### When to Use LUTs
-- Matching footage across different cameras/sources
-- Applying a specific film stock emulation
-- Maintaining brand consistency across multiple videos
-- Converting from LOG/flat camera profiles to display color
+### 何时使用 LUT
+- 匹配来自不同摄影机/来源的素材
+- 套用特定的胶片模拟
+- 在多支视频之间保持品牌一致性
+- 把 LOG/平坦的摄影机配置转换为显示色彩
 
-### LUT Application Best Practices
-1. **Always correct before grading** — normalize/white-balance the footage first, then apply creative LUT
-2. **Use intensity < 1.0** — a LUT at full strength usually looks overdone; 0.6-0.8 is typical
-3. **Test on skin tones first** — if people appear in the video, skin must look natural
-4. **One LUT per project** — switching LUTs between scenes creates visual inconsistency
-5. **LUT file location** — store in `assets/luts/` relative to the project, reference with `lut_path`
+### LUT 应用最佳实践
+1. **先校正、后调色** —— 先对素材做 normalize/白平衡，再应用创意 LUT
+2. **强度用 < 1.0** —— LUT 全强度通常显得过火；0.6-0.8 是典型值
+3. **先在肤色上测试** —— 若视频中有人出镜，肤色必须看起来自然
+4. **一个项目只用一个 LUT** —— 场景之间切换 LUT 会造成视觉不一致
+5. **LUT 文件位置** —— 存放在项目下的 `assets/luts/`，用 `lut_path` 引用
 
-### FFmpeg LUT Application
+### FFmpeg 应用 LUT
 ```bash
-# Apply LUT at 70% intensity (blend with original)
+# 以 70% 强度应用 LUT（与原始画面混合）
 ffmpeg -i input.mp4 -vf "split[a][b];[b]lut3d='my_lut.cube'[graded];[a][graded]blend=all_mode=normal:all_opacity=0.7" output.mp4
 ```
 
-## Skin Tone Protection
+## 肤色保护
 
-Skin tones are the most critical element in color grading — viewers instantly notice unnatural skin.
+肤色是调色中最关键的元素 —— 观众能立刻察觉不自然的皮肤。
 
-**The Skin Tone Line:**
-- On a vectorscope, healthy skin (all ethnicities) falls on a narrow line at approximately 123 degrees (between red and yellow)
-- If your grade pushes skin away from this line, reduce saturation or adjust hue
+**肤色线：**
+- 在矢量示波器上，健康肤色（所有族裔）都落在约 123 度（红与黄之间）的一条窄线上
+- 如果你的调色把肤色推离这条线，就降低饱和度或调整色相
 
-**Rules:**
-- Never push saturation above 1.2 on footage with people
-- After grading, check a frame with visible skin — if it looks orange, green, or magenta, pull back
-- The `cinematic_warm` profile at intensity 0.85 is pre-tuned to keep skin natural
-- For `moody_dark`, keep intensity at 0.6-0.7 to avoid making skin look grey
+**规则：**
+- 有人出镜的素材，饱和度绝不要超过 1.2
+- 调色之后检查一帧有明显皮肤的画面 —— 若看起来发橙、发绿或发洋红，就往回收
+- `cinematic_warm` 配置在强度 0.85 时已预先调校为保持肤色自然
+- 使用 `moody_dark` 时把强度控制在 0.6-0.7，避免肤色发灰
 
-## Accessibility
+## 无障碍
 
-### Colorblind-Safe Design (Wong Palette)
+### 色盲友好设计（Wong 配色）
 
-When generating graphics, overlays, or diagrams that accompany graded video, use this palette verified safe for all common types of color vision deficiency:
+生成与调色视频配套的图形、叠加层或图表时，使用这套经过验证、对所有常见色觉缺陷都安全的配色：
 
-| Color | Hex | Use For |
+| 颜色 | Hex | 用于 |
 |-------|-----|---------|
-| Black | `#000000` | Text, outlines |
-| Orange | `#E69F00` | Primary accent |
-| Sky Blue | `#56B4E9` | Secondary accent |
-| Bluish Green | `#009E73` | Positive/success |
-| Yellow | `#F0E442` | Highlight/warning |
-| Blue | `#0072B2` | Links, info |
-| Vermillion | `#D55E00` | Error/danger |
-| Reddish Purple | `#CC79A7` | Tertiary accent |
+| 黑 | `#000000` | 文字、描边 |
+| 橙 | `#E69F00` | 主强调色 |
+| 天蓝 | `#56B4E9` | 次强调色 |
+| 蓝绿 | `#009E73` | 正向/成功 |
+| 黄 | `#F0E442` | 高亮/警告 |
+| 蓝 | `#0072B2` | 链接、信息 |
+| 朱红 | `#D55E00` | 错误/危险 |
+| 紫红 | `#CC79A7` | 第三强调色 |
 
-### WCAG Contrast Requirements
+### WCAG 对比度要求
 
-| Element | Minimum Ratio | Standard |
+| 元素 | 最低对比度 | 标准 |
 |---------|--------------|----------|
-| Body text on background | 4.5:1 | WCAG AA |
-| Large text (>18pt) on background | 3:1 | WCAG AA |
-| Body text (enhanced) | 7:1 | WCAG AAA |
-| UI components / graphical objects | 3:1 | WCAG 2.1 |
+| 正文文字与背景 | 4.5:1 | WCAG AA |
+| 大号文字（>18pt）与背景 | 3:1 | WCAG AA |
+| 正文文字（增强级） | 7:1 | WCAG AAA |
+| UI 组件 / 图形对象 | 3:1 | WCAG 2.1 |
 
-**Practical rule:** After color grading, any text overlays or subtitles burned into the video must still meet 4.5:1 contrast against the graded background. Test with a contrast checker on a representative frame.
+**实用规则：** 调色之后，任何烧录进视频的文字叠加层或字幕，与调色后的背景之间仍必须满足 4.5:1 的对比度。在一帧有代表性的画面上用对比度检测工具验证。
 
-## Applying to OpenMontage
+## 应用到 OpenMontage
 
-When using the `color_grade` tool:
+使用 `color_grade` 工具时：
 
-1. **Select profile by content type** using the table above — don't default to `cinematic_warm` for everything
-2. **Set intensity to 0.8** as a starting point, not 1.0 — subtlety reads better on mobile screens
-3. **Test on a single frame first** before grading the full video — saves render time
-4. **Grade after face enhancement** — the enhancement chain order in `skills/creative/enhancement-strategy.md` is: subtitle → face → color → audio → final
-5. **Use the same profile across all clips in a video** — visual consistency is critical
-6. **For generated visuals** (image_selector, math_animate), apply a lighter grade (0.5-0.6) since they're already stylized
-7. **Use the Wong palette** for any generated graphics (diagrams, code snippets, overlays) to ensure colorblind accessibility
-8. **For custom grades**, follow the filter chain order above and keep parameter changes small — ±0.05 per adjustment, then review
+1. **按内容类型选配置文件** —— 参照上表，不要对所有内容都默认用 `cinematic_warm`
+2. **强度起点设为 0.8** 而不是 1.0 —— 克制的处理在手机屏幕上观感更好
+3. **先在单帧上测试** 再对整段视频调色 —— 节省渲染时间
+4. **在面部增强之后再调色** —— `skills/creative/enhancement-strategy.md` 中的增强链顺序是：字幕 → 面部 → 色彩 → 音频 → 成片
+5. **同一支视频内所有片段用同一个配置文件** —— 视觉一致性至关重要
+6. **对生成的视觉素材**（image_selector、math_animate）应用更轻的调色（0.5-0.6），因为它们本身已经风格化
+7. **对任何生成的图形**（图表、代码片段、叠加层）**使用 Wong 配色**，以确保色盲无障碍
+8. **做自定义调色时**，遵循上面的滤镜链顺序，并保持参数改动幅度小 —— 每次调整 ±0.05，然后复看

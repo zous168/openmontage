@@ -95,6 +95,85 @@ def _agent_awaits_script(projects_root) -> None:
     }])
 
 
+class TestRejectedCheckpointLeavesNoDecisions:
+    """被拒的 write_checkpoint 不得留下已落盘的决策。
+
+    曾经 ``_merge_decision_log`` 排在 ``validate_checkpoint`` 之前：一次因
+    schema 不合法而失败的写入，checkpoint 文件没写，decision_log.json 却已
+    经收下了那些条目。日志是 append-only 且按 decision_id 去重，于是非法
+    category（agent 确实会自造）永久滞留，且因 category 非法而永远无法在
+    批准时被镜像 —— gated 阶段就此埋下永久 approval_gate_drift。
+    """
+
+    def test_invalid_embedded_decision_is_not_persisted(
+        self, projects_root, project_dir,
+    ):
+        from lib.checkpoint import CheckpointValidationError
+        from lib.decision_log import load_decision_log
+
+        bad = {
+            "version": "1.0",
+            "project_id": "film",
+            "decisions": [{
+                "decision_id": "d-bogus",
+                "stage": "research",
+                "category": "agent_invented_category",  # 不在 schema 枚举里
+                "subject": "自造类别",
+                "options_considered": [
+                    {"option_id": "a", "label": "A", "score": 1, "reason": "x"},
+                ],
+                "selected": "a",
+                "reason": "agent 自造",
+                "user_visible": True,
+                "user_approved": False,
+            }],
+        }
+        with pytest.raises(CheckpointValidationError):
+            write_checkpoint(
+                projects_root, "film", "research", "awaiting_human",
+                artifacts={
+                    "research_brief": sample_artifact("research_brief"),
+                    "decision_log": bad,
+                },
+                pipeline_type=PIPELINE,
+            )
+
+        ids = {d["decision_id"] for d in load_decision_log(project_dir).get("decisions", [])}
+        assert "d-bogus" not in ids, "被拒的写入把非法决策留在了 decision_log.json"
+        assert not (project_dir / "checkpoint_research.json").exists()
+
+    def test_valid_embedded_decision_still_merges(self, projects_root, project_dir):
+        from lib.decision_log import load_decision_log
+
+        good = {
+            "version": "1.0",
+            "project_id": "film",
+            "decisions": [{
+                "decision_id": "d-ok",
+                "stage": "research",
+                "category": "concept_selection",
+                "subject": "Concept direction",
+                "options_considered": [
+                    {"option_id": "c1", "label": "C1", "score": 1, "reason": "x"},
+                ],
+                "selected": "c1",
+                "reason": "agent 决定",
+                "user_visible": True,
+                "user_approved": False,
+            }],
+        }
+        write_checkpoint(
+            projects_root, "film", "research", "awaiting_human",
+            artifacts={
+                "research_brief": sample_artifact("research_brief"),
+                "decision_log": good,
+            },
+            pipeline_type=PIPELINE,
+        )
+        ids = {d["decision_id"] for d in load_decision_log(project_dir).get("decisions", [])}
+        assert "d-ok" in ids
+
+
 class TestStageSkillResolution:
     """无头 agent 的 prompt 承诺「导演技能全文已粘贴」——必须真的贴上。
 

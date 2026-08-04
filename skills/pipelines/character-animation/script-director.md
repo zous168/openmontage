@@ -1,46 +1,46 @@
-# Script Director - Character Animation Pipeline
+# 脚本导演 —— Character Animation 管线
 
-## Goal
+## 目标
 
-Write scripts as performable animation beats, not just narration.
+把脚本写成可被表演出来的动画节拍，而不只是旁白。
 
-## Process
+## 流程
 
-1. Lock audio architecture:
-   - music-only,
-   - narrator,
-   - character dialogue,
-   - narrator plus character sounds/dialogue.
-2. Break the story into beats that can be acted with poses.
-3. For each beat, state what changes visually:
-   - emotion,
-   - gaze,
-   - body pose,
-   - prop interaction,
-   - camera,
-   - environment.
+1. 锁定音频架构：
+   - 纯音乐，
+   - 旁白者，
+   - 角色对白，
+   - 旁白者加角色的声音/对白。
+2. 把故事拆成可以用姿势演出来的节拍。
+3. 对每个节拍，写明视觉上有什么变化：
+   - 情绪，
+   - 视线，
+   - 身体姿势，
+   - 与道具的互动，
+   - 镜头，
+   - 环境。
 
-## Writing Rules
+## 写作规则
 
-- Prefer short visual beats with readable holds.
-- Avoid action that needs many unique hand-drawn poses unless approved.
-- Dialogue should be short enough for mouth-shape approximation.
-- Silent/music-led scenes need stronger physical acting notes.
+- 优先短小的视觉节拍，配可读的停留。
+- 除非已获批准，否则避免需要大量独特手绘姿势的动作。
+- 对白要短到能用近似口型来对付。
+- 无声/音乐主导的场景需要更强的肢体表演说明。
 
-## Output Notes
+## 产出备注
 
-In the `script` artifact metadata, include:
+在 `script` artifact 的元数据中，包含：
 
-- `audio_architecture`,
-- `character_beats`,
-- `required_emotions`,
-- `required_actions`.
+- `audio_architecture`，
+- `character_beats`，
+- `required_emotions`，
+- `required_actions`。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

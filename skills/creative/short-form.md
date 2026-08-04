@@ -1,205 +1,205 @@
-# Short-Form Video Pipeline (TikTok / Reels / Shorts)
+# 短视频管线（TikTok / Reels / Shorts）
 
-> Sources: TikTok Creator Portal, Instagram for Business blog, YouTube Shorts documentation,
-> Hootsuite Social Trends Report 2025, OpusClip retention data 2025, Shortimize 35B Shorts
-> analysis, PostPlanify safe zones 2026, Kreatli platform guides, TTS Vibes hook statistics
+> 资料来源：TikTok Creator Portal、Instagram for Business 博客、YouTube Shorts 文档、
+> Hootsuite 2025 社交趋势报告、OpusClip 2025 留存数据、Shortimize 350 亿次 Shorts
+> 分析、PostPlanify 2026 安全区、Kreatli 平台指南、TTS Vibes 钩子统计
 
-## Quick Reference Card
+## 速查卡
 
 ```
-ASPECT RATIO:     9:16 vertical (1080x1920)
-SAFE ZONE:        900x1400px centered (universal cross-platform)
-DURATION:         15s (highest completion) | 30s (best engagement) | 60s (most flexible)
-HOOK:             First 1-2 seconds — visual or text pattern interrupt
-CAPTIONS:         Mandatory (85% watch muted on mobile)
-TEXT SIZE:         42px+ minimum, bold sans-serif
-PACING:           Visual change every 1-3 seconds
-TARGET LUFS:      -14 LUFS, true peak -1 dBTP
-MUSIC:            120-140 BPM for energetic, 90-110 for explainers
+画幅比：         9:16 竖屏（1080x1920）
+安全区：         居中的 900x1400px（跨平台通用）
+时长：           15 秒（完播率最高） | 30 秒（互动最好） | 60 秒（最灵活）
+钩子：           前 1-2 秒 —— 视觉或文字的模式打断
+字幕：           必需（85% 的人在手机上静音观看）
+文字尺寸：       至少 42px，粗体无衬线
+节奏：           每 1-3 秒一次画面变化
+目标 LUFS：      -14 LUFS，真峰值 -1 dBTP
+音乐：           高能量 120-140 BPM，讲解类 90-110
 ```
 
-## Platform Safe Zones (1080x1920)
+## 各平台安全区（1080x1920）
 
-| Platform | Safe Zone | Top Dead | Bottom Dead | Right Dead |
+| 平台 | 安全区 | 顶部盲区 | 底部盲区 | 右侧盲区 |
 |----------|-----------|----------|-------------|------------|
 | TikTok | 900x1492 | 108px | 320px | 120px |
 | Instagram Reels | 996x1400 | 210px | 310px | 84px |
 | YouTube Shorts | 984x1500 | 120px | 300px | 96px |
 | Facebook Reels | 1080x1520 | 100px | 300px | 60px |
 
-**Universal safe zone: 900x1400px centered** — works across all platforms.
+**通用安全区：居中的 900x1400px** —— 在所有平台都适用。
 
-**Bottom dead zones are critical** — platform UI (comments, share buttons, captions) covers the bottom 300-320px. Never put important content there.
+**底部盲区尤其关键** —— 平台 UI（评论、分享按钮、字幕）会覆盖底部 300-320px。绝不要把重要内容放在那里。
 
-## Upload Specs
+## 上传规格
 
 ```
-CODEC:       H.264 High Profile, Level 4.2
-BITRATE:     8-15 Mbps VBR (below 5 Mbps triggers quality downgrade)
-FORMAT:      .mp4 preferred
-MAX SIZE:    500 MB (desktop), 287.6 MB (iOS), 72 MB (Android)
+编码：       H.264 High Profile，Level 4.2
+码率：       8-15 Mbps VBR（低于 5 Mbps 会触发画质降级）
+格式：       优先 .mp4
+最大体积：   500 MB（桌面端）、287.6 MB（iOS）、72 MB（Android）
 ```
 
-## Duration Strategy
+## 时长策略
 
-| Duration | Avg Completion Rate | Best For |
+| 时长 | 平均完播率 | 适用于 |
 |----------|-------------------|----------|
-| 0-15s | 92% | Single fact, quick tip, visual gag |
-| 16-30s | 84% | One concept explained, before/after |
-| 31-60s | 68% | Mini tutorial, step-by-step, story arc |
-| 60s+ | 48% | Deep explainer, only if retention structure is strong |
+| 0-15 秒 | 92% | 单个事实、快速技巧、视觉笑点 |
+| 16-30 秒 | 84% | 讲清一个概念、前后对比 |
+| 31-60 秒 | 68% | 迷你教程、逐步演示、故事弧线 |
+| 60 秒以上 | 48% | 深度讲解，仅在留存结构够强时 |
 
-**Platform sweet spots:**
-- TikTok: 21-34 seconds for completion; 60-180s for maximum total watch time
-- Reels: 15-30 seconds for viral reach; 60-90s for highest engagement
-- Shorts: Bimodal — ~13 seconds OR full 60 seconds (Shortimize 35B views analysis)
+**各平台甜点区间：**
+- TikTok：完播率取 21-34 秒；总观看时长最大化取 60-180 秒
+- Reels：病毒传播取 15-30 秒；互动最高取 60-90 秒
+- Shorts：双峰分布 —— 约 13 秒**或**完整 60 秒（Shortimize 350 亿次播放分析）
 
-**Key formula:** A 45s video with 70% completion (31.5s watch time) outperforms a 15s video with 40% completion (6s). Total watch time is what the algorithm rewards.
+**关键公式：** 一支完播率 70% 的 45 秒视频（观看 31.5 秒）胜过一支完播率 40% 的 15 秒视频（观看 6 秒）。算法奖励的是总观看时长。
 
-## The 1-Second Hook
+## 1 秒钩子
 
-**70%+ of TikTok users decide to scroll or stay within 3 seconds** (average decision point: 1.7 seconds). The hook must be immediate.
+**70%+ 的 TikTok 用户在 3 秒内决定划走还是留下**（平均决策点：1.7 秒）。钩子必须是即时的。
 
-### 3-Second Retention and Algorithmic Impact
+### 3 秒留存与算法影响
 
-| 3-Second Retention | Algorithmic Effect | View Multiplier |
+| 3 秒留存 | 算法效果 | 播放量倍数 |
 |-------------------|-------------------|-----------------|
-| Below 60% | Minimal promotion | 1.0x (baseline) |
-| 60-70% | Average distribution | 1.6x |
-| 70-85% | Optimal reach | 2.2x |
-| 85%+ | Viral potential | 2.8x |
+| 低于 60% | 几乎不推 | 1.0 倍（基线） |
+| 60-70% | 平均分发 | 1.6 倍 |
+| 70-85% | 最佳触达 | 2.2 倍 |
+| 85%+ | 有爆款潜力 | 2.8 倍 |
 
-### Retention Checkpoints
+### 留存检查点
 
-| Timestamp | Target Retention |
+| 时间点 | 目标留存 |
 |-----------|-----------------|
-| 3 seconds | 70%+ |
-| 15 seconds | 60%+ |
-| 30 seconds | 50%+ |
+| 3 秒 | 70%+ |
+| 15 秒 | 60%+ |
+| 30 秒 | 50%+ |
 
-### Hook Techniques
+### 钩子手法
 
-| Technique | Example | When to Use |
+| 手法 | 示例 | 何时使用 |
 |-----------|---------|-------------|
-| **Bold text on screen** | "STOP doing this..." (text appears frame 1) | Always — text hooks work even muted |
-| **Pattern interrupt** | Unexpected visual, jump cut, color flash | Attention-grabbing |
-| **Question** | "Why does X happen?" (text + voiceover) | Educational |
-| **Result first** | Show the finished result, then explain how | Tutorial/how-to |
-| **Controversy** | "Everyone gets this wrong" | Engagement bait |
+| **屏幕上的醒目文字** | "STOP doing this..."（第 1 帧就出现文字） | 始终用 —— 文字钩子即便静音也有效 |
+| **模式打断** | 意外画面、跳切、色彩闪烁 | 抓眼球 |
+| **提问** | "Why does X happen?"（文字 + 配音） | 教育类 |
+| **结果先行** | 先展示成品，再讲怎么做的 | 教程/操作类 |
+| **争议** | "Everyone gets this wrong" | 引发互动 |
 
-### Hook Rules
+### 钩子规则
 
-1. **Frame 1 must have visual interest** — no blank intros, no logos, no "hey guys"
-2. **Text appears in the first 0.5 seconds** — viewers scan text before listening
-3. **Voice starts immediately** — no silent buildup
-4. **Movement in frame 1** — static opening frames get scrolled past
+1. **第 1 帧必须有视觉看点** —— 不要空白片头、不要 Logo、不要"大家好"
+2. **文字在 0.5 秒内出现** —— 观众先扫文字再听声音
+3. **人声立刻开始** —— 不要无声铺垫
+4. **第 1 帧就要有运动** —— 静止的开场画面会被划走
 
-## Pacing
+## 节奏
 
-| Rule | Value | Why |
+| 规则 | 取值 | 理由 |
 |------|-------|-----|
-| Visual change frequency | Every 1-3 seconds | Mobile attention span |
-| Cuts per minute | 20-40 | 2-3x faster than long-form |
-| Text on screen | 2-4 seconds per text block | Fast reading pace |
-| No static holds | Max 3 seconds | Anything longer feels frozen |
-| Speed ramp | 1.2-1.5x for setup, 1.0x for payoff | Compress boring parts |
+| 画面变化频率 | 每 1-3 秒 | 移动端注意力时长 |
+| 每分钟剪辑点 | 20-40 | 是长视频的 2-3 倍快 |
+| 屏幕文字 | 每块文字 2-4 秒 | 快速阅读节奏 |
+| 不做静态停留 | 最多 3 秒 | 再长就像卡住了 |
+| 变速 | 铺垫 1.2-1.5 倍，回报 1.0 倍 | 压缩无聊部分 |
 
-**Impact of pacing on retention:**
-- Pattern interrupts every 2-4s: **58% average retention**
-- Static talking head (no interrupts): **41% average retention**
-- That's a **41% relative improvement** from pacing alone
+**节奏对留存的影响：**
+- 每 2-4 秒一次模式打断：**平均留存 58%**
+- 静态口播（无打断）：**平均留存 41%**
+- 单靠节奏就带来 **41% 的相对提升**
 
-### Script Word Counts
+### 脚本字数
 
-| Duration | Word Count |
+| 时长 | 词数 |
 |----------|-----------|
-| 15 seconds | 35-40 words |
-| 30 seconds | 70-80 words |
-| 60 seconds | 125-150 words |
+| 15 秒 | 35-40 词 |
+| 30 秒 | 70-80 词 |
+| 60 秒 | 125-150 词 |
 
-## Text & Captions
+## 文字与字幕
 
-### Mandatory Captions
+### 必需的字幕
 
-**80% of short-form viewers watch without sound** (mid-2025 data). Videos with accurate captions average **12% higher retention**. Captions are not optional.
+**80% 的短视频观众关声音观看**（2025 年中数据）。带准确字幕的视频平均留存**高 12%**。字幕不是可选项。
 
-| Parameter | Value |
+| 参数 | 取值 |
 |-----------|-------|
-| Font size | 42px+ at 1080p |
-| Font weight | Bold |
-| Font family | Sans-serif (Inter, Montserrat, Poppins) |
-| Background | Semi-transparent black (75% opacity) or text stroke (3px) |
-| Position | Center or lower-center, within safe zone |
-| Max chars/line | 30 |
-| Max lines | 2 |
-| Word-by-word highlight | Recommended for engagement |
+| 字号 | 1080p 下 42px 以上 |
+| 字重 | 粗体 |
+| 字体族 | 无衬线（Inter、Montserrat、Poppins） |
+| 背景 | 半透明黑（75% 不透明度）或 3px 文字描边 |
+| 位置 | 居中或中下，位于安全区内 |
+| 每行最多字符 | 30 |
+| 最多行数 | 2 |
+| 逐词高亮 | 推荐，有助于互动 |
 
-### On-Screen Text (Non-Caption)
+### 屏幕文字（非字幕）
 
-- Position in the **top 40%** of the safe zone (above center)
-- Bold, high contrast (white on dark or colored background box)
-- 3-5 words maximum per text block
-- Animate entrance (scale pop or fade, 0.2-0.3s)
+- 放在安全区的**上 40%**（中线以上）
+- 粗体、高对比（深色或彩色背景框上的白字）
+- 每块文字最多 3-5 个词
+- 入场加动画（缩放弹出或淡入，0.2-0.3 秒）
 
-## Audio
+## 音频
 
-| Element | Level | Notes |
+| 元素 | 电平 | 备注 |
 |---------|-------|-------|
-| Voiceover | -12 to -14 dB peak | Primary |
-| Music | -22 to -26 dB | Lower than long-form — less room |
-| SFX | -18 to -14 dB | Brief pops/whooshes only |
-| Target LUFS | -14 LUFS | Same as long-form YouTube |
-| True peak | -1 dBTP | TikTok/Instagram spec |
+| 配音 | 峰值 -12 到 -14 dB | 主体 |
+| 音乐 | -22 到 -26 dB | 比长视频更低 —— 空间更紧 |
+| 音效 | -18 到 -14 dB | 只用短促的弹出音/whoosh |
+| 目标 LUFS | -14 LUFS | 与长视频 YouTube 相同 |
+| 真峰值 | -1 dBTP | TikTok/Instagram 规范 |
 
-### Music Selection
-- **Energetic content:** 120-140 BPM
-- **Explainer content:** 90-110 BPM
-- **Match trending audio patterns** — short-form audiences expect music-forward content
-- **Music should start immediately** — no silent intro
+### 音乐选择
+- **高能量内容：** 120-140 BPM
+- **讲解类内容：** 90-110 BPM
+- **贴合流行音频的规律** —— 短视频受众预期音乐前置的内容
+- **音乐必须立刻开始** —— 不要无声片头
 
-### Voiceover Pacing
-- **180-200 WPM** for short-form (faster than long-form's 150-160)
-- Speak with energy and urgency
-- No long pauses — dead air = scroll
+### 配音节奏
+- 短视频用**每分钟 180-200 词**（快于长视频的 150-160）
+- 说话要有能量和紧迫感
+- 不要长停顿 —— 空白时间 = 被划走
 
-## Structure Templates
+## 结构模板
 
-### 15-Second Quick Tip
+### 15 秒快速技巧
 ```
-[0-1s]   HOOK: Bold text + voice starts immediately
-[1-3s]   CONTEXT: One sentence setup
-[3-12s]  CONTENT: The tip/fact/technique (show, don't tell)
-[12-15s] PAYOFF: Result or CTA text overlay
-```
-
-### 30-Second Explainer
-```
-[0-1s]   HOOK: Pattern interrupt or question
-[1-5s]   PROBLEM: Why this matters
-[5-22s]  SOLUTION: Step-by-step with visual changes every 2-3s
-[22-28s] RESULT: Show the outcome
-[28-30s] CTA: Follow/share/comment prompt
+[0-1秒]   钩子：醒目文字 + 人声立刻开始
+[1-3秒]   背景：一句话铺垫
+[3-12秒]  内容：技巧/事实/方法（展示，别只是讲）
+[12-15秒] 回报：结果或 CTA 文字叠加
 ```
 
-### 60-Second Mini Tutorial
+### 30 秒讲解
 ```
-[0-2s]   HOOK: Show finished result first
-[2-8s]   SETUP: "Here's how to do X in Y steps"
-[8-45s]  STEPS: 3-5 steps, ~8s each, visual change per step
-[45-55s] RESULT: Before/after or final demo
-[55-60s] CTA + LOOP: End connects back to start for replay
+[0-1秒]   钩子：模式打断或提问
+[1-5秒]   问题：这为什么重要
+[5-22秒]  方案：分步骤，每 2-3 秒一次画面变化
+[22-28秒] 结果：展示成效
+[28-30秒] CTA：关注/分享/评论的引导
 ```
 
-## Applying to OpenMontage
+### 60 秒迷你教程
+```
+[0-2秒]   钩子：先展示成品
+[2-8秒]   铺垫："下面用 Y 步教你做 X"
+[8-45秒]  步骤：3-5 步，每步约 8 秒，每步一次画面变化
+[45-55秒] 结果：前后对比或最终演示
+[55-60秒] CTA + 闭环：结尾接回开头以促成重播
+```
 
-When building short-form content:
+## 应用到 OpenMontage
 
-1. **Set output resolution to 1080x1920** (9:16) in the compose stage
-2. **Keep all text within 900x1400px safe zone** — centered in frame
-3. **Captions are mandatory** — use `subtitle_gen` with word-by-word timing
-4. **Hook in frame 1** — text overlay + voice starts immediately, no intro
-5. **Visual change every 1-3 seconds** — use quick cuts, zooms, text pops
-6. **Voiceover at 180-200 WPM** — faster than long-form
-7. **Music starts immediately** — set `music_gen` to energetic BPM (110-140)
-8. **Target 15-30 seconds** for maximum completion rate
-9. **Test on phone** — view at actual mobile size before publishing
+制作短视频内容时：
+
+1. 在 compose 阶段**把输出分辨率设为 1080x1920**（9:16）
+2. **所有文字都留在 900x1400px 安全区内** —— 画面居中
+3. **字幕是必需的** —— 用 `subtitle_gen` 配逐词时序
+4. **第 1 帧就上钩子** —— 文字叠加 + 人声立刻开始，不要片头
+5. **每 1-3 秒一次画面变化** —— 用快切、缩放、文字弹出
+6. **配音每分钟 180-200 词** —— 快于长视频
+7. **音乐立刻开始** —— 把 `music_gen` 设成高能量 BPM（110-140）
+8. **目标 15-30 秒**以取得最高完播率
+9. **在手机上测试** —— 发布前按真实的移动端尺寸看一遍

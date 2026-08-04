@@ -1,24 +1,24 @@
-# Publish Director - Localization Dub Pipeline
+# 发布导演 —— Localization Dub 管线
 
-## When To Use
+## 何时使用
 
-Package the completed localization outputs so downstream teams can find the right video, subtitle, and metadata bundle for each language without manual cleanup.
+把做完的本地化输出打包，让下游团队不必人工清理就能为每种语言找到对应的视频、字幕和元数据包。
 
-## Process
+## 流程
 
-### 1. Package By Locale
+### 1. 按语种打包
 
-Each language package should clearly separate:
+每个语种包都应当清楚地分开：
 
-- video output,
-- subtitle files,
-- transcript or approved script copy,
-- review notes,
-- metadata.
+- 视频输出，
+- 字幕文件，
+- 转写稿或已获批的脚本文案，
+- 审校备注，
+- 元数据。
 
-### 2. Keep Naming Precise
+### 2. 命名要精确
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `locale`
 - `language_name`
@@ -26,28 +26,28 @@ Recommended metadata keys:
 - `subtitle_included`
 - `review_owner`
 
-### 3. Preserve Review Context
+### 3. 保留审校上下文
 
-If a language output has pronunciation caveats, timing warnings, or missing lip sync, keep that note in the published package.
+若某个语种的输出存在读音方面的告诫、时序警告，或缺少唇形同步，就把那条备注保留在发布包里。
 
-### 4. Quality Gate
+### 4. 质量门
 
-- locale packages are clearly labeled,
-- metadata matches the actual treatment,
-- supporting text assets are present,
-- warnings and review notes are not lost.
+- 语种包标注清晰，
+- 元数据与实际处理方式相符，
+- 配套的文本资源齐全，
+- 警告和审校备注没有丢失。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Shipping localized videos without the matching subtitle or transcript files.
-- Mixing audio-dub and subtitle-only variants under the same generic filename.
-- Removing the QA notes that explain known issues.
+- 交付本地化视频却不附上配套的字幕或转写稿文件。
+- 把配音版和纯字幕版混在同一个笼统的文件名之下。
+- 删掉了那些解释已知问题的 QA 备注。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

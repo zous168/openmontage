@@ -1,124 +1,124 @@
-# Video Understanding Usage for OpenMontage
+# OpenMontage 中的视频理解用法
 
-> Sources: OpenMontage video_understand tool implementation, CLIP/BLIP2/LLaVA model
-> documentation, OpenCV image quality metrics
+> 资料来源：OpenMontage video_understand 工具实现、CLIP/BLIP2/LLaVA 模型
+> 文档、OpenCV 图像质量指标
 
-## Quick Reference Card
+## 速查卡
 
 ```
-DEFAULT MODE:     describe — generates captions for frames
-FOR REVIEW:       quality — assesses blur, brightness, contrast
-FOR Q&A:          qa mode with a query — "Is the speaker visible?" "Is the text readable?"
-DEFAULT MODEL:    clip (fastest, good for classification)
-FOR DETAIL:       blip2 or llava (slower, richer descriptions)
-MAX FRAMES:       5 default for video — sample strategically, not exhaustively
+默认模式：       describe —— 为画面生成描述
+用于复看：       quality —— 评估模糊度、亮度、对比度
+用于问答：       qa 模式配一个 query —— "Is the speaker visible?" "Is the text readable?"
+默认模型：       clip（最快，适合分类）
+需要细节时：     blip2 或 llava（更慢，描述更丰富）
+最大帧数：       视频默认 5 帧 —— 有策略地采样，不要穷举
 ```
 
-## When to Use video_understand
+## 何时使用 video_understand
 
-- **Visual QA during review** — check rendered output quality before delivering
-- **Footage analysis** — understand what's in user-provided footage before planning
-- **Highlight extraction** — identify the most visually interesting frames
-- **Quality gating** — programmatic check for blur, exposure, scene coherence
-- **Scene classification** — categorize footage by content type
-- **Asset validation** — verify generated images match the intended scene description
+- **复看阶段的视觉 QA** —— 交付之前检查渲染输出的质量
+- **素材分析** —— 在规划之前了解用户提供的素材里有什么
+- **亮点提取** —— 找出视觉上最有意思的画面
+- **质量门禁** —— 以程序方式检查模糊、曝光、场景连贯性
+- **场景分类** —— 按内容类型给素材归类
+- **素材校验** —— 确认生成的图像与预期的场景描述相符
 
-## Mode Selection
+## 模式选择
 
-| Mode | What It Does | When to Use |
+| 模式 | 作用 | 何时使用 |
 |------|-------------|-------------|
-| `describe` | Generates a text description of the frame | Understanding footage content, logging |
-| `qa` | Answers a specific question about the frame | Targeted checks ("Is text readable?", "Is face visible?") |
-| `quality` | Measures blur, brightness, contrast numerically | Automated quality gating, comparing takes |
-| `classify` | Categorizes the scene type | Sorting footage, pipeline routing |
+| `describe` | 为该帧生成一段文字描述 | 理解素材内容、记录日志 |
+| `qa` | 回答关于该帧的一个具体问题 | 定向检查（"文字可读吗？"、"人脸可见吗？"） |
+| `quality` | 用数值衡量模糊度、亮度、对比度 | 自动化质量门禁、比较不同镜次 |
+| `classify` | 给场景类型归类 | 素材归档、管线路由 |
 
-### Quality Mode Metrics
+### quality 模式的指标
 
-| Metric | What It Measures | Bad | Good |
+| 指标 | 衡量什么 | 差 | 好 |
 |--------|-----------------|-----|------|
-| `blur_score` | Laplacian variance | Below 100 = blurry | Above 500 = sharp |
-| `brightness` | Mean pixel value (0-255) | Below 50 = too dark, above 200 = overexposed | 50-200 |
-| `contrast` | Pixel standard deviation | Below 30 = flat/washed out | Above 80 = good contrast |
+| `blur_score` | 拉普拉斯方差 | 低于 100 = 模糊 | 高于 500 = 锐利 |
+| `brightness` | 像素均值（0-255） | 低于 50 = 太暗，高于 200 = 过曝 | 50-200 |
+| `contrast` | 像素标准差 | 低于 30 = 平淡/发灰 | 高于 80 = 对比度良好 |
 
-## Model Selection
+## 模型选择
 
-| Model | Speed | Capabilities | Best For |
+| 模型 | 速度 | 能力 | 适用于 |
 |-------|-------|-------------|----------|
-| `clip` | Fast | Classification, similarity matching | Quick scene categorization, batch processing |
-| `blip2` | Medium | Detailed captions, visual QA | Understanding complex scenes, answering questions |
-| `llava` | Slow | Most detailed understanding, reasoning | Deep analysis, subjective quality assessment |
+| `clip` | 快 | 分类、相似度匹配 | 快速场景归类、批量处理 |
+| `blip2` | 中 | 详细描述、视觉问答 | 理解复杂场景、回答问题 |
+| `llava` | 慢 | 最详尽的理解与推理 | 深度分析、主观质量评估 |
 
-### Model Selection Rules
+### 模型选择规则
 
-- Use `clip` for batch operations and classification tasks
-- Use `blip2` for describe and qa modes when detail matters
-- Use `llava` only when you need the most thorough understanding
+- 批量操作和分类任务用 `clip`
+- 需要细节的 describe 和 qa 模式用 `blip2`
+- 只有需要最透彻的理解时才用 `llava`
 
-## Frame Selection for Video
+## 视频的帧选择
 
-- Default samples `max_frames` (5) evenly across the video
-- Use `frame_indices` to target specific frames (e.g., check quality at specific timestamps)
-- For quality review, sample the first frame, middle frame, and last frame minimum
+- 默认在整段视频上均匀采样 `max_frames`（5）帧
+- 用 `frame_indices` 定位特定帧（例如检查某些时间点的质量）
+- 做质量复看时，至少采样首帧、中间帧和末帧
 
-## Common Workflows
+## 常见工作流
 
-### 1. Pre-Edit Footage Review
-
-```
-video_understand (describe, 10 frames) → inform scene_plan
-```
-
-Analyze user-provided footage before planning cuts or edits. Use `blip2` for detailed descriptions that inform the scene plan.
-
-### 2. Post-Render Quality Gate
+### 1. 剪辑前的素材复看
 
 ```
-video_understand (quality) → pass/fail → re-render if needed
+video_understand（describe，10 帧）→ 为 scene_plan 提供依据
 ```
 
-Run after composing the final video. Fail if any frame has blur_score < 100, brightness outside 50-200, or contrast < 30.
+在规划剪辑之前分析用户提供的素材。用 `blip2` 得到能指导场景规划的详细描述。
 
-### 3. Highlight Selection
-
-```
-video_understand (describe, 20 frames) → rank by visual interest → select clips
-```
-
-Sample many frames, describe each, then select the most visually compelling segments for a montage or trailer.
-
-### 4. Asset Validation
+### 2. 渲染后的质量门禁
 
 ```
-video_understand (qa, "Does this match: [scene description]?") → confirm or regenerate
+video_understand（quality）→ 通过/不通过 → 必要时重新渲染
 ```
 
-After generating an image or video clip, verify it matches the intended scene description before proceeding.
+在合成最终视频之后运行。若任一帧的 blur_score < 100、brightness 不在 50-200 之间，或 contrast < 30，则判为不通过。
 
-### 5. Talking-Head Analysis
+### 3. 亮点筛选
 
 ```
-video_understand (qa, "Is the speaker's face clearly visible?") → face_enhance if needed
+video_understand（describe，20 帧）→ 按视觉吸引力排序 → 选取片段
 ```
 
-Check face visibility and framing before applying lip-sync or face restoration tools.
+采样较多帧，逐帧描述，然后为蒙太奇或预告片挑出视觉上最有说服力的段落。
 
-## Quality Checklist
+### 4. 素材校验
 
-- Descriptions accurately match what's in the frame
-- Quality scores correlate with visual inspection (manually spot-check)
-- QA answers are consistent across similar frames
-- Classification categories are stable across adjacent frames
-- No false positives in quality gating (good frames passing, bad frames failing)
+```
+video_understand（qa，"Does this match: [场景描述]?"）→ 确认或重新生成
+```
 
-## Applying to OpenMontage
+生成一张图像或一个视频片段之后，先确认它与预期的场景描述相符，再往下走。
 
-When using the `video_understand` tool:
+### 5. 口播人像分析
 
-1. **Use `quality` mode as a post-render gate in the compose stage** — reject outputs below quality thresholds
-2. **Use `describe` mode to analyze user-provided footage** at the start of the talking-head pipeline
-3. **For batch quality checks, use `clip` model** (fastest) — switch to `blip2` only for detailed review
-4. **Sample at least 3 frames for quality assessment** — beginning, middle, end
-5. **Quality thresholds for passing:** blur_score > 100, brightness 50-200, contrast > 30
-6. **Use `qa` mode to validate generated assets:** "Does this image show [expected content]?"
-7. **In the review stage**, combine video_understand quality data with the reviewer skill's rubric
-8. **Do NOT run video_understand on every frame of a long video** — sample strategically
+```
+video_understand（qa，"Is the speaker's face clearly visible?"）→ 必要时 face_enhance
+```
+
+在应用唇形同步或人脸修复工具之前，检查人脸的可见度与构图。
+
+## 质量检查清单
+
+- 描述准确对应画面中的内容
+- 质量分数与目视检查相符（人工抽查）
+- 相似画面之间的问答结果一致
+- 相邻画面之间的分类结果稳定
+- 质量门禁没有误判（好画面通过，坏画面不通过）
+
+## 应用到 OpenMontage
+
+使用 `video_understand` 工具时：
+
+1. **在 compose 阶段把 `quality` 模式当作渲染后门禁** —— 低于质量阈值的输出予以拒绝
+2. 在口播人像管线开始时**用 `describe` 模式分析用户提供的素材**
+3. **批量质量检查用 `clip` 模型**（最快）—— 只有需要细致复看时才切到 `blip2`
+4. **质量评估至少采样 3 帧** —— 开头、中间、结尾
+5. **通过的质量阈值：** blur_score > 100、brightness 在 50-200、contrast > 30
+6. **用 `qa` 模式校验生成的素材：** "Does this image show [预期内容]?"
+7. **在 review 阶段**，把 video_understand 的质量数据与 reviewer 技能的评分标准结合起来
+8. **不要对长视频的每一帧都跑 video_understand** —— 有策略地采样

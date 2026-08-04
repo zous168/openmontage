@@ -1,35 +1,35 @@
-# Executive Producer — Localization Dub Pipeline
+# 监制（Executive Producer）—— Localization Dub 管线
 
-## When to Use
+## 何时使用
 
-You are the **Executive Producer (EP)** for a localization/dubbing project. You orchestrate the pipeline serially with quality gates focused on **translation accuracy, timing preservation, lip-sync quality, and per-locale consistency**.
+你是一个本地化/配音项目的**监制（EP）**。你串行编排整条管线，质量门聚焦在**翻译准确性、时序保持、唇形同步质量和逐语种一致性**上。
 
-**No pre-production stages.** Source video exists in one language. The EP manages the complexity of producing multiple language variants while preserving the original's timing and quality.
+**没有前期阶段。** 源视频已经存在，是某一种语言。EP 要管理"在保住原片时序和质量的前提下产出多个语种版本"这件事的复杂度。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Pipeline | `pipeline_defs/localization-dub.yaml` | Stage definitions |
-| Skills | All 7 director skills + `meta/reviewer` | Stage execution |
-| Schemas | All artifact schemas | Validation |
-| Playbook | Active style playbook | Quality constraints |
+| 管线 | `pipeline_defs/localization-dub.yaml` | 阶段定义 |
+| 技能 | 全部 7 个 director 技能 + `meta/reviewer` | 阶段执行 |
+| Schema | 全部 artifact schema | 校验 |
+| Playbook | 当前生效的风格 playbook | 质量约束 |
 
-## Cumulative State
+## 累积状态
 
 ```
 EP_STATE:
   pipeline: localization-dub
-  playbook: <selected>
-  budget_total_usd: <configured>
+  playbook: <选定>
+  budget_total_usd: <配置值>
   budget_spent_usd: 0.0
 
-  # Localization-specific
+  # 本地化专属
   source_language: null
   target_languages: []
-  dub_mode_per_locale: {}      # language → subtitle_only / dub / dub_with_lipsync
-  glossary_terms: []           # protected terms that must not be translated
-  timing_drift_tolerance: 0.5  # seconds
+  dub_mode_per_locale: {}      # 语种 → subtitle_only / dub / dub_with_lipsync
+  glossary_terms: []           # 不得翻译的受保护术语
+  timing_drift_tolerance: 0.5  # 秒
 
   artifacts:
     idea: null
@@ -44,90 +44,90 @@ EP_STATE:
   issues_log: []
 ```
 
-## EP-Specific Cross-Stage Checks
+## EP 专属的跨阶段检查
 
-### After IDEA stage:
+### IDEA 阶段之后：
 ```
-CHECK: Scope definition
-  - Source and target languages explicit?
-  - Deliverable mode clear per language (subtitle / dub / dub+lipsync)?
-  - Glossary and protected terms captured?
-  - Review requirements noted?
-```
-
-### After SCRIPT stage:
-```
-CHECK: Transcript truth
-  - Source transcript accurate and timestamped?
-  - Glossary terms preserved in translations?
-  - Translated scripts reviewable before synthesis?
-  - Duration estimates per language reasonable (some languages expand 20-30%)?
+检查：范围定义
+  - 源语种和目标语种是否明确？
+  - 每个语种的交付模式是否清楚（字幕 / 配音 / 配音+唇形同步）？
+  - 术语表和受保护术语是否已记录？
+  - 审校要求是否已注明？
 ```
 
-### After SCENE_PLAN stage:
+### SCRIPT 阶段之后：
 ```
-CHECK: Dub mode feasibility
-  - Is the chosen dub mode realistic per locale?
-  - Lip-sync limited to shots that can support it (front-facing, clear mouth)?
-  - Timing drift risks mapped (which languages will run long)?
-  - On-screen text replacement planned if needed?
-```
-
-### After ASSETS stage:
-```
-CHECK: Locale asset completeness
-  - Subtitle files exist for every target language?
-  - Dubbed audio generated for every dub-mode language?
-  - TTS voice quality acceptable for each language?
-  - Lip-sync applied only where planned?
-  - Budget gate: 90% threshold (localization can be expensive with many languages)
+检查：转写稿的准确性
+  - 源转写稿是否准确且带时间戳？
+  - 译文中是否保留了术语表中的术语？
+  - 译制脚本在合成之前是否可供审校？
+  - 各语种的时长估算是否合理（有些语种会膨胀 20-30%）？
 ```
 
-### After EDIT stage:
+### SCENE_PLAN 阶段之后：
 ```
-CHECK: Timing preservation
-  - Source structure preserved unless timing forces change?
-  - CTA and legal copy survive translation?
-  - Language variants organized consistently?
-  - Timing drift within tolerance per segment?
-```
-
-### After COMPOSE stage:
-```
-CHECK: Per-locale validation
-  - Each language output rendered and intelligible?
-  - Subtitle timing matches speech in each locale?
-  - Version labeling unambiguous (language code in filename)?
-  - Audio quality consistent across locales?
+检查：配音模式的可行性
+  - 每个语种所选的配音模式现实吗？
+  - 唇形同步是否只用在能支撑它的镜头上（正面、口部清晰）？
+  - 时序漂移风险是否已映射（哪些语种会变长）？
+  - 若需要，屏幕文字替换是否已规划？
 ```
 
-## Quality Gates Summary
+### ASSETS 阶段之后：
+```
+检查：各语种素材的完整性
+  - 每个目标语种是否都有字幕文件？
+  - 每个走配音模式的语种是否都生成了配音音频？
+  - 每种语言的 TTS 音色质量是否可接受？
+  - 唇形同步是否只应用在计划中的地方？
+  - 预算门禁：90% 阈值（语种多时本地化会很贵）
+```
 
-| Gate | After Stage | What's Checked | Fail Action |
+### EDIT 阶段之后：
+```
+检查：时序保持
+  - 除非时序逼迫必须改，源片结构是否被保留？
+  - CTA 和法务文案在翻译后是否仍然成立？
+  - 各语种变体的组织方式是否一致？
+  - 逐段的时序漂移是否在容差范围内？
+```
+
+### COMPOSE 阶段之后：
+```
+检查：逐语种校验
+  - 每个语种的输出是否都渲染出来且听得懂？
+  - 每个语种的字幕时序是否与语音吻合？
+  - 版本标注是否明确无歧义（文件名中带语言代码）？
+  - 各语种之间音频质量是否一致？
+```
+
+## 质量门汇总
+
+| 门 | 位于阶段之后 | 检查什么 | 未通过时的动作 |
 |------|-------------|---------------|-------------|
-| G1 | idea | Scope, languages, dub modes | Revise |
-| G2 | script | Transcript accuracy, glossary, translations | Revise |
-| G3 | scene_plan | Dub mode feasibility, timing risks | Revise |
-| G4 | assets | Locale completeness, TTS quality, budget | Revise |
-| G5 | edit | Timing preservation, structure | Revise |
-| G6 | compose | Per-locale probe, subtitle timing | Revise or send-back |
-| G7 | publish | Locale packaging, metadata | Revise |
-| FINAL | all | Translation quality, timing, lip-sync | Send-back |
+| G1 | idea | 范围、语种、配音模式 | 修订 |
+| G2 | script | 转写准确性、术语表、译文 | 修订 |
+| G3 | scene_plan | 配音模式可行性、时序风险 | 修订 |
+| G4 | assets | 各语种完整性、TTS 质量、预算 | 修订 |
+| G5 | edit | 时序保持、结构 | 修订 |
+| G6 | compose | 逐语种探测、字幕时序 | 修订或回退 |
+| G7 | publish | 语种打包、元数据 | 修订 |
+| FINAL | 全部 | 翻译质量、时序、唇形同步 | 回退 |
 
-## Execution Limits
+## 执行上限
 
-| Limit | Value |
+| 上限 | 取值 |
 |-------|-------|
-| Max revisions per stage | 3 |
-| Max send-backs per stage pair | 1 |
-| Max total send-backs | 3 |
-| Max total budget | Configurable (default $3 — localization is costlier) |
-| Max total wall-time | 15 minutes |
+| 每阶段最多修订次数 | 3 |
+| 每对阶段最多回退次数 | 1 |
+| 总回退次数上限 | 3 |
+| 总预算上限 | 可配置（默认 $3 —— 本地化成本更高） |
+| 总墙钟时间上限 | 15 分钟 |
 
-## Common Pitfalls
+## 常见陷阱
 
-- **Ignoring language expansion**: Some languages are 20-30% longer than English. The dubbed audio won't fit the original timing without adjustments.
-- **Lip-sync on every shot**: Only apply lip-sync to front-facing, clear-mouth shots. Side angles and distant shots don't need it.
-- **Translating protected terms**: Brand names, product names, and technical terms in the glossary must stay in the original language.
-- **Inconsistent locale labeling**: Use ISO language codes in filenames. "Spanish" is ambiguous (es-ES vs es-MX).
-- **Degrading source video**: Re-encoding the source video for each locale should preserve quality. Never downgrade resolution.
+- **无视语言膨胀**：有些语种比英语长 20-30%。不做调整的话，配音音频装不进原片时序。
+- **每个镜头都做唇形同步**：只在正面、口部清晰的镜头上做唇形同步。侧面和远景镜头不需要。
+- **翻译受保护术语**：品牌名、产品名和术语表中的技术术语必须保留原文。
+- **语种标注不一致**：文件名中使用 ISO 语言代码。"Spanish" 有歧义（es-ES vs es-MX）。
+- **让源视频画质变差**：为每个语种重新编码源视频时应当保住画质。绝不要降低分辨率。

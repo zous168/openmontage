@@ -1,116 +1,116 @@
-# Scene Director — Talking Head Pipeline
+# 场景导演 —— Talking Head 管线
 
-## When to Use
+## 何时使用
 
-You have a script (from transcription) and raw footage. Your job is to **watch the footage, understand the content, and propose a creative enhancement plan** — then build a scene plan that transforms raw talking-head footage into an engaging, visually rich video.
+你手上有一份脚本（来自转写）和原始素材。你的工作是**看素材、理解内容、提出一份创意强化方案** —— 然后搭建一份场景方案，把原始口播素材变成一支有吸引力、视觉丰富的视频。
 
-You are not just a processor. You are a creative director. Your job is to figure out what the speaker is saying and propose visual enhancements that make the content more engaging and easier to understand.
+你不只是个处理器。你是创意导演。你的工作是弄清说话人在讲什么，并提出能让内容更抓人、更好懂的视觉强化。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | Script, Brief | Section timing and context |
-| Tools | `frame_sampler` (optional) | Extract representative frames |
-| Tools | `face_tracker` (optional) | Analyze speaker face position for reframing |
-| Tools | `silence_cutter` (optional) | Detect silence for jump cut planning |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | Script、Brief | Section 时序与语境 |
+| 工具 | `frame_sampler`（可选） | 提取代表性帧 |
+| 工具 | `face_tracker`（可选） | 分析说话人面部位置，供重新构图使用 |
+| 工具 | `silence_cutter`（可选） | 检测静音，供跳切规划使用 |
 
-## Process
+## 流程
 
-### Step 0: Footage Analysis
+### 第 0 步：素材分析
 
-Before watching the content, analyze the raw footage to understand the physical setup.
+在看内容之前，先分析原始素材，弄清物理拍摄设置。
 
-1. **Sample 5 frames** from the footage using ffmpeg (evenly spaced across the duration):
+1. **抽取 5 帧**（沿时长均匀分布），用 ffmpeg：
    ```
    ffmpeg -i <footage> -vf "select='not(mod(n\,TOTAL_FRAMES/5))'" -vsync vfr -frames:v 5 frame_%02d.png
    ```
 
-2. **Run visual_qa or histogram analysis** on each sampled frame to detect:
-   - **Background type:** Green screen / blue screen / natural background. Green/blue screens show a dominant narrow-band color spike in the histogram. Use `visual_qa` with prompt "Is this a green screen or blue screen background?" for confirmation.
-   - **Speaker position:** Center, left, or right of frame. Estimate the approximate bounding box (e.g., "speaker occupies center 40% of frame, from x=30% to x=70%").
-   - **Lighting quality:** Even studio lighting, harsh shadows, backlit, mixed color temperature. Note any issues that may affect chroma keying.
+2. **对每一张抽样帧运行 visual_qa 或直方图分析**，以检测：
+   - **背景类型：** 绿幕 / 蓝幕 / 自然背景。绿幕/蓝幕在直方图上会呈现一个占主导的窄带颜色尖峰。用 `visual_qa` 配提示词 "Is this a green screen or blue screen background?" 来确认。
+   - **说话人位置：** 画面居中、偏左还是偏右。估出大致的包围盒（例如「说话人占据画面中央 40%，从 x=30% 到 x=70%」）。
+   - **打光质量：** 均匀的影棚光、硬阴影、逆光、混合色温。记下任何可能影响抠像的问题。
 
-3. **Green screen detected?**
-   - If yes, note that `green_screen_processor` tool will be needed in the compose stage.
-   - Record the detected screen color (green or blue) and estimated uniformity.
-   - The compose-director will use this to run chroma key removal and composite onto an animated background.
+3. **检测到绿幕了吗？**
+   - 若是，记下 compose 阶段会需要 `green_screen_processor` 工具。
+   - 记录检测到的幕布颜色（绿或蓝）以及估计的均匀度。
+   - compose-director 会据此运行色键抠除，并合成到动态背景之上。
 
-4. **Measure speaker safe zone:**
-   - From the speaker's bounding box, determine where graphics can be placed WITHOUT overlapping the speaker.
-   - For a centered speaker: left panel and right panel are safe for overlays.
-   - For a left-positioned speaker: right panel is the primary safe zone.
-   - For a right-positioned speaker: left panel is the primary safe zone.
-   - Upper third and lower third are generally safe regardless of speaker position.
+4. **测出说话人安全区：**
+   - 由说话人的包围盒，判断图形可以放在哪里而**不会**与说话人重叠。
+   - 说话人居中：左侧面板和右侧面板都可安全放叠加层。
+   - 说话人偏左：右侧面板是主要安全区。
+   - 说话人偏右：左侧面板是主要安全区。
+   - 不论说话人位置如何，上三分之一和下三分之一通常都是安全的。
 
-Record all findings in the scene plan metadata for downstream stages.
+把所有发现记录到场景方案的 metadata 中，供下游阶段使用。
 
-### Step 1: Watch & Listen — Understand the Content
+### 第 1 步：看与听 —— 理解内容
 
-**This is the most important step. Do not skip it.**
+**这是最重要的一步。不要跳过。**
 
-Read the full transcript carefully. Understand:
-- What is the speaker's **main topic**?
-- What are the **key concepts** they explain?
-- Where do they use **numbers, statistics, or data**?
-- Where do they **compare things** (A vs B, before/after, old vs new)?
-- Where do they **list items** (3 tips, 5 steps, etc.)?
-- Where do they introduce **technical terms** or jargon?
-- Where are the **section transitions** (topic changes)?
-- What is the **emotional arc** (excitement, serious, humorous)?
+仔细读完整份转写。弄清：
+- 说话人的**主题**是什么？
+- 他们讲解了哪些**关键概念**？
+- 他们在哪里用到了**数字、统计或数据**？
+- 他们在哪里做了**对比**（A vs B、前/后、旧 vs 新）？
+- 他们在哪里**列举了条目**（3 条建议、5 个步骤等）？
+- 他们在哪里引入了**技术术语**或行话？
+- **段落转场**（话题切换）在哪里？
+- **情绪弧线**是什么（兴奋、严肃、幽默）？
 
-If `frame_sampler` is available, extract 5-8 representative frames to see the speaker's setup, background, lighting, and gestures.
+若 `frame_sampler` 可用，抽取 5-8 张代表性帧，看清说话人的机位设置、背景、打光和手势。
 
-### Step 2: Propose Creative Overlays
+### 第 2 步：提出创意叠加层
 
-Based on your content analysis, propose **on-screen graphics** that will appear alongside the speaker at key moments. These are Remotion components that get composited on top of or next to the talking-head footage.
+基于你的内容分析，提出会在关键时刻与说话人同框出现的**屏幕图形**。这些是 Remotion 组件，会被合成到口播素材之上或旁边。
 
-**Available overlay types:**
+**可用的叠加层类型：**
 
-| Overlay Type | Remotion Component | Best For |
+| 叠加层类型 | Remotion 组件 | 最适合 |
 |-------------|-------------------|----------|
-| **Key term definition** | `text_card` | When the speaker introduces a technical term — show the term + short definition |
-| **Statistic/number** | `stat_card` | When the speaker mentions a number or percentage — animate it on screen |
-| **Comparison** | `comparison` | When the speaker compares two things (A vs B) — show side-by-side |
-| **Data chart** | `bar_chart` / `pie_chart` / `line_chart` | When the speaker references data or rankings |
-| **KPI dashboard** | `kpi_grid` | When multiple numbers are mentioned together |
-| **Progress indicator** | `progress_bar` | When the speaker describes a process or percentage |
-| **Section title** | `hero_title` | At major topic transitions — show the new section title |
-| **Callout/quote** | `callout` | When the speaker makes a key point worth emphasizing |
-| **Lower third** | `text_card` | Speaker identification at the start |
+| **关键术语释义** | `text_card` | 说话人引入技术术语时 —— 显示术语 + 简短释义 |
+| **统计/数字** | `stat_card` | 说话人提到某个数字或百分比时 —— 在屏幕上做动画 |
+| **对比** | `comparison` | 说话人对比两样东西（A vs B）时 —— 并排展示 |
+| **数据图表** | `bar_chart` / `pie_chart` / `line_chart` | 说话人引用数据或排名时 |
+| **KPI 仪表盘** | `kpi_grid` | 多个数字被一并提到时 |
+| **进度指示** | `progress_bar` | 说话人描述某个流程或百分比时 |
+| **段落标题** | `hero_title` | 主要话题转场处 —— 显示新段落标题 |
+| **标注/引语** | `callout` | 说话人抛出值得强调的关键点时 |
+| **下三分之一条** | `text_card` | 开头处的说话人身份标识 |
 
-**Remotion Component Constraints:**
+**Remotion 组件约束：**
 
-| Component | Min Width | 720px Portrait? | Value Type |
+| 组件 | 最小宽度 | 720px 竖屏可用？ | 值类型 |
 |-----------|-----------|-----------------|------------|
-| comparison | 900px | NO -> use 2x stat_card | string |
-| kpi_grid | 720px | YES | numeric ONLY (no "15+") |
-| bar_chart | 500px | YES | numeric |
-| stat_card | 300px | YES | string OK |
-| callout | 400px | YES | string |
-| hero_title | 400px | YES | string |
-| line_chart | 500px | YES | numeric |
-| progress_bar | 600px | YES | numeric |
-| stat_reveal | 300px | YES | string OK |
+| comparison | 900px | 否 -> 改用 2 个 stat_card | string |
+| kpi_grid | 720px | 是 | 仅 numeric（不能写 "15+"） |
+| bar_chart | 500px | 是 | numeric |
+| stat_card | 300px | 是 | string 可以 |
+| callout | 400px | 是 | string |
+| hero_title | 400px | 是 | string |
+| line_chart | 500px | 是 | numeric |
+| progress_bar | 600px | 是 | numeric |
+| stat_reveal | 300px | 是 | string 可以 |
 
-When a component's minimum width exceeds the available space (e.g., `comparison` at 900px won't fit in a 720px portrait frame), substitute with the recommended alternative. For `comparison`, use two `stat_card` components shown sequentially instead.
+当某个组件的最小宽度超出可用空间时（例如 900px 的 `comparison` 塞不进 720px 的竖屏画面），就换成推荐的替代方案。对 `comparison`，改用两个依次出现的 `stat_card`。
 
-For `kpi_grid`, values MUST be numeric (e.g., `4.8`, `73`, `2400`). String values like `"15+"` or `"$4.8B"` will cause rendering errors. Use `stat_card` for string-formatted numbers.
+对 `kpi_grid`，值**必须**是数字（例如 `4.8`、`73`、`2400`）。像 `"15+"` 或 `"$4.8B"` 这样的字符串值会导致渲染报错。带字符串格式的数字请用 `stat_card`。
 
-**Overlay planning rules:**
-- **Don't over-overlay.** 3-6 overlays per minute of final video is the sweet spot. More than that is distracting.
-- **Time overlays to speech.** Each overlay should appear when the speaker says the relevant words, not before or after.
-- **Keep overlays brief.** 3-5 seconds each. They support the speaker, not compete with them.
-- **Vary the types.** Don't use 5 text_cards in a row — mix in charts, comparisons, callouts.
-- **Use overlays at natural pauses.** When the speaker pauses for emphasis, that's a good overlay moment.
-- **Match the vibe.** Professional talk = clean stat cards and charts. Casual talk = callouts and bold key terms.
+**叠加层规划规则：**
+- **不要过度叠加。** 每分钟成片 3-6 个叠加层是甜点区。超过这个数就会分散注意力。
+- **让叠加层与语音对时。** 每个叠加层都应当在说话人说到相关词句时出现，不早不晚。
+- **叠加层要短。** 每个 3-5 秒。它们是给说话人做支撑，不是跟说话人抢戏。
+- **类型要有变化。** 不要连着上 5 张 text_card —— 穿插图表、对比、标注。
+- **在自然停顿处用叠加层。** 说话人为了强调而停顿时，正是上叠加层的好时机。
+- **气质要匹配。** 专业演讲 = 干净的数据卡与图表。轻松闲聊 = 标注与醒目的关键词。
 
-### Step 3: Present Your Plan to the User
+### 第 3 步：把方案呈现给用户
 
-**MANDATORY: Present your enhancement plan before proceeding.**
+**强制：在继续之前，先呈现你的强化方案。**
 
-Format your proposal clearly:
+把提案格式化清楚：
 
 ```
 ## Enhancement Plan for [Video Title/Topic]
@@ -138,30 +138,30 @@ Format your proposal clearly:
 **Estimated final duration:** ~Xs (from Xs raw)
 ```
 
-**IMPORTANT: When outputting the overlay plan, ALSO generate the actual Remotion JSON props file (`greenscreen-bg.json`) -- do not just describe scenes in prose.** The JSON props file should be a complete, valid input for the Remotion TalkingHead composition, including all overlay definitions, timing, colors, and content. Save it to `<project>/public/demo-props/` or the project's props directory.
+**重要：输出叠加层方案时，还要同时生成真正的 Remotion JSON props 文件（`greenscreen-bg.json`）—— 不要只用散文描述场景。** 这份 JSON props 文件应当是 Remotion TalkingHead 合成的完整、合法输入，包含全部叠加层定义、时序、颜色和内容。把它保存到 `<project>/public/demo-props/` 或该项目的 props 目录。
 
-Wait for user approval before proceeding. The user may:
-- Approve as-is
-- Add/remove overlays
-- Change overlay content
-- Adjust the enhancement plan
+在继续之前等待用户审批。用户可能会：
+- 原样批准
+- 增加/删除叠加层
+- 修改叠加层内容
+- 调整强化方案
 
-### Step 4: Analyze Footage (if tools available)
+### 第 4 步：分析素材（若工具可用）
 
-**Face tracking** — If `face_tracker` is available, run it on the raw footage:
+**人脸追踪** —— 若 `face_tracker` 可用，对原始素材运行它：
 ```
 face_tracker.execute({
     "input_path": "<raw_footage>",
     "sample_fps": 5
 })
 ```
-This outputs per-frame face bounding boxes. Use this data to:
-- Decide if reframing is needed (e.g. speaker is off-center for vertical crop)
-- Identify sections where the speaker moves significantly (needs dynamic crop)
-- Note face position for auto_reframe in the compose stage
-- **Determine overlay safe zones** — where to place graphics without occluding the face
+它会输出逐帧的人脸包围盒。用这份数据来：
+- 判断是否需要重新构图（例如说话人偏离中心，不适合竖屏裁切）
+- 找出说话人移动幅度较大的段落（需要动态裁切）
+- 记下面部位置，供 compose 阶段的 auto_reframe 使用
+- **确定叠加层安全区** —— 图形放在哪里不会遮挡面部
 
-**Silence detection** — If `silence_cutter` is available, run in `mark` mode:
+**静音检测** —— 若 `silence_cutter` 可用，以 `mark` 模式运行：
 ```
 silence_cutter.execute({
     "input_path": "<raw_footage>",
@@ -170,18 +170,18 @@ silence_cutter.execute({
     "min_silence_duration": 0.5
 })
 ```
-This outputs silence/speech segment timestamps. Use this to:
-- Plan which segments should be jump-cut or sped up
-- Identify dead air, false starts, and long pauses
-- Estimate the final video duration after cuts
+它会输出静音/语音片段的时间戳。用它来：
+- 规划哪些片段应当被跳切或加速
+- 找出空白、口误重来和长停顿
+- 估算剪辑后的成片时长
 
-### Step 5: Plan Base Scenes
+### 第 5 步：规划基础场景
 
-For talking-head, the base is simple: one scene per script section, all type `talking_head`. The raw footage IS the scene.
+对 talking-head 而言，基础很简单：每个脚本 section 一个场景，类型全部是 `talking_head`。原始素材本身**就是**场景。
 
-### Step 6: Build Overlay Scenes
+### 第 6 步：搭建叠加层场景
 
-For each approved overlay from Step 3, create an overlay scene entry:
+为第 3 步中每个被批准的叠加层，创建一条叠加层场景条目：
 ```json
 {
   "id": "overlay_1",
@@ -199,54 +199,54 @@ For each approved overlay from Step 3, create an overlay scene entry:
 }
 ```
 
-**Overlay position options:**
-- `lower_third` — bottom 30% of frame (safest, doesn't occlude face)
-- `upper_third` — top 30% of frame (good for titles)
-- `side_panel` — left or right 40% (for charts/comparisons, speaker shifts to other side)
-- `full_overlay` — brief full-screen graphic (1-2s max, for dramatic emphasis)
+**叠加层位置选项：**
+- `lower_third` —— 画面底部 30%（最安全，不遮脸）
+- `upper_third` —— 画面顶部 30%（适合标题）
+- `side_panel` —— 左侧或右侧 40%（用于图表/对比，说话人移到另一侧）
+- `full_overlay` —— 短暂的全屏图形（最多 1-2 秒，用于戏剧性强调）
 
-### Step 7: Plan Reframing & Cuts
+### 第 7 步：规划重新构图与剪切
 
-If the target platform requires a different aspect ratio (e.g. Instagram Reels = 9:16):
-- Note `auto_reframe` should be applied in the compose stage
-- Record the target aspect ratio in the scene plan
-- If face tracking data shows significant speaker movement, note that dynamic crop is needed
+若目标平台要求不同的画幅比（例如 Instagram Reels = 9:16）：
+- 记下 compose 阶段应当施加 `auto_reframe`
+- 把目标画幅比记入场景方案
+- 若人脸追踪数据显示说话人有明显移动，记下需要动态裁切
 
-If silence detection found segments to cut:
-- Record the recommended cut mode (`remove` or `speed_up`) in the scene plan
-- Note padding preferences (default 0.08s to avoid clipping words)
+若静音检测找到了可剪的片段：
+- 把推荐的剪切模式（`remove` 或 `speed_up`）记入场景方案
+- 记下留白偏好（默认 0.08 秒，避免切掉词头词尾）
 
-### Step 8: Build Scene Plan
+### 第 8 步：搭建场景方案
 
-Assemble the full scene plan with:
-- Base scenes (one per script section, type `talking_head`)
-- Overlay scenes (from Step 6, type `overlay`)
-- Enhancement chain decisions (silence cut mode, speed factor, reframe target)
-- Music recommendation
-- Estimated final duration
+把完整的场景方案组装起来，包含：
+- 基础场景（每个脚本 section 一个，类型 `talking_head`）
+- 叠加层场景（来自第 6 步，类型 `overlay`）
+- 强化链决策（静音剪切模式、变速系数、重新构图目标）
+- 音乐建议
+- 预估的成片时长
 
-### Step 9: Self-Evaluate
+### 第 9 步：自评
 
-| Criterion | Question |
+| 判据 | 问题 |
 |-----------|----------|
-| **Content understanding** | Did I actually understand what the speaker is talking about? |
-| **Overlay relevance** | Does every overlay directly relate to what's being said at that moment? |
-| **Overlay density** | Am I in the 3-6 per minute range? Not too sparse, not too cluttered? |
-| **Overlay variety** | Am I using different types, not just text_cards? |
-| **Timing** | Are overlays timed to the speaker's words, not arbitrary moments? |
-| **Coverage** | Every script section has a scene? |
-| **Feasibility** | Can all overlays be rendered with available Remotion components? |
-| **User approved** | Did the user approve the enhancement plan? |
+| **内容理解** | 我是否真的听懂了说话人在讲什么？ |
+| **叠加层相关性** | 每个叠加层是否都与那一刻正在说的内容直接相关？ |
+| **叠加层密度** | 我在每分钟 3-6 个的区间内吗？不太稀，也不太挤？ |
+| **叠加层多样性** | 我是否用了不同类型，而不是清一色 text_card？ |
+| **时序** | 叠加层是与说话人的措辞对时的，而不是随便挑的时刻？ |
+| **覆盖度** | 每个脚本 section 都有场景吗？ |
+| **可行性** | 所有叠加层都能用可用的 Remotion 组件渲染出来吗？ |
+| **用户已批准** | 用户批准了这份强化方案吗？ |
 
-### Step 10: Submit
+### 第 10 步：提交
 
-Validate the scene_plan against the schema and persist via checkpoint.
+对照 schema 校验 scene_plan，并通过检查点持久化。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

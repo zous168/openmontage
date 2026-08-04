@@ -1,49 +1,49 @@
-# Executive Producer — Explainer Pipeline
+# 监制（Executive Producer）—— Explainer 管线
 
-## When to Use
+## 何时使用
 
-You are the **Executive Producer (EP)** for a generated explainer video. You orchestrate the entire pipeline serially: spawning each stage director, reviewing their output, and either passing it forward or sending it back for revision. You are the stateful brain; the directors are stateless workers.
+你是一支生成式讲解视频的**监制（EP）**。你串行编排整条管线：派出每个阶段的导演、复看他们的产出，然后决定放行还是打回修改。你是有状态的大脑；导演们是无状态的执行者。
 
-**You replace the default parallel/sequential execution model.** Instead of running all stages blindly, you exercise judgment at every gate.
+**你取代了默认的并行/顺序执行模型。** 你不是盲目地跑完所有阶段，而是在每一道门上行使判断。
 
-## Why This Exists
+## 它为什么存在
 
-The parallel pipeline produces "technically correct" but low-quality videos because:
-- No feedback loop when TTS narration is too long for the video duration
-- No style consistency enforcement across image generation calls
-- No A/V sync validation before the final render
-- No budget reallocation when early stages overspend
-- No ability to send a single stage back without re-running everything
+并行管线会产出"技术上正确"但质量很低的视频，因为：
+- 当 TTS 旁白对视频时长而言过长时，没有反馈回路
+- 跨图像生成调用没有强制的风格一致性
+- 最终渲染之前没有音画同步校验
+- 早期阶段超支时没有预算再分配
+- 无法单独打回某一个阶段而不重跑全部
 
-The EP solves all of these by maintaining cumulative state and applying judgment at each gate.
+EP 通过维护累积状态并在每道门上施加判断，把这些问题一并解决。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Pipeline | `pipeline_defs/animated-explainer.yaml` | Stage definitions, review focus, success criteria |
-| Skills | All 7 director skills + `meta/reviewer` | Stage execution knowledge |
-| Schemas | All artifact schemas | Validation |
-| Playbook | Active style playbook | Quality constraints |
-| Tools | Full tool registry | Available capabilities |
+| 管线 | `pipeline_defs/animated-explainer.yaml` | 阶段定义、复看关注项、成功标准 |
+| 技能 | 全部 7 个 director 技能 + `meta/reviewer` | 阶段执行知识 |
+| Schema | 全部 artifact schema | 校验 |
+| Playbook | 当前生效的风格 playbook | 质量约束 |
+| 工具 | 完整工具注册表 | 可用能力 |
 
-## Cumulative State
+## 累积状态
 
-The EP maintains a running state object that flows through the entire pipeline:
+EP 维护一个贯穿整条管线的运行时状态对象：
 
 ```
 EP_STATE:
   pipeline: animated-explainer
-  playbook: <selected playbook name>
-  target_duration_seconds: <from proposal_packet.selected_concept>
-  budget_total_usd: <from proposal_packet.approval.approved_budget_usd or configured limit>
+  playbook: <选定的 playbook 名称>
+  target_duration_seconds: <来自 proposal_packet.selected_concept>
+  budget_total_usd: <来自 proposal_packet.approval.approved_budget_usd 或配置上限>
   budget_spent_usd: 0.0
   budget_remaining_usd: <budget_total>
 
-  # Accumulated from each stage (8 stages)
+  # 各阶段累积（8 个阶段）
   artifacts:
     research: null      # → research_brief
-    proposal: null      # → proposal_packet (includes approval gate)
+    proposal: null      # → proposal_packet（含审批门禁）
     script: null        # → script
     scene_plan: null    # → scene_plan
     assets: null        # → asset_manifest
@@ -51,304 +51,304 @@ EP_STATE:
     compose: null       # → render_report
     publish: null       # → publish_log
 
-  # Pre-production context (carried forward from research + proposal)
-  research_brief: null         # full research_brief artifact — available to all downstream stages
-  selected_concept: null       # the approved concept from proposal_packet
-  production_plan: null        # the approved tool/provider plan
-  approved_budget_usd: null    # explicit user-approved spend cap
+  # 前期上下文（由 research + proposal 带下来）
+  research_brief: null         # 完整的 research_brief artifact —— 对所有下游阶段可用
+  selected_concept: null       # proposal_packet 中获批的概念
+  production_plan: null        # 获批的工具/provider 方案
+  approved_budget_usd: null    # 用户明确批准的花费上限
 
-  # Cross-stage tracking
+  # 跨阶段追踪
   narration_durations: {}    # section_id → actual_seconds
   total_narration_seconds: 0
   total_visual_seconds: 0
-  style_anchors: {}          # consistency tokens carried forward
-  revision_counts: {}        # stage_name → number of revisions
-  issues_log: []             # all issues found, with resolution status
+  style_anchors: {}          # 向下传递的一致性 token
+  revision_counts: {}        # stage_name → 修订次数
+  issues_log: []             # 所有发现的问题，含解决状态
 ```
 
-## Execution Protocol
+## 执行协议
 
-### Phase 0: Initialize
+### 阶段 0：初始化
 
-1. Load the pipeline manifest (`animated-explainer.yaml`)
-2. Load the playbook (from user selection or default)
-3. Set budget from configuration or user input (default: $2.00)
-4. Initialize EP_STATE
+1. 加载管线 manifest（`animated-explainer.yaml`）
+2. 加载 playbook（来自用户选择或默认）
+3. 从配置或用户输入设定预算（默认：$2.00）
+4. 初始化 EP_STATE
 
-### Phase 1: Execute Stages Serially
+### 阶段 1：串行执行各阶段
 
-For each stage in order: `research → proposal → script → scene_plan → assets → edit → compose → publish`
+按顺序执行：`research → proposal → script → scene_plan → assets → edit → compose → publish`
 
-**Pre-production stages (research, proposal)** run before any money is spent:
-- **research** gathers raw data via web search — zero cost, no tools
-- **proposal** presents concepts and costs to the user — zero cost, but contains the **approval gate**
-- The pipeline MUST NOT proceed past proposal without `approval.status == "approved"` or `"approved_with_changes"`
+**前期阶段（research、proposal）** 在任何花钱之前运行：
+- **research** 通过网络检索收集原始数据 —— 零成本、不用工具
+- **proposal** 把概念和成本呈现给用户 —— 零成本，但包含**审批门禁**
+- 在 `approval.status == "approved"` 或 `"approved_with_changes"` 之前，管线**不得**越过 proposal
 
-After proposal approval, extract and store in EP_STATE:
-- `selected_concept` from `proposal_packet.selected_concept` (drives script, scene, visual decisions)
-- `production_plan` from `proposal_packet.production_plan` (drives tool selection in assets stage)
-- `approved_budget_usd` from `proposal_packet.approval.approved_budget_usd` (overrides default budget)
-- `playbook` from `proposal_packet.selected_concept → concept_options[selected].suggested_playbook`
+proposal 获批之后，提取并存入 EP_STATE：
+- 从 `proposal_packet.selected_concept` 取 `selected_concept`（驱动脚本、场景、视觉决策）
+- 从 `proposal_packet.production_plan` 取 `production_plan`（驱动 assets 阶段的工具选择）
+- 从 `proposal_packet.approval.approved_budget_usd` 取 `approved_budget_usd`（覆盖默认预算）
+- 从 `proposal_packet.selected_concept → concept_options[selected].suggested_playbook` 取 `playbook`
 
 ```
 EXECUTE_STAGE(stage_name):
 
-  1. PREPARE
-     - Load the director skill for this stage
-     - Inject EP_STATE as context (prior artifacts, budget remaining, style anchors)
-     - Inject any EP feedback from previous revision attempts
+  1. 准备
+     - 加载该阶段的 director 技能
+     - 把 EP_STATE 作为上下文注入（先前 artifact、剩余预算、风格锚点）
+     - 注入先前修订尝试中来自 EP 的任何反馈
 
-  2. SPAWN DIRECTOR
-     - The director executes its full process (as defined in its skill MD)
-     - Director produces an artifact
+  2. 派出导演
+     - 导演执行它的完整流程（如其技能 MD 所定义）
+     - 导演产出一个 artifact
 
-  3. REVIEW (EP performs this, not a separate reviewer)
-     - Schema validation against artifact schema
-     - Check review_focus items from pipeline manifest
-     - Check success_criteria from pipeline manifest
-     - Cross-check against playbook constraints
-     - Run EP-SPECIFIC CROSS-STAGE CHECKS (see below)
+  3. 复看（由 EP 执行，不是另找一个 reviewer）
+     - 按 artifact schema 做校验
+     - 检查管线 manifest 中的 review_focus 项
+     - 检查管线 manifest 中的 success_criteria
+     - 对照 playbook 约束交叉核对
+     - 运行 EP 专属的跨阶段检查（见下）
 
-  4. GATE DECISION
-     If PASS:
-       - Store artifact in EP_STATE
-       - Update cumulative tracking (budget, durations, etc.)
-       - Log: "[stage] PASSED — moving to next stage"
-       - Continue to next stage
+  4. 门禁裁决
+     若 PASS：
+       - 把 artifact 存入 EP_STATE
+       - 更新累积追踪（预算、时长等）
+       - 记录："[stage] PASSED —— 进入下一阶段"
+       - 继续下一阶段
 
-     If REVISE:
-       - Increment revision_counts[stage_name]
-       - If revision_counts[stage_name] >= 3:
-           - PASS WITH WARNINGS (never block forever)
-           - Log unresolved issues
-       - Else:
-           - Compose specific feedback for the director
-           - Re-run SPAWN DIRECTOR with feedback injected
-           - Re-run REVIEW
+     若 REVISE：
+       - revision_counts[stage_name] 加 1
+       - 若 revision_counts[stage_name] >= 3：
+           - 带警告通过（绝不永久阻塞）
+           - 记录未解决的问题
+       - 否则：
+           - 为该导演写出具体反馈
+           - 带着反馈重跑"派出导演"
+           - 重跑"复看"
 
-     If SEND_BACK(target_stage):
-       - This is the EP's special power: send work BACK to a prior stage
-       - Only used when a downstream discovery invalidates upstream work
-       - Example: TTS returns 16s audio for a scene planned at 10s
-         → Send back to script director: "Rewrite section 3. Max 25 words."
-       - Re-execute from target_stage forward (artifacts after target are invalidated)
-       - Max 1 send-back per stage pair (prevent infinite loops)
+     若 SEND_BACK(target_stage)：
+       - 这是 EP 的特殊权力：把工作**退回**到某个更早的阶段
+       - 仅当下游的发现推翻了上游工作时使用
+       - 例子：某场景计划 10 秒，而 TTS 返回了 16 秒音频
+         → 退回给脚本导演："重写第 3 段。最多 25 个词。"
+       - 从 target_stage 起重新执行（target 之后的 artifact 全部作废）
+       - 每对阶段之间最多回退 1 次（防止无限循环）
 ```
 
-### Phase 2: Final Quality Assurance
+### 阶段 2：最终质量保证
 
-After all 7 stages complete, the EP performs a holistic review:
+7 个阶段全部完成后，EP 做一次整体复看：
 
 ```
 FINAL_QA:
-  1. PROBE the output video:
-     - Duration: within ±5% of target?
-     - Resolution: matches media profile?
-     - Audio: narration audible throughout? Music balanced?
-     - File: valid container, reasonable size?
+  1. 探测输出视频：
+     - 时长：在目标的 ±5% 以内吗？
+     - 分辨率：与 media profile 一致吗？
+     - 音频：旁白全程可闻吗？音乐平衡吗？
+     - 文件：容器合法吗？体积合理吗？
 
-  2. A/V SYNC CHECK:
-     - Compare narration timestamps to visual cut points
-     - Flag any section where narration plays over the wrong visual
-     - Tolerance: ±0.5 seconds
+  2. 音画同步检查：
+     - 把旁白时间戳与画面切点做比对
+     - 标出任何旁白配错画面的段落
+     - 容差：±0.5 秒
 
-  3. STYLE CONSISTENCY:
-     - Review all generated images: do they look like the same video?
-     - Check color palette adherence
-     - Check typography consistency
+  3. 风格一致性：
+     - 复看所有生成图像：它们看起来像同一支视频吗？
+     - 检查配色的遵守情况
+     - 检查排版一致性
 
-  4. BUDGET RECONCILIATION:
-     - Total actual spend vs. budget
-     - Log per-stage cost breakdown
+  4. 预算对账：
+     - 实际总花费 vs 预算
+     - 记录逐阶段成本拆分
 
-  5. DECISION:
-     If all checks pass → APPROVE for publish stage
-     If issues found → Send back to the specific stage(s) that can fix them
-       - Audio issues → compose director
-       - Visual issues → asset director (regenerate) or scene director (replan)
-       - Duration issues → script director (rewrite)
-       - Sync issues → edit director (re-cut)
+  5. 裁决：
+     若全部检查通过 → 批准进入 publish 阶段
+     若发现问题 → 打回到能修复它们的那个/那些具体阶段
+       - 音频问题 → compose 导演
+       - 视觉问题 → asset 导演（重新生成）或 scene 导演（重新规划）
+       - 时长问题 → script 导演（重写）
+       - 同步问题 → edit 导演（重新剪辑）
 ```
 
-## EP-Specific Cross-Stage Checks
+## EP 专属的跨阶段检查
 
-These checks use information accumulated across stages — something no individual director can do.
+这些检查使用跨阶段累积的信息 —— 是任何单个导演都做不到的事。
 
-### After RESEARCH stage:
+### RESEARCH 阶段之后：
 ```
-CHECK: Research depth
-  - At least 3 data_points with source URLs?
-  - At least 3 angles_discovered with grounded_in references?
-  - At least 5 sources cited?
-  - If any minimum not met: REVISE research
-  - Note: Do NOT checkpoint with user — research is informational, not a decision point
-```
-
-### After PROPOSAL stage:
-```
-CHECK: Approval gate (CRITICAL — the entire point of pre-production)
-  - Is approval.status == "approved" or "approved_with_changes"?
-  - If "pending" or "rejected": STOP. Present to user and wait.
-  - If "approved_with_changes": apply modifications to selected_concept before proceeding
-  - Extract: target_duration_seconds, playbook, budget, tool selections
-  - Initialize budget from approved_budget_usd (not default)
-
-CHECK: Production feasibility
-  - Does the production plan reference tools that are actually available?
-  - Cross-check production_plan.stages[].tools[].available against registry
-  - If any required tool is unavailable: alert user, offer alternatives
+检查：调研深度
+  - 至少 3 个带来源 URL 的 data_points？
+  - 至少 3 个带 grounded_in 引用的 angles_discovered？
+  - 至少引用 5 个来源？
+  - 若任一最低要求未达标：REVISE research
+  - 注意：**不要**在此与用户设检查点 —— research 是信息性的，不是决策点
 ```
 
-### After SCRIPT stage:
+### PROPOSAL 阶段之后：
 ```
-CHECK: Word count vs. duration target
-  - Calculate: total_words / 150 = estimated_minutes (at 150 WPM speaking rate)
-  - If estimated_minutes > target_duration * 1.15:
-      REVISE script: "Script is {X} words. At 150 WPM, that's {Y} minutes.
-      Target is {Z} minutes. Cut {N} words."
-  - If estimated_minutes < target_duration * 0.7:
-      REVISE script: "Script is too short. Add {N} words of content."
+检查：审批门禁（关键 —— 这正是前期工作的全部意义）
+  - approval.status 是 "approved" 还是 "approved_with_changes"？
+  - 若是 "pending" 或 "rejected"：停下。呈现给用户并等待。
+  - 若是 "approved_with_changes"：先把修改应用到 selected_concept 再继续
+  - 提取：target_duration_seconds、playbook、预算、工具选择
+  - 用 approved_budget_usd（而不是默认值）初始化预算
+
+检查：制作可行性
+  - 制作计划引用的工具是否真的可用？
+  - 把 production_plan.stages[].tools[].available 与注册表交叉核对
+  - 若任何必需工具不可用：提醒用户，给出替代方案
 ```
 
-### After SCENE_PLAN stage:
+### SCRIPT 阶段之后：
 ```
-CHECK: Total scene duration covers full script
-  - Sum all scene durations
-  - Compare to script's total duration
-  - If gaps > 1 second: REVISE scene_plan
-  - If overlaps: REVISE scene_plan
-
-CHECK: Visual variety
-  - Count consecutive same-type scenes
-  - If > 3 consecutive: REVISE scene_plan
-
-CHECK: Asset feasibility
-  - For each required_asset, verify the tool exists in registry
-  - If any asset requires a tool that's unavailable:
-      REVISE scene_plan: "Tool {X} is unavailable. Use {alternative} instead."
+检查：词数 vs 时长目标
+  - 计算：总词数 / 150 = 预计分钟数（按每分钟 150 词的语速）
+  - 若 预计分钟数 > 目标时长 * 1.15：
+      REVISE script："脚本 {X} 词。按 150 词/分钟算是 {Y} 分钟。
+      目标是 {Z} 分钟。删掉 {N} 词。"
+  - 若 预计分钟数 < 目标时长 * 0.7：
+      REVISE script："脚本太短。再加 {N} 词的内容。"
 ```
 
-### After ASSETS stage:
+### SCENE_PLAN 阶段之后：
 ```
-CHECK: Narration duration feedback loop (CRITICAL)
-  - For each TTS audio file, probe actual duration
-  - Store in EP_STATE.narration_durations
-  - For each section:
-      If actual_duration > planned_duration * 1.15:
-        Option A: SEND_BACK to script director:
-          "Section {id} narration is {X}s but scene is {Y}s.
-           Rewrite to max {N} words."
-        Option B (if within 25% over): Adjust scene_plan durations to fit
-  - Update EP_STATE.total_narration_seconds
+检查：场景总时长是否覆盖完整脚本
+  - 把所有场景时长相加
+  - 与脚本总时长比较
+  - 若空缺 > 1 秒：REVISE scene_plan
+  - 若有重叠：REVISE scene_plan
 
-CHECK: Budget gate
-  - If budget_spent > budget_total * 0.9 and stages remain:
-      Alert: "90% budget consumed with {N} stages remaining"
-      Adjust remaining stages to use free/cheap alternatives
+检查：视觉多样性
+  - 统计连续同类型场景数
+  - 若连续 > 3 个：REVISE scene_plan
 
-CHECK: Style consistency
-  - Compare image descriptions/styles across all generated images
-  - Store style_anchors for downstream use
+检查：素材可行性
+  - 对每个 required_asset，确认该工具在注册表中存在
+  - 若某个素材需要不可用的工具：
+      REVISE scene_plan："工具 {X} 不可用。改用 {alternative}。"
 ```
 
-### After EDIT stage:
+### ASSETS 阶段之后：
 ```
-CHECK: Timeline completeness
-  - Verify edit decisions cover 0 to total_duration with no gaps
-  - Verify all asset references point to existing files
-  - Verify audio ducking is configured for all narration segments
+检查：旁白时长反馈回路（关键）
+  - 对每个 TTS 音频文件，探测实际时长
+  - 存入 EP_STATE.narration_durations
+  - 对每一段：
+      若 实际时长 > 计划时长 * 1.15：
+        选项 A：SEND_BACK 给脚本导演：
+          "第 {id} 段旁白是 {X} 秒，而场景是 {Y} 秒。
+           重写到最多 {N} 词。"
+        选项 B（超出 25% 以内）：调整 scene_plan 的时长去适配
+  - 更新 EP_STATE.total_narration_seconds
 
-CHECK: A/V sync pre-validation
-  - For each cut: narration_start aligns with visual_start (±0.5s)
-  - For each scene: narration_duration ≤ visual_duration
-```
+检查：预算门禁
+  - 若 budget_spent > budget_total * 0.9 且还有阶段未跑：
+      提醒："已消耗 90% 预算，还剩 {N} 个阶段"
+      把剩余阶段改用免费/廉价的替代方案
 
-### After COMPOSE stage:
-```
-CHECK: Output validation
-  - ffprobe the output: duration, resolution, codec, audio channels
-  - If duration drift > 5%: investigate which stage caused it
-  - If audio missing: check audio_mixer configuration
-  - If resolution wrong: check media profile selection
-```
-
-## Feedback Message Templates
-
-When sending work back to a director, use these structured feedback messages:
-
-### To Script Director:
-```
-EP FEEDBACK — Script Revision Required
-Reason: {reason}
-Specific issue: {detail}
-Constraint: {word_count_limit / duration_target / etc.}
-Keep: {what was good about the current script}
-Change: {what specifically needs to change}
+检查：风格一致性
+  - 比较所有生成图像的描述/风格
+  - 存下 style_anchors 供下游使用
 ```
 
-### To Scene Director:
+### EDIT 阶段之后：
 ```
-EP FEEDBACK — Scene Plan Revision Required
-Reason: {reason}
-Affected scenes: {scene_ids}
-Constraint: {feasibility / variety / duration / etc.}
-Available tools: {current tool registry status}
+检查：时间线完整性
+  - 确认剪辑决策覆盖从 0 到 total_duration 且无空缺
+  - 确认所有素材引用都指向真实存在的文件
+  - 确认所有旁白段都配置了音频闪避
+
+检查：音画同步预校验
+  - 每个 cut：narration_start 与 visual_start 对齐（±0.5 秒）
+  - 每个场景：narration_duration ≤ visual_duration
 ```
 
-### To Asset Director:
+### COMPOSE 阶段之后：
 ```
-EP FEEDBACK — Asset Regeneration Required
-Reason: {reason}
-Affected assets: {asset_ids}
-Style anchors: {consistency requirements from prior successful assets}
-Budget remaining: ${remaining}
-```
-
-### To Compose Director:
-```
-EP FEEDBACK — Re-render Required
-Reason: {reason}
-Specific issue: {audio_sync / duration / quality / etc.}
-Expected: {what the output should be}
-Actual: {what was produced}
+检查：输出校验
+  - 对输出跑 ffprobe：时长、分辨率、编码、音频声道
+  - 若时长漂移 > 5%：排查是哪个阶段造成的
+  - 若音频缺失：检查 audio_mixer 配置
+  - 若分辨率不对：检查 media profile 的选择
 ```
 
-## Quality Gates Summary
+## 反馈消息模板
 
-| Gate | After Stage | What's Checked | Fail Action |
+把工作退回给某位导演时，使用这些结构化的反馈消息：
+
+### 给 Script 导演：
+```
+EP 反馈 —— 需要修订脚本
+原因：{reason}
+具体问题：{detail}
+约束：{词数上限 / 时长目标 / 等等}
+保留：{当前脚本哪里做得好}
+修改：{具体要改什么}
+```
+
+### 给 Scene 导演：
+```
+EP 反馈 —— 需要修订场景方案
+原因：{reason}
+受影响场景：{scene_ids}
+约束：{可行性 / 多样性 / 时长 / 等等}
+可用工具：{当前工具注册表状态}
+```
+
+### 给 Asset 导演：
+```
+EP 反馈 —— 需要重新生成素材
+原因：{reason}
+受影响素材：{asset_ids}
+风格锚点：{来自先前成功素材的一致性要求}
+剩余预算：${remaining}
+```
+
+### 给 Compose 导演：
+```
+EP 反馈 —— 需要重新渲染
+原因：{reason}
+具体问题：{音画同步 / 时长 / 质量 / 等等}
+期望：{输出应当是什么样}
+实际：{实际产出了什么}
+```
+
+## 质量门汇总
+
+| 门 | 位于阶段之后 | 检查什么 | 未通过时的动作 |
 |------|-------------|---------------|-------------|
-| G1 | research | Data depth, source quality, angle diversity | Revise research |
-| G2 | proposal | Concept quality, cost accuracy, user approval | Revise proposal OR wait for user |
-| G3 | script | Word count vs duration, narrative arc, research integration | Revise script |
-| G4 | scene_plan | Coverage, variety, feasibility against production plan | Revise scene_plan |
-| G5 | assets | File existence, narration duration, budget, style | Revise assets OR send-back to script |
-| G6 | edit | Timeline completeness, A/V pre-sync | Revise edit |
-| G7 | compose | Output probe, duration, audio quality | Revise compose OR send-back to edit/assets |
-| G8 | publish | Metadata, packaging | Revise publish |
-| FINAL | all | Holistic video review | Send-back to specific stage |
+| G1 | research | 数据深度、来源质量、角度多样性 | 修订 research |
+| G2 | proposal | 概念质量、成本准确性、用户审批 | 修订 proposal 或等待用户 |
+| G3 | script | 词数 vs 时长、叙事弧线、调研整合 | 修订 script |
+| G4 | scene_plan | 覆盖度、多样性、对照制作计划的可行性 | 修订 scene_plan |
+| G5 | assets | 文件是否存在、旁白时长、预算、风格 | 修订 assets 或回退到 script |
+| G6 | edit | 时间线完整性、音画预同步 | 修订 edit |
+| G7 | compose | 输出探测、时长、音频质量 | 修订 compose 或回退到 edit/assets |
+| G8 | publish | 元数据、打包 | 修订 publish |
+| FINAL | 全部 | 整体视频复看 | 回退到具体阶段 |
 
-## Execution Limits (Anti-Loop Protection)
+## 执行上限（防循环保护）
 
-| Limit | Value | Rationale |
+| 上限 | 取值 | 理由 |
 |-------|-------|-----------|
-| Max revisions per stage | 3 | Prevent perfectionism loops |
-| Max send-backs per stage pair | 1 | Prevent ping-pong between stages |
-| Max total send-backs | 3 | Cap total pipeline re-work |
-| Max total budget | Configurable (default $2) | Hard stop on spending |
-| Max total wall-time | 15 minutes | Timeout for entire pipeline |
+| 每阶段最多修订次数 | 3 | 防止完美主义循环 |
+| 每对阶段最多回退次数 | 1 | 防止阶段之间来回踢皮球 |
+| 总回退次数上限 | 3 | 给管线返工总量封顶 |
+| 总预算上限 | 可配置（默认 $2） | 花费的硬性刹车 |
+| 总墙钟时间上限 | 15 分钟 | 整条管线的超时 |
 
-After any limit is hit: **proceed with warnings**, never block indefinitely.
+任何上限被触发后：**带警告继续**，绝不无限期阻塞。
 
-## Integration with Existing Skills
+## 与既有技能的集成
 
-The EP doesn't replace any director skill — it wraps them. Each director skill continues to work exactly as documented. The EP adds:
+EP 不取代任何 director 技能 —— 它把它们包起来。每个 director 技能继续按其文档所述工作。EP 额外提供：
 
-1. **Context injection**: Directors receive EP_STATE with cross-stage information they couldn't access before
-2. **Feedback injection**: Directors receive specific revision instructions when sent back
-3. **Budget awareness**: Directors receive remaining budget and can adjust tool choices accordingly
-4. **Style anchors**: Directors receive consistency tokens from prior stages
+1. **上下文注入**：导演收到 EP_STATE，其中含有他们此前拿不到的跨阶段信息
+2. **反馈注入**：被打回时，导演收到具体的修订指令
+3. **预算感知**：导演收到剩余预算，并据此调整工具选择
+4. **风格锚点**：导演收到来自先前阶段的一致性 token
 
-## Example EP Run (Abbreviated)
+## EP 运行示例（节选）
 
 ```
 [EP] Starting pipeline: animated-explainer v2.0
@@ -414,10 +414,10 @@ The EP doesn't replace any director skill — it wraps them. Each director skill
 [EP] Output: renders/output.mp4
 ```
 
-## Common Pitfalls
+## 常见陷阱
 
-- **Over-revising**: The EP should be pragmatic. A "pretty good" script that's within duration is better than a "perfect" script after 5 rounds. Use the limits.
-- **Ignoring budget**: Don't let early stages consume all budget. Reserve at least 30% for assets + compose.
-- **Sending back too eagerly**: Minor issues (±10% duration) should be handled by adjusting downstream, not re-running upstream. Only send back for structural problems.
-- **Not probing outputs**: Always ffprobe the final video. Never trust metadata alone.
-- **Losing style context**: The EP must carry style anchors forward. If image 1 uses a specific palette, image 5 must match. Pass this explicitly to the asset director.
+- **过度修订**：EP 应当务实。一份时长达标的"相当不错"的脚本，胜过 5 轮之后的"完美"脚本。用好那些上限。
+- **无视预算**：不要让早期阶段吃掉全部预算。至少给 assets + compose 留 30%。
+- **太急着回退**：小问题（时长 ±10%）应当在下游调整解决，而不是重跑上游。只有结构性问题才回退。
+- **不探测输出**：始终对最终视频跑 ffprobe。绝不要只信元数据。
+- **丢失风格上下文**：EP 必须把风格锚点带下去。若第 1 张图用了某套配色，第 5 张就必须匹配。要把这一点显式传给素材导演。

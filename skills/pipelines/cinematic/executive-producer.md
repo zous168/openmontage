@@ -1,37 +1,37 @@
-# Executive Producer — Cinematic Pipeline
+# 监制（Executive Producer）—— Cinematic 管线
 
-## When to Use
+## 何时使用
 
-You are the **Executive Producer (EP)** for a cinematic video (trailers, brand films, montages, short dramatic edits). You orchestrate the pipeline serially with quality gates focused on **mood, emotional pacing, color consistency, and audio dynamics**.
+你是一支电影感视频（预告片、品牌片、蒙太奇、短篇戏剧化剪辑）的**监制（EP）**。你串行编排整条管线，质量门聚焦在**情绪、情绪节奏、色彩一致性和音频动态**上。
 
-The cinematic pipeline now starts with **research** and **proposal** stages — grounding cinematic direction in real references and giving the user an explicit approval gate before any money is spent. The EP orchestrates all stages serially with quality gates focused on emotional arc integrity and cinematic polish.
+Cinematic 管线现在从 **research** 和 **proposal** 阶段开始 —— 让电影方向扎根于真实参考，并在任何花钱之前给用户一道明确的审批门。EP 串行编排所有阶段，质量门聚焦在情绪弧线的完整性和电影感的精致度上。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Pipeline | `pipeline_defs/cinematic.yaml` | Stage definitions |
-| Skills | All 9 director skills + `meta/reviewer` | Stage execution |
-| Schemas | All artifact schemas | Validation |
-| Playbook | Active style playbook | Quality constraints |
+| 管线 | `pipeline_defs/cinematic.yaml` | 阶段定义 |
+| 技能 | 全部 9 个 director 技能 + `meta/reviewer` | 阶段执行 |
+| Schema | 全部 artifact schema | 校验 |
+| Playbook | 当前生效的风格 playbook | 质量约束 |
 
-## Cumulative State
+## 累积状态
 
 ```
 EP_STATE:
   pipeline: cinematic
-  playbook: <selected>
-  target_duration_seconds: <from proposal_packet>
-  budget_total_usd: <configured>
+  playbook: <选定>
+  target_duration_seconds: <来自 proposal_packet>
+  budget_total_usd: <配置值>
   budget_spent_usd: 0.0
 
-  # Cinematic-specific
-  emotional_arc: null         # from proposal_packet: build → reveal → landing
-  delivery_promise: null      # from proposal_packet: motion_required, tone_mode, quality_floor
-  renderer_family: null       # from proposal_packet: locked at proposal stage
-  color_grade_target: null    # mood-driven color palette
-  hero_moments: []            # key reveal/climax frames
-  music_beat_map: null        # audio-driven pacing reference
+  # 电影感专属
+  emotional_arc: null         # 来自 proposal_packet：蓄势 → 揭示 → 落地
+  delivery_promise: null      # 来自 proposal_packet：motion_required、tone_mode、quality_floor
+  renderer_family: null       # 来自 proposal_packet：在 proposal 阶段锁定
+  color_grade_target: null    # 情绪驱动的配色
+  hero_moments: []            # 关键的揭示/高潮画面
+  music_beat_map: null        # 音频驱动的节奏参照
 
   artifacts:
     research: null
@@ -47,145 +47,145 @@ EP_STATE:
   issues_log: []
 ```
 
-## Execution Protocol
+## 执行协议
 
-Same as standard EP: Initialize → Execute stages serially (research → proposal → script → scene_plan → assets → edit → compose → publish) → Final QA.
+与标准 EP 相同：初始化 → 串行执行各阶段（research → proposal → script → scene_plan → assets → edit → compose → publish）→ 最终 QA。
 
-Each stage: PREPARE → SPAWN DIRECTOR → REVIEW → GATE DECISION (pass / revise / send-back).
+每个阶段：准备 → 派出导演 → 复看 → 门禁裁决（通过 / 修订 / 回退）。
 
-### User-Facing Decision Flow
+### 面向用户的决策流
 
-For this pipeline, the EP must make the decision trail visible to the user.
+在本管线中，EP 必须让决策轨迹对用户可见。
 
-Before any expensive or consequential generation step, present:
+在任何昂贵或有后果的生成步骤之前，呈现：
 
-- selected tool,
-- provider,
-- model or variant,
-- why it was chosen,
-- whether the run is a sample or a batch.
+- 选定的工具，
+- provider，
+- 模型或变体，
+- 为什么选它，
+- 这次运行是样片还是批量。
 
-If the approved path becomes blocked, the EP must stop and present:
+若已获批的路径被卡住，EP 必须停下并呈现：
 
-- the attempted path,
-- the concrete failure,
-- the likely class of issue (auth, provider access, tool bug, or creative mismatch),
-- the available next options,
-- the recommended next option.
+- 尝试过的路径，
+- 具体的失败情况，
+- 问题的大致类别（鉴权、provider 权限、工具 bug，还是创意不匹配），
+- 可用的下一步选项，
+- 推荐的下一步选项。
 
-The EP may not switch providers, models, or mediums without user approval once the user has expressed a preference or approved a plan.
+一旦用户表达过偏好或批准过某个方案，EP 就不得在未经用户批准的情况下更换 provider、模型或媒介。
 
-## EP-Specific Cross-Stage Checks
+## EP 专属的跨阶段检查
 
-### After RESEARCH stage:
+### RESEARCH 阶段之后：
 ```
-CHECK: Research grounding
-  - Are visual references specific and relevant (not generic "cinematic" searches)?
-  - Is sound/music direction substantive?
-  - Are at least 3 different cinematic directions identified with different emotional arcs?
-  - Is the motion commitment honest about available capabilities?
-```
-
-### After PROPOSAL stage:
-```
-CHECK: Delivery promise
-  - Is the emotional arc explicit (build → reveal → landing)?
-  - Is source mode clear (supplied footage vs generated inserts)?
-  - Does the proposal explicitly say whether motion is required?
-  - Is the delivery_promise present with all required fields?
-  - Is the renderer_family selected and locked?
-  - Is the music plan resolved (source chosen or explicitly deferred)?
-  - Is the cost estimate honest and per-item?
-  - Has the user approved the proposal?
+检查：调研的落地程度
+  - 视觉参考是否具体且相关（而不是泛泛的 "cinematic" 检索）？
+  - 声音/音乐方向是否有实质内容？
+  - 是否识别出了至少 3 个情绪弧线各不相同的电影方向？
+  - 运动承诺是否对现有能力如实？
 ```
 
-### After SCRIPT stage:
+### PROPOSAL 阶段之后：
 ```
-CHECK: Beat escalation
-  - Does the beat map escalate cleanly toward the reveal?
-  - Are dialogue/title cards sparse and purposeful?
-  - Is the landing beat distinct from the build?
-
-CHECK: Duration fit
-  - Word count aligns with cinematic pacing (slower than explainer — ~120 WPM)
-```
-
-### After SCENE_PLAN stage:
-```
-CHECK: Hero moment definition
-  - Are hero frames (climax, reveal) explicitly identified?
-  - Is source footage prioritized over generated inserts?
-  - Do transitions support mood (not distract)?
-
-CHECK: Visual consistency
-  - Is the color/mood system coherent across scenes?
-  - Are aspect ratio choices consistent (letterbox if used)?
+检查：交付承诺
+  - 情绪弧线是否明确（蓄势 → 揭示 → 落地）？
+  - 源素材模式是否清楚（提供的素材 vs 生成的插入镜头）？
+  - 提案是否明确说明是否要求有运动？
+  - delivery_promise 是否存在且必填字段齐全？
+  - renderer_family 是否已选定并锁定？
+  - 音乐方案是否落定（选定来源，或明确推迟）？
+  - 成本估算是否如实且逐项列出？
+  - 用户是否已批准提案？
 ```
 
-### After ASSETS stage:
+### SCRIPT 阶段之后：
 ```
-CHECK: Music/ambience alignment
-  - Does the music beat map align with the script beat map?
-  - Are generated inserts limited and justified?
-  - If motion is required, are actual video clips available instead of still-image substitutes?
-  - Budget gate: 90% threshold warning
+检查：节拍递进
+  - 节拍图是否干净地朝揭示处递进？
+  - 对白/标题卡是否稀疏而有目的？
+  - 落地节拍是否与蓄势段落有明显区分？
 
-CHECK: Source selects quality
-  - Are source clips properly identified and accessible?
-  - Do support assets (generated or stock) match source quality level?
+检查：时长匹配
+  - 词数与电影感节奏吻合（比讲解视频慢 —— 约 120 词/分钟）
 ```
 
-### After EDIT stage:
+### SCENE_PLAN 阶段之后：
 ```
-CHECK: Emotional pacing
-  - Strong moments are not overcut
-  - Audio cues reinforce story beats
-  - Title-card timing is restrained
+检查：主镜头时刻的定义
+  - 主画面（高潮、揭示）是否被明确标出？
+  - 源素材是否优先于生成的插入镜头？
+  - 转场是否服务于情绪（而不是分散注意力）？
 
-CHECK: Timeline completeness
-  - Full runtime covered, no gaps
-  - All asset references valid
-```
-
-### After COMPOSE stage:
-```
-CHECK: Output validation
-  - ffprobe: duration, resolution, codec
-  - Color grade applied and consistent
-  - Audio dynamics controlled — dialogue intelligible, music balanced
-  - Letterbox or frame treatment improves (not harms) the output
-  - If motion was required, does the output still satisfy that promise instead of degrading into a still-led animatic?
+检查：视觉一致性
+  - 色彩/情绪体系在各场景之间是否连贯？
+  - 画幅比的选择是否一致（若使用黑边）？
 ```
 
-## Quality Gates Summary
+### ASSETS 阶段之后：
+```
+检查：音乐/环境声的对齐
+  - 音乐节拍图是否与脚本节拍图对齐？
+  - 生成的插入镜头是否有限且有正当理由？
+  - 若要求有运动，是否真的有视频片段可用，而不是用静图替代？
+  - 预算门禁：90% 阈值提醒
 
-| Gate | After Stage | What's Checked | Fail Action |
+检查：源素材精选的质量
+  - 源片段是否被正确识别且可访问？
+  - 辅助素材（生成的或素材库的）是否与源素材的质量水平相称？
+```
+
+### EDIT 阶段之后：
+```
+检查：情绪节奏
+  - 有力的时刻没有被剪碎
+  - 音频提示强化了故事节拍
+  - 标题卡的时长克制
+
+检查：时间线完整性
+  - 覆盖了完整时长，没有空缺
+  - 所有素材引用都有效
+```
+
+### COMPOSE 阶段之后：
+```
+检查：输出校验
+  - ffprobe：时长、分辨率、编码
+  - 调色已应用且保持一致
+  - 音频动态受控 —— 对白可懂，音乐平衡
+  - 黑边或画面处理是在提升（而不是损害）输出
+  - 若原本要求有运动，输出是否仍然兑现了这个承诺，而没有退化成静图主导的动态分镜？
+```
+
+## 质量门汇总
+
+| 门 | 位于阶段之后 | 检查什么 | 未通过时的动作 |
 |------|-------------|---------------|-------------|
-| G0 | research | Visual references, mood grounding | Revise |
-| G1 | proposal | Delivery promise, renderer family, music plan, user approval | Revise |
-| G2 | script | Beat escalation, duration | Revise |
-| G3 | scene_plan | Hero moments, visual consistency | Revise |
-| G4 | assets | Music alignment, source quality, budget | Revise |
-| G5 | edit | Emotional pacing, timeline | Revise |
-| G6 | compose | Output probe, color grade, audio dynamics | Revise or send-back |
-| G7 | publish | Metadata, poster frame | Revise |
-| FINAL | all | Mood coherence, audio, visual polish | Send-back |
+| G0 | research | 视觉参考、情绪落地 | 修订 |
+| G1 | proposal | 交付承诺、renderer family、音乐方案、用户审批 | 修订 |
+| G2 | script | 节拍递进、时长 | 修订 |
+| G3 | scene_plan | 主镜头时刻、视觉一致性 | 修订 |
+| G4 | assets | 音乐对齐、源素材质量、预算 | 修订 |
+| G5 | edit | 情绪节奏、时间线 | 修订 |
+| G6 | compose | 输出探测、调色、音频动态 | 修订或回退 |
+| G7 | publish | 元数据、定帧海报 | 修订 |
+| FINAL | 全部 | 情绪连贯性、音频、视觉精致度 | 回退 |
 
-## Execution Limits
+## 执行上限
 
-| Limit | Value |
+| 上限 | 取值 |
 |-------|-------|
-| Max revisions per stage | 3 |
-| Max send-backs per stage pair | 1 |
-| Max total send-backs | 3 |
-| Max total budget | Configurable (default $2) |
-| Max total wall-time | 12 minutes |
+| 每阶段最多修订次数 | 3 |
+| 每对阶段最多回退次数 | 1 |
+| 总回退次数上限 | 3 |
+| 总预算上限 | 可配置（默认 $2） |
+| 总墙钟时间上限 | 12 分钟 |
 
-## Common Pitfalls
+## 常见陷阱
 
-- **Over-grading**: Color grade should enhance mood, not make footage look artificial.
-- **Overuse of generated inserts**: Source footage should be primary. Generated content fills gaps, not replaces.
-- **Ignoring audio dynamics**: Cinematic videos live and die by their audio. Music/dialogue balance is critical.
-- **Rushing the reveal**: The climax moment needs breathing room. Don't let pacing compress it.
-- **Silent downgrades**: If Remotion or clip generation breaks a motion-led brief, stop and bubble the issue to the user instead of quietly switching mediums.
-- **Invisible decision-making**: Do not make the user reverse-engineer which provider or model was used. State it before execution and when anything changes.
+- **调色过度**：调色应当强化情绪，而不是把素材弄得不真实。
+- **滥用生成的插入镜头**：源素材应当是主体。生成内容用来填补空缺，而不是取而代之。
+- **忽视音频动态**：电影感视频的成败系于它的音频。音乐与对白的平衡至关重要。
+- **赶揭示**：高潮时刻需要呼吸空间。别让节奏把它压扁。
+- **静默降级**：若 Remotion 或片段生成让一个以运动为主的 brief 无法兑现，就停下来把问题抛给用户，而不是悄悄换媒介。
+- **决策不可见**：不要让用户去反推用了哪个 provider 或模型。在执行之前，以及每当有变更时，都说清楚。

@@ -1,46 +1,46 @@
-# Reference Director — Reference-Driven Pipeline
+# 参考导演 —— Reference-Driven 管线
 
-## When to Use
+## 何时使用
 
-You are the **Reference Director** — the first stage of the `reference-driven` pipeline.
-The user chose this pipeline because they have an **inspiration video** and want a
-**differentiated version**, not a pixel-perfect clone.
+你是**参考导演** —— `reference-driven` 管线的第一个阶段。
+用户之所以选这条管线，是因为他们有一支**灵感来源视频**，并且想要一个
+**有差异化的版本**，而不是像素级的克隆。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Meta skill | `skills/meta/video-reference-analyst.md` | **Read and follow this entire skill** |
-| Bootstrap | `projects/<id>/meta.json` → `production_inputs` | Reference URL/path, topic, platform |
-| Schema | `schemas/artifacts/video_analysis_brief.schema.json` | Output artifact |
+| 元技能 | `skills/meta/video-reference-analyst.md` | **完整阅读并遵循这份技能** |
+| 引导数据 | `projects/<id>/meta.json` → `production_inputs` | 参考 URL/路径、题材、平台 |
+| Schema | `schemas/artifacts/video_analysis_brief.schema.json` | 输出 artifact |
 
-## Process
+## 流程
 
-1. Read `meta.json` → `production_inputs` for:
-   - `reference_url` and/or `reference_media_path` (project-relative after bootstrap)
-   - `topic` — what the user's version is about
-   - `target_platform`, `target_duration_seconds`, `preferred_output_pipeline` (if set)
+1. 读 `meta.json` → `production_inputs`，取得：
+   - `reference_url` 和/或 `reference_media_path`（引导之后是项目相对路径）
+   - `topic` —— 用户这一版讲什么
+   - `target_platform`、`target_duration_seconds`、`preferred_output_pipeline`（若已设置）
 
-2. **Follow `skills/meta/video-reference-analyst.md` end-to-end** for the reference
-   source. Use the URL or the on-disk reference file under `projects/<id>/`.
+2. 针对该参考源，**端到端地遵循 `skills/meta/video-reference-analyst.md`**。
+   使用那个 URL，或 `projects/<id>/` 下磁盘上的参考文件。
 
-3. Write a schema-valid **`video_analysis_brief`** artifact and checkpoint for stage
-   `reference_analysis`. Enrichment MUST include:
-   - `replication_guidance.playbook_customizations.dna_lock` (subject/scene/lighting)
-   - Per-scene analysis in `structure_analysis.scenes[]` (`description`, `on_screen_text`,
-     `narration_text`, optional `beats[]`)
-   - Optional root `generation` for shared video-gen defaults when motion replication applies
+3. 写出一份符合 schema 的 **`video_analysis_brief`** artifact，并为 `reference_analysis`
+   阶段写检查点。增强内容**必须**包括：
+   - `replication_guidance.playbook_customizations.dna_lock`（主体/场景/光照）
+   - `structure_analysis.scenes[]` 中的逐场景分析（`description`、`on_screen_text`、
+     `narration_text`、可选的 `beats[]`）
+   - 当涉及运动复现时，可选的根部 `generation`，用于共享的视频生成默认值
 
-4. Present the conversational 5-aspect summary to the user **before** marking the
-   stage complete. Do not skip capability audit or critical questions from the meta skill.
+4. 在把该阶段标记为完成**之前**，向用户呈现对话式的五要素摘要。
+   不要跳过元技能中的能力审计或关键问题。
 
-5. If `preferred_output_pipeline` is not `auto`, note it in `replication_guidance` but
-   still recommend the best pipeline honestly when tools or motion type disagree.
+5. 若 `preferred_output_pipeline` 不是 `auto`，就在 `replication_guidance` 中记下它，但
+   当工具或运动类型与之不符时，仍要如实推荐最合适的管线。
 
-## Output
+## 产出
 
-- `artifacts/video_analysis_brief.json` (canonical — scene-centric analysis artifact)
-- `checkpoint_reference_analysis.json` with status appropriate to policy
+- `artifacts/video_analysis_brief.json`（规范产物 —— 以场景为中心的分析 artifact）
+- `checkpoint_reference_analysis.json`，状态按策略确定
 
-Downstream stages (`research`, `proposal`, …) consume this brief. Do **not** collapse
-into later stages — this checkpoint is the contract gate for reference-driven work.
+下游阶段（`research`、`proposal`……）会消费这份 brief。**不要**把它
+折叠进后续阶段 —— 这个检查点是 reference-driven 工作的契约门禁。

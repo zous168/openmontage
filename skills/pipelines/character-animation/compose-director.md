@@ -1,49 +1,49 @@
-# Compose Director - Character Animation Pipeline
+# 合成导演 —— Character Animation 管线
 
-## Goal
+## 目标
 
-Render the approved character animation and prove it was reviewed.
+渲染已获批的角色动画，并证明它经过了复看。
 
-## Runtime Routing
+## 运行时路由
 
-First read `edit_decisions.render_runtime`. It must match the runtime locked in
-proposal unless a `render_runtime_selection` decision explicitly changed it.
+先读 `edit_decisions.render_runtime`。除非有一条 `render_runtime_selection`
+决策明确更改过它，否则它必须与 proposal 中锁定的运行时一致。
 
-- `remotion`: stage assets into `remotion-composer/public`, build composition
-  JSON, render via `video_compose`.
-- `hyperframes`: materialize a HyperFrames workspace and let `video_compose`
-  delegate to `hyperframes_compose`. `hyperframes lint` and `validate` must pass.
-- `ffmpeg`: only for post-processing or simple video assembly; not enough for
-  character acting by itself.
+- `remotion`：把素材暂存到 `remotion-composer/public`，构建 composition
+  JSON，通过 `video_compose` 渲染。
+- `hyperframes`：物化一个 HyperFrames 工作区，让 `video_compose`
+  委派给 `hyperframes_compose`。`hyperframes lint` 和 `validate` 都必须通过。
+- `ffmpeg`：只用于后期处理或简单的视频装配；单靠它不足以
+  完成角色表演。
 
-## Review Workflow
+## 复看流程
 
-1. Run `character_rig_renderer` to produce or refresh the HyperFrames package.
-   The browser preview is a QA/debug artifact only, not the render path.
-2. Verify the renderer emitted a HyperFrames `workspace_path`, composition HTML,
-   `asset_manifest`, and `edit_decisions.render_runtime: "hyperframes"` handoff.
-3. Run `character_animation_reviewer` against rig, poses, timeline, and preview.
-4. Render final video through `video_compose` using the renderer handoff or the
-   approved Remotion/HyperFrames package. The deliverable path is
-   `projects/<project-name>/renders/final.mp4`, matching the standard
-   OpenMontage project convention.
-5. Run standard `final_review`: ffprobe, frame sampling, visual spotcheck, audio
-   spotcheck, promise preservation.
+1. 运行 `character_rig_renderer` 生成或刷新 HyperFrames 包。
+   浏览器预览只是 QA/调试产物，不是渲染路径。
+2. 确认渲染器输出了 HyperFrames 的 `workspace_path`、composition HTML、
+   `asset_manifest`，以及 `edit_decisions.render_runtime: "hyperframes"` 的交接。
+3. 针对骨骼、姿势、时间线和预览运行 `character_animation_reviewer`。
+4. 使用渲染器的交接结果或已获批的 Remotion/HyperFrames 包，通过 `video_compose`
+   渲染最终视频。交付路径是
+   `projects/<project-name>/renders/final.mp4`，与 OpenMontage 标准
+   项目约定一致。
+5. 运行标准的 `final_review`：ffprobe、抽帧、视觉抽查、音频
+   抽查、承诺保持。
 
-## Browser QA
+## 浏览器 QA
 
-When Playwright is available:
+当 Playwright 可用时：
 
-- open the preview,
-- capture opening/middle/end frames,
-- check for console errors,
-- verify characters are visible,
-- compare frame deltas to ensure motion exists.
+- 打开预览，
+- 捕获开头/中间/结尾的帧，
+- 检查控制台错误，
+- 确认角色可见，
+- 比较帧差以确认确实存在运动。
 
-When Playwright is unavailable, use static artifact checks and FFmpeg frame
-sampling, and report the reduced confidence.
+当 Playwright 不可用时，改用静态产物检查和 FFmpeg 抽帧，
+并报告这样做置信度会下降。
 
-## Quality Bar
+## 质量底线
 
-Do not present the output as complete when `character_qa_report.status` is
-`revise` or `fail`.
+当 `character_qa_report.status` 为 `revise` 或 `fail` 时，
+不要把产出当作已完成呈现出去。

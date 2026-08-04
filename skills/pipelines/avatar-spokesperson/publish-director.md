@@ -1,24 +1,24 @@
-# Publish Director - Avatar Spokesperson Pipeline
+# 发布导演 —— Avatar Spokesperson 管线
 
-## When To Use
+## 何时使用
 
-Package the finished spokesperson outputs for delivery. This stage should make it obvious which file is the hero cut, which are derivatives, and what message or audience each version serves.
+把做完的代言人输出打包交付。本阶段应当让人一眼看出哪个文件是主剪辑、哪些是衍生版，以及每个版本服务于什么信息或什么受众。
 
-## Process
+## 流程
 
-### 1. Label Deliverables Clearly
+### 1. 清晰标注交付物
 
-Distinguish:
+区分：
 
-- hero cut,
-- vertical cutdown,
-- square cutdown,
-- language variants,
-- watermark or review versions.
+- 主剪辑，
+- 竖屏精简版，
+- 方形精简版，
+- 语种变体，
+- 带水印或供审阅的版本。
 
-### 2. Keep Metadata Message-Led
+### 2. 元数据以信息为导向
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `audience_segment`
 - `cta_copy`
@@ -26,28 +26,28 @@ Recommended metadata keys:
 - `locale`
 - `thumbnail_concept`
 
-### 3. Package Review Notes
+### 3. 打包审阅备注
 
-If the avatar path has limitations such as visible lip-sync risk, retain that note in the package instead of hiding it.
+若数字人路径存在局限（例如可见的唇形同步风险），把这条备注保留在交付包里，而不是藏起来。
 
-### 4. Quality Gate
+### 4. 质量门
 
-- exports are clearly named,
-- metadata matches the intended message,
-- poster frame or thumbnail concept features the presenter cleanly,
-- review notes stay attached to the package.
+- 导出物命名清晰，
+- 元数据与预期传达的信息相符，
+- 定帧海报或封面构想干净地呈现了出镜人，
+- 审阅备注随包保留。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Mixing hero and derivative exports without clear naming.
-- Reusing generic metadata that ignores the spokesperson offer.
-- Dropping risk notes that matter for downstream publishing teams.
+- 主剪辑与衍生导出混在一起却没有清晰命名。
+- 复用泛泛的元数据，无视这次代言的具体主张。
+- 丢掉对下游发布团队很重要的风险备注。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

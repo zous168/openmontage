@@ -1,45 +1,45 @@
-# Scene Director - Podcast Repurpose Pipeline
+# 场景导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-You are deciding how each podcast deliverable should look based on the actual source mode. This is where you prevent "fake richness" and choose honest, effective treatments.
+你要根据**实际的**源素材模式，决定每个播客交付物应当长什么样。正是在这里，你避免"虚假的丰富感"，并选择诚实而有效的处理方式。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Highlight set and source truth |
-| Tools | `frame_sampler` | Optional visual inspection for video-podcast sources |
-| Playbook | Active style playbook | Brand consistency |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 亮点集合与源素材实况 |
+| 工具 | `frame_sampler` | 视频播客源的可选视觉检视 |
+| Playbook | 当前生效的风格 playbook | 品牌一致性 |
 
-## Process
+## 流程
 
-### 1. Pick The Right Treatment Per Deliverable
+### 1. 为每个交付物挑对处理方式
 
-Prefer a source-faithful hierarchy:
+优先采用忠于源素材的层级：
 
-- if video podcast footage exists, use speaker-led scenes first,
-- if only audio exists, use audiogram or quote-led layouts,
-- if branding assets are limited, keep the visual system simple and repeatable.
+- 若有视频播客素材，优先使用以说话人为主的场景，
+- 若只有音频，就用音频波形图或语录主导的版式，
+- 若品牌素材有限，就让视觉体系保持简单且可重复。
 
-### 2. Avoid Pretend Complexity
+### 2. 不要装出复杂度
 
-Do not plan a full episode with endless generated topic art unless the budget and tools support it. A clean branded companion layout is better than a noisy, underpowered pseudo-production.
+除非预算和工具支撑得住，否则不要为整集规划没完没了的生成话题配图。一个干净的品牌化配套版式，胜过一个嘈杂、力不从心的伪制作。
 
-### 3. Define Scene Families
+### 3. 定义场景族
 
-Useful schema scene types:
+有用的 schema 场景类型：
 
-- `talking_head` for source video speaker shots
-- `text_card` for quote cards and chapter cards
-- `generated` for optional topic art
-- `diagram` for the rare cases where the discussion needs a graphic
-- `transition` for chapter moves
+- `talking_head` 用于源视频中的说话人镜头
+- `text_card` 用于语录卡和章节卡
+- `generated` 用于可选的话题配图
+- `diagram` 用于讨论确实需要图形的少数情形
+- `transition` 用于章节切换
 
-### 4. Use Metadata For Layout Strategy
+### 4. 用元数据表达版式策略
 
-Recommended `scene_plan.metadata` keys:
+推荐的 `scene_plan.metadata` 键：
 
 - `deliverable_layouts`
 - `speaker_card_rules`
@@ -47,33 +47,33 @@ Recommended `scene_plan.metadata` keys:
 - `audiogram_rules`
 - `full_episode_companion_rules`
 
-### 5. Plan Safe Zones And Attribution
+### 5. 规划安全区与署名
 
-Every layout should clearly preserve:
+每个版式都应当清楚地保住：
 
-- speaker attribution,
-- subtitle zone,
-- show branding,
-- CTA or episode reference area if needed.
+- 说话人署名，
+- 字幕区域，
+- 节目品牌标识，
+- 需要时的 CTA 或单集索引区域。
 
-### 6. Quality Gate
+### 6. 质量门
 
-- each deliverable has a treatment that matches the actual source,
-- source video is used when it exists instead of being hidden behind generic graphics,
-- audio-only assets remain visually simple and readable,
-- long-form companion visuals are achievable.
+- 每个交付物的处理方式都与实际源素材相符，
+- 有源视频时就用它，而不是把它藏在通用图形后面，
+- 纯音频类素材在视觉上保持简洁、可读，
+- 长视频配套的视觉是可实现的。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Planning speaker-centric layouts for audio-only episodes.
-- Turning every clip into the same waveform-plus-logo composition.
-- Using generated graphics to cover weak editorial choices.
+- 为纯音频的节目规划以说话人为中心的版式。
+- 把每条片段都做成同一个"波形 + Logo"的构图。
+- 用生成图形去掩盖剪辑上的弱选择。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

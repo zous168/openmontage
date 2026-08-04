@@ -329,8 +329,17 @@ def _merge_decision_log(
 
     existing_ids = {d["decision_id"] for d in existing.get("decisions", [])}
     for decision in new_log.get("decisions", []):
-        if decision.get("decision_id") not in existing_ids:
-            existing["decisions"].append(decision)
+        if decision.get("decision_id") in existing_ids:
+            continue
+        # 纵深防御：与 lib.decision_log.append_decisions 同样逐条校验。调用方
+        # 已在 validate_checkpoint 里校验过整份 decision_log，这里再挡一次，
+        # 保证任何进入 append-only 日志的条目都是 schema 合法的。
+        validate_artifact("decision_log", {
+            "version": "1.0",
+            "project_id": project_id,
+            "decisions": [decision],
+        })
+        existing["decisions"].append(decision)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
@@ -431,11 +440,9 @@ def write_checkpoint(
     if metadata is not None:
         checkpoint["metadata"] = metadata
 
-    # Merge decision_log: if this checkpoint carries new decisions,
-    # append them to the project-level decision log file, then write the
-    # reference back into relevant artifacts so downstream consumers can find it.
+    # decision_log_ref injection mutates artifact payloads, so it has to run
+    # before validation — the merge itself (a disk write) must not.
     if "decision_log" in artifacts and isinstance(artifacts["decision_log"], dict):
-        _merge_decision_log(pipeline_dir, project_id, artifacts["decision_log"])
         log_ref = str(_decision_log_path(pipeline_dir, project_id))
 
         # Write decision_log_ref into proposal_packet and render_report
@@ -452,6 +459,15 @@ def write_checkpoint(
                     plan_or_top["decision_log_ref"] = log_ref
 
     validate_checkpoint(checkpoint)
+
+    # Merge decision_log AFTER validation. Merging first meant a rejected
+    # write_checkpoint still persisted its decisions: the checkpoint file was
+    # never written, but decision_log.json already held the offending entries.
+    # Because the log is append-only and deduped by decision_id, an invalid
+    # category (agents do invent them) stayed there forever — and could never
+    # be mirrored on approval, seeding permanent approval_gate_drift.
+    if "decision_log" in artifacts and isinstance(artifacts["decision_log"], dict):
+        _merge_decision_log(pipeline_dir, project_id, artifacts["decision_log"])
 
     path = _checkpoint_path(pipeline_dir, project_id, stage)
     path.parent.mkdir(parents=True, exist_ok=True)

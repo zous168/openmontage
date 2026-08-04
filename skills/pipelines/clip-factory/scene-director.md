@@ -1,55 +1,55 @@
-# Scene Director - Clip Factory Pipeline
+# 场景导演 —— Clip Factory 管线
 
-## When To Use
+## 何时使用
 
-You are planning how each selected clip will be framed and packaged for its destination platform. This is where clip viability gets proven or disproven.
+你要规划每条获选片段将如何为其目标平台构图和包装。片段的可行性正是在这里被证明或被推翻。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Selected clips and platform goals |
-| Tools | `frame_sampler`, `scene_detect` | Visual checks and boundary inspection |
-| Playbook | Active style playbook | Layout language and safe zones |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 获选片段与平台目标 |
+| 工具 | `frame_sampler`、`scene_detect` | 视觉核查与边界检视 |
+| Playbook | 当前生效的风格 playbook | 版式语言与安全区 |
 
-## Process
+## 流程
 
-### 1. Choose The Right Frame For Each Clip
+### 1. 为每条片段选对画幅
 
-Do not default every clip to `9:16`.
+不要把每条片段都默认成 `9:16`。
 
-Use:
+使用：
 
-- `9:16` when a face-first crop works,
-- `1:1` when speaker plus context both matter,
-- `16:9` when slides, demos, or multi-speaker width are essential.
+- 当人脸优先的裁剪成立时用 `9:16`，
+- 当讲述者与语境都重要时用 `1:1`，
+- 当幻灯片、演示或多人宽画幅不可或缺时用 `16:9`。
 
-OpenMontage does not yet have first-class auto-reframe. If a vertical crop is weak, plan a safer aspect ratio instead of pretending the crop will work.
+OpenMontage 目前还没有一等的自动重构图能力。若竖屏裁剪效果弱，就改用更稳妥的画幅比，而不是假装那个裁剪能成。
 
-### 2. Plan First-Second Composition
+### 2. 规划第一秒的构图
 
-For each clip, define:
+对每条片段，定义：
 
-- what the viewer sees on frame 1,
-- where hook text can safely appear,
-- where subtitles can live,
-- whether the speaker needs a punch-in or whether the original framing is already good.
+- 观众在第 1 帧看到什么，
+- 钩子文字可以安全出现在哪里，
+- 字幕可以放在哪里，
+- 讲述者是否需要一次急推，还是原始构图已经不错。
 
-### 3. Standardize The Batch
+### 3. 让这一批标准化
 
-Use the scene plan to lock series consistency:
+用场景方案来锁定系列一致性：
 
-- same top hook zone,
-- same subtitle zone,
-- same watermark / brand area,
-- same lower-third logic.
+- 同样的顶部钩子区域，
+- 同样的字幕区域，
+- 同样的水印 / 品牌区域，
+- 同样的下三分之一条逻辑。
 
-### 4. Store Reframe Detail In Metadata
+### 4. 把重构图细节存进元数据
 
-The schema is generic, so store richer layout notes in `scene_plan.metadata`.
+schema 是通用的，所以把更丰富的版式说明存进 `scene_plan.metadata`。
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `clip_layouts`
 - `safe_zones`
@@ -57,29 +57,29 @@ Recommended metadata keys:
 - `speaker_positions`
 - `platform_variants`
 
-### 5. Use Scenes To Represent Deliverables
+### 5. 用场景来表示交付物
 
-Each scene should map to one clip variant or one clip family deliverable. Keep `description` human-readable and use `required_assets` for hook overlays, lower thirds, or branded frames.
+每个场景应当对应一个片段变体，或一个片段族的交付物。让 `description` 保持人类可读，并用 `required_assets` 承载钩子叠加层、下三分之一条或品牌画框。
 
-### 6. Quality Gate
+### 6. 质量门
 
-- every clip has a platform-aware framing plan,
-- hook and subtitle zones do not collide,
-- weak vertical crops are downgraded honestly,
-- the batch will feel visually consistent when rendered together.
+- 每条片段都有感知平台的构图方案，
+- 钩子区域与字幕区域不冲突，
+- 竖屏裁剪效果差的片段被如实降级，
+- 这一批一起渲染出来时在视觉上会显得一致。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Center-cropping a wide shot and calling it vertical optimization.
-- Ignoring slide or screen-share content while focusing only on faces.
-- Letting each clip invent its own layout.
-- Forgetting that the first frame determines whether a viewer keeps watching.
+- 把宽画幅镜头居中裁一刀，就号称做了竖屏优化。
+- 只盯着人脸，却无视幻灯片或屏幕共享内容。
+- 让每条片段各自发明自己的版式。
+- 忘了第一帧决定观众是否会继续看下去。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

@@ -1,83 +1,83 @@
-# Idea Director - Clip Factory Pipeline
+# 创意导演 —— Clip Factory 管线
 
-## When To Use
+## 何时使用
 
-Use this pipeline when the source is long-form footage and the goal is multiple short-form deliverables: webinar clips, interview cuts, livestream highlights, keynote excerpts, or presentation snippets.
+当源素材是长视频、目标是产出多条短视频交付物时使用本管线：网络研讨会片段、访谈剪辑、直播亮点、主题演讲摘录，或演示片段。
 
-You are not planning one video. You are planning a ranked portfolio of clips.
+你规划的不是一支视频。你规划的是一份按优先级排序的片段组合。
 
-## Runtime Selection (MANDATORY — present the constraint, don't silently pick)
+## 运行时选择（强制 —— 把约束讲出来，不要静默选定）
 
-Lock `render_runtime = "remotion"` (for composed clips with word-level captions) or `"ffmpeg"` (for pure concat/trim with no composition). **HyperFrames is NOT a valid runtime on this pipeline in Phase 1** — clip-factory depends on Remotion's word-level caption burn, which has no HyperFrames parity yet.
+锁定 `render_runtime = "remotion"`（用于带词级字幕的合成片段）或 `"ffmpeg"`（用于纯拼接/修剪、不做合成）。**在 Phase 1 中，HyperFrames 在本管线上不是合法运行时** —— clip-factory 依赖 Remotion 的词级字幕烧录，而 HyperFrames 尚无对等能力。
 
-Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": do NOT silently lock remotion. Surface the constraint to the user: "HyperFrames is an available runtime on your machine, but clip-factory depends on Remotion caption burn that doesn't have HyperFrames parity yet, so remotion is the only viable choice here — OK to proceed?" Record the decision in `decision_log` with category `render_runtime_selection`, including hyperframes as a rejected option (`rejected_because: "caption-burn parity deferred on clip-factory"`).
+按 AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)"：**不要**静默锁定 remotion。把约束呈现给用户："你的机器上有 HyperFrames，但 clip-factory 依赖 Remotion 的字幕烧录，而 HyperFrames 还没有对等能力，所以这里 remotion 是唯一可行的选择 —— 可以这样推进吗？" 把决定记入 `decision_log`，category 为 `render_runtime_selection`，并把 hyperframes 作为被否决的选项列上（`rejected_because: "caption-burn parity deferred on clip-factory"`）。
 
-## Reference Inputs
+## 参考输入
 
 - `docs/clip-factory-best-practices.md`
 - `skills/creative/short-form.md`
 - `skills/creative/video-editing.md`
 
-## Process
+## 流程
 
-### 1. Understand The Source And The Goal
+### 1. 弄清源素材与目标
 
-Capture the source shape:
+记录源素材的形态：
 
-- webinar
-- interview
-- panel
-- keynote
-- stream
-- customer story
+- 网络研讨会
+- 访谈
+- 圆桌
+- 主题演讲
+- 直播
+- 客户故事
 
-Then capture the business goal:
+然后记录业务目标：
 
-- awareness
-- thought leadership
-- lead generation
-- product education
-- event recap
+- 品牌认知
+- 思想领导力
+- 获取线索
+- 产品教育
+- 活动回顾
 
-### 2. Choose A Clip Portfolio Strategy
+### 2. 选定片段组合策略
 
-A good batch mixes clip types instead of extracting the same energy repeatedly.
+好的一批片段会混合多种片段类型，而不是反复提取同一种能量。
 
-Common clip families:
+常见的片段族：
 
-- `hook`: surprising claim or strong cold open
-- `insight`: useful takeaway or lesson
-- `story`: narrative moment with emotional shape
-- `proof`: stat, case study, demo result
-- `opinion`: hot take, disagreement, contrarian point
+- `hook`：出人意料的论断或有力的冷开场
+- `insight`：有用的收获或经验
+- `story`：带情绪形状的叙事时刻
+- `proof`：数据、案例研究、演示结果
+- `opinion`：犀利观点、异议、反常识论断
 
-Use the brief metadata to define the intended balance across those families.
+用 brief 的元数据来定义这些族之间的预期配比。
 
-### 3. Set Yield Targets Realistically
+### 3. 现实地设定产出量目标
 
-Guideline ranges:
+参考区间：
 
-- `15-30 min`: 3-6 strong clips
-- `30-60 min`: 5-10 strong clips
-- `60+ min`: 8-15 strong clips if the source quality supports it
+- `15-30 分钟`：3-6 条优质片段
+- `30-60 分钟`：5-10 条优质片段
+- `60 分钟以上`：若源素材质量支撑得住，8-15 条优质片段
 
-Do not inflate clip count to satisfy a round number. A smaller strong batch beats a padded weak batch.
+不要为了凑个整数而虚增片段数量。一批小而强，胜过一批注水的弱片段。
 
-### 4. Map Platforms Before Extraction
+### 4. 在提取之前先映射平台
 
-Plan platform fit early:
+尽早规划平台适配：
 
-- `9:16` for Shorts, Reels, TikTok
-- `1:1` for LinkedIn and safer feed repurposing
-- `16:9` when slides, demos, or wide context matter
+- Shorts、Reels、TikTok 用 `9:16`
+- LinkedIn 和更稳妥的信息流再利用用 `1:1`
+- 当幻灯片、演示或宽画幅语境很重要时用 `16:9`
 
-If the source framing clearly will not survive vertical crops, say so in the brief metadata now.
+若源素材的构图明显扛不住竖屏裁剪，现在就在 brief 元数据里说明。
 
-### 5. Build The Brief
+### 5. 构建 Brief
 
-Keep the schema-level brief concise and put the richer batch plan in `brief.metadata`.
+schema 层面的 brief 保持简洁，把更丰富的批次方案放进 `brief.metadata`。
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `source_type`
 - `source_duration_seconds`
@@ -89,25 +89,25 @@ Recommended metadata keys:
 - `known_visual_constraints`
 - `distribution_goal`
 
-### 6. Quality Gate
+### 6. 质量门
 
-- the clip count target is realistic,
-- the platform mix matches the content,
-- the brief defines ranking criteria before extraction starts,
-- the agent has acknowledged any obvious reframing limits.
+- 片段数量目标现实，
+- 平台配比与内容相符，
+- brief 在提取开始之前就定义了排序标准，
+- agent 已经承认了任何明显的重新构图限制。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Planning a batch around quantity before quality.
-- Assuming every source can produce vertical clips cleanly.
-- Treating all clips as interchangeable instead of intentionally varied.
-- Starting extraction without defining what "good" means for this batch.
+- 围绕数量而非质量来规划一批片段。
+- 假定每个源素材都能干净地产出竖屏片段。
+- 把所有片段当成可互换的，而不是刻意做出差异。
+- 还没定义清楚这一批的"好"是什么，就开始提取。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

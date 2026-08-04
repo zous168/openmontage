@@ -1,141 +1,141 @@
-# Sound Design for Video Production
+# 视频制作中的声音设计
 
-> Sources: W3C accessibility standards, BBC audio guidelines, YouTube/TikTok platform specs,
-> Sweetwater mastering guides, ElevenLabs documentation, Boris FX, HookSounds, Artlist
+> 资料来源：W3C 无障碍标准、BBC 音频指南、YouTube/TikTok 平台规范、
+> Sweetwater 母带指南、ElevenLabs 文档、Boris FX、HookSounds、Artlist
 
-## Quick Reference Card
+## 速查卡
 
 ```
-DIALOGUE:       -12 dB peak  |  -16 to -14 LUFS integrated
-MUSIC BED:      -30 to -20 dB (18-20 dB below dialogue)
-SFX:            -18 to -12 dB (6 dB below dialogue minimum)
-WHOOSH TIMING:  Start 10-20ms before visual, duration 400-500ms
-MUSIC BPM:      Calm 60-80 | Standard 90-110 | Upbeat 120-140
-TRUE PEAK:      Never exceed -1.5 dBTP
-VOICE EQ:       HPF 80Hz, cut 500Hz, boost 2-5kHz, cut 6-8kHz
-VOICE COMP:     3:1 ratio, 1-5ms attack, 10-20ms release
-TARGET LUFS:    -14 LUFS (YouTube/TikTok/IG) | -16 LUFS (podcasts)
+对白：          峰值 -12 dB  |  整体 -16 到 -14 LUFS
+音乐铺底：      -30 到 -20 dB（比对白低 18-20 dB）
+音效：          -18 到 -12 dB（至少比对白低 6 dB）
+whoosh 时机：   比画面提前 10-20ms 开始，时长 400-500ms
+音乐 BPM：      平静 60-80 | 标准 90-110 | 上扬 120-140
+真峰值：        绝不超过 -1.5 dBTP
+人声 EQ：       80Hz 高通，切 500Hz，提 2-5kHz，切 6-8kHz
+人声压缩：      3:1 压缩比，1-5ms 启动，10-20ms 释放
+目标 LUFS：     -14 LUFS（YouTube/TikTok/IG） | -16 LUFS（播客）
 ```
 
-## Audio Ducking Levels
+## 音频闪避电平
 
-| Element | Peak Level | Notes |
+| 元素 | 峰值电平 | 备注 |
 |---------|-----------|-------|
-| Dialogue / Narration | -6 dB to -12 dB | Primary element |
-| Background music (during speech) | -18 dB to -20 dB | 18-20 dB below dialogue |
-| Sound effects | -12 dB to -18 dB | Between dialogue and music |
-| Final mix | -10 dB to -20 dB | Never exceed 0 dB |
+| 对白 / 旁白 | -6 dB 到 -12 dB | 主体元素 |
+| 背景音乐（人声期间） | -18 dB 到 -20 dB | 比对白低 18-20 dB |
+| 音效 | -12 dB 到 -18 dB | 介于对白与音乐之间 |
+| 最终混音 | -10 dB 到 -20 dB | 绝不超过 0 dB |
 
-**Ducking rules:**
-- W3C accessibility: music must be **20 dB lower** than foreground speech
-- BBC guideline: lower music by an additional **4 dB** from where you think it sounds right
-- Duck music **6-12 dB** when narration is active; for complex educational topics, duck up to **22 dB**
-- EQ trick: cut **2-4 kHz** on background music to make room for speech clarity
-- When testing, adjust in **1 dB increments** from a -20 dB baseline upward
+**闪避规则：**
+- W3C 无障碍标准：音乐必须比前景人声**低 20 dB**
+- BBC 指南：在你觉得已经合适的位置基础上，再把音乐**降低 4 dB**
+- 旁白活跃时把音乐闪避 **6-12 dB**；复杂的教育类题材可闪避到 **22 dB**
+- EQ 小技巧：把背景音乐的 **2-4 kHz** 切掉，为语音清晰度让路
+- 测试时，从 -20 dB 基线开始，以 **1 dB 为步长**向上调整
 
-## Music Selection by Content Type
+## 按内容类型选音乐
 
-| Content Type | BPM Range | Mood |
+| 内容类型 | BPM 区间 | 情绪 |
 |-------------|-----------|------|
-| Calm explainer / tutorial | 60-80 | Contemplative, focused, trust-building |
-| Corporate / testimonial | 60-100 | Professional, calm, credible |
-| Standard explainer / educational | 90-110 | Steady, engaging, not distracting |
-| Upbeat explainer / promo | 110-130 | Enthusiastic, approachable |
-| High-energy / product demo | 120-140 | Exciting, urgent, dynamic |
-| Action / fast-paced | 140-200 | Adrenaline, intensity |
+| 平静的讲解 / 教程 | 60-80 | 沉思、专注、建立信任 |
+| 企业 / 客户证言 | 60-100 | 专业、沉稳、可信 |
+| 标准讲解 / 教育 | 90-110 | 平稳、有吸引力、不喧宾夺主 |
+| 上扬的讲解 / 宣传 | 110-130 | 热情、亲和 |
+| 高能量 / 产品演示 | 120-140 | 兴奋、紧迫、有动感 |
+| 动作 / 快节奏 | 140-200 | 肾上腺素、强烈 |
 
-**Genre recommendations for explainers:**
-- Lo-fi (steady, non-distracting, modern feel)
-- Ambient (atmospheric, stays in background)
-- Light acoustic guitar instrumentals (warm, approachable)
-- Contemporary pop instrumentals (upbeat, familiar)
-- Inspiring soundtrack / cinematic light (builds emotion without overwhelming)
+**讲解类视频的曲风推荐：**
+- Lo-fi（平稳、不分散注意力、有现代感）
+- 氛围（有空间感，安于背景）
+- 轻原声吉他器乐（温暖、亲和）
+- 当代流行器乐（上扬、耳熟）
+- 励志配乐 / 轻电影感（酝酿情绪但不压过内容）
 
-**Key rules:**
-- Always use **instrumental** tracks when voiceover is present — lyrics compete with narration
-- Choose dynamically **even** tracks — avoid dramatic crescendos or beat drops
-- Match energy to the learning context: upbeat for "exciting new concept," gentle for serious topics
+**关键规则：**
+- 有配音时一律使用**纯器乐**曲目 —— 歌词会与旁白争夺注意力
+- 选择动态**平稳**的曲目 —— 避免戏剧性渐强或鼓点爆发
+- 让能量匹配学习情境：讲"激动人心的新概念"用上扬，讲严肃话题用温和
 
-## Sound Effects (SFX) Placement
+## 音效（SFX）摆放
 
-### SFX Categories for Explainer Videos
+### 讲解视频的音效分类
 
-| SFX Type | Use Case | Duration | Level |
+| 音效类型 | 使用场景 | 时长 | 电平 |
 |----------|----------|----------|-------|
-| Whoosh / Swish | Scene transitions, slide changes | 400-500ms | -18 to -12 dB |
-| Pop / Pluck | Text appearing, bullet points | <200ms | -15 to -12 dB |
-| Click / Tap | UI interactions, button presses | <100ms | -20 to -15 dB |
-| Riser / Swell | Building to a reveal or key point | 1-3s | -18 to -12 dB |
-| Impact / Hit | Key reveal, important stat | <300ms | -12 to -6 dB |
-| Subtle whoosh | Element sliding in/out | 200-400ms | -20 to -15 dB |
+| Whoosh / Swish | 场景转场、切页 | 400-500ms | -18 到 -12 dB |
+| Pop / Pluck | 文字出现、要点列出 | <200ms | -15 到 -12 dB |
+| Click / Tap | UI 交互、按钮按下 | <100ms | -20 到 -15 dB |
+| Riser / Swell | 为揭示或关键点蓄势 | 1-3 秒 | -18 到 -12 dB |
+| Impact / Hit | 关键揭示、重要数据 | <300ms | -12 到 -6 dB |
+| 轻 whoosh | 元素滑入/滑出 | 200-400ms | -20 到 -15 dB |
 
-### Timing rules
-- Start whoosh **10-20ms before** the visual transition (brain processes audio faster)
-- Peak of whoosh energy should coincide with the **moment of greatest visual change**
-- Fine-tune in **1-frame increments** for sync
-- When stacking whooshes, keep them in different frequency bands
+### 时机规则
+- whoosh 比画面转场**提前 10-20ms** 开始（大脑处理声音更快）
+- whoosh 的能量峰值应与**画面变化最剧烈的瞬间**重合
+- 以**单帧为步长**微调同步
+- 叠加多个 whoosh 时，让它们分布在不同频段
 
-## Platform Loudness Targets (2025)
+## 平台响度目标（2025）
 
-| Platform | Integrated LUFS | True Peak | Notes |
+| 平台 | 整体 LUFS | 真峰值 | 备注 |
 |----------|----------------|-----------|-------|
-| YouTube | -14 LUFS | -1.5 dBTP | Normalizes down, not up |
-| YouTube Shorts | -14 LUFS | -1.5 dBTP | Same as long-form |
-| TikTok | -14 LUFS | -1 dBTP | Prioritize 2-4 kHz for phone speakers |
-| Instagram Reels | -14 LUFS | -1 dBTP | Same mobile optimization |
-| Spotify | -14 LUFS | -2 dBTP | Stricter true peak |
-| Apple Podcasts | -16 LUFS | -1 dBTP | More headroom for speech |
+| YouTube | -14 LUFS | -1.5 dBTP | 只会调低，不会调高 |
+| YouTube Shorts | -14 LUFS | -1.5 dBTP | 与长视频相同 |
+| TikTok | -14 LUFS | -1 dBTP | 为手机扬声器优先照顾 2-4 kHz |
+| Instagram Reels | -14 LUFS | -1 dBTP | 同样的移动端优化 |
+| Spotify | -14 LUFS | -2 dBTP | 真峰值要求更严 |
+| Apple Podcasts | -16 LUFS | -1 dBTP | 给语音留更多余量 |
 
-### Content-type LUFS
+### 按内容类型的 LUFS
 
-| Content Type | Integrated LUFS | Dynamic Range |
+| 内容类型 | 整体 LUFS | 动态范围 |
 |-------------|----------------|---------------|
-| Dialogue-heavy / educational | -16 to -14 LUFS | 6-12 dB |
-| Music videos | -14 to -12 LUFS | 6-10 dB |
-| Gaming content | -14 to -12 LUFS | 8-12 dB |
+| 对白为主 / 教育类 | -16 到 -14 LUFS | 6-12 dB |
+| 音乐视频 | -14 到 -12 LUFS | 6-10 dB |
+| 游戏内容 | -14 到 -12 LUFS | 8-12 dB |
 
-### Technical specs
-- Sample rate: **48 kHz** preferred
-- Bit depth: **24-bit** preferred
-- Bitrate: **192 kbps** minimum
-- Noise floor: below **-60 dB**
-- Headroom: at least **-6 dB** in the final mix
+### 技术规格
+- 采样率：优先 **48 kHz**
+- 位深：优先 **24-bit**
+- 码率：至少 **192 kbps**
+- 本底噪声：低于 **-60 dB**
+- 余量：最终混音中至少留 **-6 dB**
 
-## AI TTS (ElevenLabs) Mixing
+## AI TTS（ElevenLabs）混音
 
-### Processing Chain
+### 处理链
 
-1. **High-pass filter:** 80-100 Hz (24 dB/oct slope) — removes rumble and low-frequency TTS artifacts
-2. **EQ:**
-   - Cut ~500 Hz: removes muddiness/boxy quality
-   - Boost 2-5 kHz (+2-3 dB): adds presence and clarity
-   - Cut 6-8 kHz (gentle): reduces sibilance/harshness common in AI voices
-   - Optional: boost 120-250 Hz for thinner AI voices
-3. **Compression:**
-   - Ratio: **3:1** (range 2:1 to 4:1)
-   - Attack: **1-5 ms**
-   - Release: **10-20 ms** (increase to 30ms if pumping)
-   - Threshold: **-26 dB** (target -4 to -6 dB gain reduction)
-   - Output gain: **+6 dB**
-4. **De-esser:** target **6-8 kHz** if sibilance remains
-5. **Limiter:** ceiling at **-1.5 dBTP**
+1. **高通滤波：** 80-100 Hz（24 dB/oct 斜率）—— 去除低频轰隆和 TTS 的低频伪影
+2. **EQ：**
+   - 切约 500 Hz：去除浑浊/箱声
+   - 提升 2-5 kHz（+2-3 dB）：增加临场感和清晰度
+   - 轻切 6-8 kHz：减少 AI 人声常见的齿音/刺耳感
+   - 可选：对偏薄的 AI 人声提升 120-250 Hz
+3. **压缩：**
+   - 压缩比：**3:1**（范围 2:1 到 4:1）
+   - 启动：**1-5 ms**
+   - 释放：**10-20 ms**（出现"抽吸"感就加到 30ms）
+   - 阈值：**-26 dB**（目标增益衰减 -4 到 -6 dB）
+   - 输出增益：**+6 dB**
+4. **去齿音器：** 若齿音仍在，目标频段 **6-8 kHz**
+5. **限制器：** 上限设在 **-1.5 dBTP**
 
-### AI-specific tips
-- AI TTS has inconsistent dynamics — compression is more important than for human speech
-- ElevenLabs may have subtle artifacts in 4-6 kHz; use narrow notch cut if detected
-- Sidechain background music to voiceover track for automatic ducking
-- Cut 2-4 kHz on the music bed to clear the "intelligibility band" for voice
-- Always test on phone speakers — if voice disappears, boost 2-4 kHz more aggressively
+### AI 专属技巧
+- AI TTS 的动态不稳定 —— 压缩比处理真人语音时更重要
+- ElevenLabs 在 4-6 kHz 可能有细微伪影；若察觉到，用窄带陷波切除
+- 把背景音乐对配音轨做侧链，实现自动闪避
+- 把音乐铺底的 2-4 kHz 切掉，为人声腾出"可懂度频段"
+- 一定要在手机扬声器上测试 —— 若人声消失，就更激进地提升 2-4 kHz
 
-## Applying to OpenMontage
+## 应用到 OpenMontage
 
-When the **audio_mixer** tool is used in the compose stage:
+在 compose 阶段使用 **audio_mixer** 工具时：
 
-1. Set narration as primary track, music as secondary
-2. Apply ducking: music -18 to -20 dB below narration during speech
-3. Select music BPM from the table above based on the playbook mood
-4. Place SFX at transition points with 10-20ms audio lead
-5. Target -14 LUFS integrated for YouTube output
-6. Keep true peak below -1.5 dBTP
-7. For AI TTS narration, apply the processing chain above before mixing
-8. Test the final mix on phone speakers — most viewers watch on mobile
+1. 把旁白设为主轨，音乐设为副轨
+2. 应用闪避：人声期间音乐比旁白低 18 到 20 dB
+3. 根据 playbook 的情绪，从上表选择音乐 BPM
+4. 在转场点放音效，音频提前 10-20ms
+5. YouTube 输出以整体 -14 LUFS 为目标
+6. 真峰值保持在 -1.5 dBTP 以下
+7. AI TTS 旁白在混音之前先走一遍上面的处理链
+8. 在手机扬声器上测试最终混音 —— 多数观众用移动端观看

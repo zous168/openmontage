@@ -583,7 +583,13 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
   }
   if (cut.type === "hero_title" && cut.text) {
     return maybeWrapWithBg(
-      <HeroTitle title={cut.text} subtitle={cut.heroSubtitle || cut.subtitle} />
+      <HeroTitle
+        title={cut.text}
+        subtitle={cut.heroSubtitle || cut.subtitle}
+        accentColor={accent}
+        textColor={textColor}
+        subtitleColor={cut.subtitleColor || theme.mutedTextColor}
+      />
     );
   }
   if (cut.type === "terminal_scene" && cut.steps) {
@@ -718,7 +724,7 @@ const SceneRenderer: React.FC<{ cut: Cut; theme: ThemeConfig }> = ({ cut, theme 
 // Overlay renderer
 // ---------------------------------------------------------------------------
 
-const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
+const OverlayRenderer: React.FC<{ overlay: Overlay; theme: ThemeConfig }> = ({ overlay, theme }) => {
   if (overlay.type === "section_title") {
     return (
       <SectionTitle
@@ -740,7 +746,15 @@ const OverlayRenderer: React.FC<{ overlay: Overlay }> = ({ overlay }) => {
     );
   }
   if (overlay.type === "hero_title") {
-    return <HeroTitle title={overlay.text} subtitle={overlay.subtitle} />;
+    return (
+      <HeroTitle
+        title={overlay.text}
+        subtitle={overlay.subtitle}
+        accentColor={overlay.accentColor || theme.accentColor}
+        textColor={theme.textColor}
+        subtitleColor={theme.mutedTextColor}
+      />
+    );
   }
   if (overlay.type === "provider_chip" && overlay.providers) {
     return (
@@ -814,7 +828,7 @@ export const Explainer: React.FC<ExplainerProps> = (props) => {
             durationInFrames={duration}
             name={overlayName}
           >
-            <OverlayRenderer overlay={overlay} />
+            <OverlayRenderer overlay={overlay} theme={theme} />
           </Sequence>
         );
       })}

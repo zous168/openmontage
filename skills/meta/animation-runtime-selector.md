@@ -1,151 +1,151 @@
-# Animation Runtime Selector
+# 动画运行时选择器
 
-Meta-skill that answers two questions:
+回答两个问题的元技能：
 
-1. **Which composition runtime should this video use?** — Remotion, HyperFrames, or FFmpeg.
-2. **Which animation library / Layer 3 skills should this scene reach for?** — Remotion primitives, GSAP plugins, framer-motion, Lottie, Manim, D3.
+1. **这支视频该用哪个合成运行时？** —— Remotion、HyperFrames 还是 FFmpeg。
+2. **这个场景该用哪个动画库 / Layer 3 技能？** —— Remotion 原语、GSAP 插件、framer-motion、Lottie、Manim、D3。
 
-Read this before authoring any animated component or composition, and whenever you're choosing `render_runtime` at proposal time. It routes you to the right Layer 3 skill so you don't waste time hand-rolling what a plugin already solves.
+在编写任何动画组件或 composition 之前读本文，以及在 proposal 阶段选定 `render_runtime` 时读本文。它会把你导向正确的 Layer 3 技能，省得你手搓一个插件早就解决了的东西。
 
-> **Authoring mode comes first.** Before runtime or library, decide *how* the composition is
-> built: **templated** (assemble stock `cut.type` scenes) vs **atelier** (hand-author from
-> scratch). Default to atelier for hero work and follow `skills/meta/bespoke-composition.md`.
-> The routing below applies within either mode — but in atelier mode the stock scene-types and
-> registry blocks are off-limits; you write your own. "Does a stock cut-type fit?" is **not** a
-> valid shortcut for a hero piece. See `AGENT_GUIDE.md` → "Composition Authoring Mode".
+> **编写模式优先。** 在决定运行时或库之前，先确定 composition *如何*
+> 构建：**templated**（装配现成的 `cut.type` 场景）还是 **atelier**（从零手工编写）。
+> 旗舰作品默认走 atelier，并遵循 `skills/meta/bespoke-composition.md`。
+> 下面的路由在两种模式下都适用 —— 但在 atelier 模式下，现成的场景类型和
+> registry block 是禁用的；你要自己写。"有没有现成的 cut-type 能凑合？"对旗舰作品**不是**
+> 一条正当的捷径。见 `AGENT_GUIDE.md` → "Composition Authoring Mode"。
 
-## When to use this skill
+## 何时使用本技能
 
-Apply when:
-- **Proposal stage** needs to lock `render_runtime` (remotion / hyperframes / ffmpeg)
-- A stage director (asset, edit, compose) needs to author an animated component
-- An agent is about to write Remotion JSX for a scene that involves text reveals, SVG motion, curved camera paths, shape morphs, or multi-stage choreography
-- An agent is asked to build a HyperFrames composition
-- An agent is uncertain whether to reach for a GSAP plugin vs inline `interpolate()`/`spring()`
+以下情况适用：
+- **Proposal 阶段**需要锁定 `render_runtime`（remotion / hyperframes / ffmpeg）
+- 某个阶段导演（asset、edit、compose）需要编写动画组件
+- agent 即将为一个涉及文字揭示、SVG 运动、曲线镜头路径、形状变形或多阶段编排的场景编写 Remotion JSX
+- agent 被要求构建一个 HyperFrames composition
+- agent 不确定该用 GSAP 插件还是内联的 `interpolate()`/`spring()`
 
-## Runtime choice (Remotion vs HyperFrames vs FFmpeg)
+## 运行时选择（Remotion vs HyperFrames vs FFmpeg）
 
-OpenMontage separates creative grammar (`renderer_family`) from technical
-engine (`render_runtime`). Both are locked at proposal and carried through
-`edit_decisions` unchanged. Silent runtime swaps at compose time are a
-contract violation.
+OpenMontage 把创意语法（`renderer_family`）与技术
+引擎（`render_runtime`）分开。两者都在 proposal 阶段锁定，并原封不动地贯穿
+`edit_decisions`。在 compose 阶段静默切换运行时属于
+违反契约。
 
-### HARD RULE — present both runtimes, don't silently default
+### 硬规则 —— 呈现两个运行时，不要静默取默认值
 
-When both Remotion AND HyperFrames are available on the machine (check
-`video_compose.get_info()["render_engines"]`), the agent MUST present both
-options to the user before locking `render_runtime`. The decision matrix
-below is the agent's input for the conversation, NOT a license to silently
-pick the "default" entry. See `AGENT_GUIDE.md` → "Present Both Composition
-Runtimes" for the full contract.
+当本机上 Remotion **和** HyperFrames 都可用时（检查
+`video_compose.get_info()["render_engines"]`），agent **必须**在锁定
+`render_runtime` 之前把两个选项都呈现给用户。下面的决策矩阵
+是 agent 与用户对话的**输入**，**不是**静默取
+"默认"那一行的许可证。完整契约见 `AGENT_GUIDE.md` → "Present Both Composition
+Runtimes"。
 
-Concretely, at the proposal stage:
+具体地，在 proposal 阶段：
 
-1. Query `video_compose.get_info()["render_engines"]` to find which
-   runtimes are available on this machine.
-2. If both Remotion and HyperFrames are available, present both to the
-   user with: one-line description tailored to the brief, one-line
-   honest tradeoff, agent's recommendation with reason.
-3. Wait for explicit user approval.
-4. Log the decision in `decision_log` with category
-   `render_runtime_selection` and both runtimes in `options_considered`.
-5. Only then write `render_runtime` into `proposal_packet.production_plan`.
+1. 查询 `video_compose.get_info()["render_engines"]`，看这台机器上
+   有哪些运行时可用。
+2. 若 Remotion 和 HyperFrames 都可用，把两者都呈现给
+   用户，附上：贴合本次 brief 的一句话描述、一句
+   如实的权衡、以及 agent 的推荐及理由。
+3. 等待用户明确审批。
+4. 把决策记入 `decision_log`，category 为
+   `render_runtime_selection`，`options_considered` 里包含两个运行时。
+5. 然后才把 `render_runtime` 写进 `proposal_packet.production_plan`。
 
-A `render_runtime_selection` decision with only one option considered
-when both were available is a CRITICAL reviewer finding.
+若两个运行时都可用，而 `render_runtime_selection` 决策里只考虑了
+一个选项，这是 CRITICAL 级的 reviewer 发现。
 
-| Brief characteristic | `render_runtime` | Read |
+| Brief 特征 | `render_runtime` | 阅读 |
 |---|---|---|
-| Existing React scene stack (text_card, stat_card, chart, caption overlay, TalkingHead, CinematicRenderer) | **remotion** | `skills/core/remotion.md` |
-| Word-level caption burn / karaoke captions | **remotion** | `skills/core/remotion.md` |
-| Avatar / lip-sync / presenter | **remotion** | `skills/core/remotion.md` |
-| Kinetic typography, HTML/GSAP-native motion, product promo, launch reel | **hyperframes** | `skills/core/hyperframes.md` + `.agents/skills/hyperframes/SKILL.md` (router) → `hyperframes-core` (contract), `hyperframes-creative` (palette/type), `hyperframes-animation` (motion) |
-| Website → video, UI-driven composition | **hyperframes** | `.agents/skills/website-to-video/SKILL.md` (renamed from website-to-hyperframes in 0.7) |
-| Registry block needed (data-chart, grain-overlay, shader transitions, etc.) | **hyperframes** | `.agents/skills/hyperframes-registry/SKILL.md` |
-| Beat-synced music video (audio drives scene timing) | **hyperframes** | `.agents/skills/music-to-video/SKILL.md` — uses `hyperframes beats` to detect drops, lays out frames on the beat grid |
-| Porting an existing Remotion composition to HyperFrames | **hyperframes** | `.agents/skills/remotion-to-hyperframes/SKILL.md` — migration guidance, ONLY for explicit port requests |
-| BGM / SFX / image / icon resolution (any pipeline, any runtime) | n/a | `.agents/skills/media-use/SKILL.md` — `resolve` verb against project cache + global cache + HeyGen catalog |
-| Short design-led motion graphic (lower-third, stat reveal, logo sting, headline) | **hyperframes** | `.agents/skills/motion-graphics/SKILL.md` |
-| Pure concat / trim of source clips, no composition needed | **ffmpeg** | `skills/core/ffmpeg.md` |
-| Selected runtime is unavailable | **escalate** — do not substitute silently | `AGENT_GUIDE.md` → Escalate Blockers |
+| 现有的 React 场景栈（text_card、stat_card、图表、字幕叠加、TalkingHead、CinematicRenderer） | **remotion** | `skills/core/remotion.md` |
+| 词级字幕烧录 / 卡拉 OK 式字幕 | **remotion** | `skills/core/remotion.md` |
+| 数字人 / 唇形同步 / 出镜主持 | **remotion** | `skills/core/remotion.md` |
+| 动态排版、HTML/GSAP 原生运动、产品宣传片、发布短片 | **hyperframes** | `skills/core/hyperframes.md` + `.agents/skills/hyperframes/SKILL.md`（路由）→ `hyperframes-core`（契约）、`hyperframes-creative`（配色/字体）、`hyperframes-animation`（运动） |
+| 网页 → 视频、UI 驱动的合成 | **hyperframes** | `.agents/skills/website-to-video/SKILL.md`（0.7 中由 website-to-hyperframes 改名） |
+| 需要 registry block（data-chart、grain-overlay、shader 转场等） | **hyperframes** | `.agents/skills/hyperframes-registry/SKILL.md` |
+| 节拍同步的音乐视频（音频驱动场景时序） | **hyperframes** | `.agents/skills/music-to-video/SKILL.md` —— 用 `hyperframes beats` 检测 drop，把画面排布到节拍网格上 |
+| 把现有 Remotion composition 移植到 HyperFrames | **hyperframes** | `.agents/skills/remotion-to-hyperframes/SKILL.md` —— 迁移指引，**仅**用于明确的移植请求 |
+| BGM / SFX / 图像 / 图标的解析（任意管线、任意运行时） | 不适用 | `.agents/skills/media-use/SKILL.md` —— 针对 项目缓存 + 全局缓存 + HeyGen 目录 的 `resolve` 动词 |
+| 短小的设计主导动态图形（下三分之一条、数据揭示、Logo 音效动画、大标题） | **hyperframes** | `.agents/skills/motion-graphics/SKILL.md` |
+| 纯粹的源片段拼接/修剪，不需要合成 | **ffmpeg** | `skills/core/ffmpeg.md` |
+| 选定的运行时不可用 | **上报** —— 不要静默替换 | `AGENT_GUIDE.md` → Escalate Blockers |
 
-Read `skills/core/hyperframes.md` for the full Remotion-vs-HyperFrames
-decision matrix and the list of features that stay Remotion-only in Phase 1.
+完整的 Remotion 与 HyperFrames 决策矩阵，以及 Phase 1 中仍然只走 Remotion 的
+功能清单，见 `skills/core/hyperframes.md`。
 
-## Animation library decision matrix
+## 动画库决策矩阵
 
-| Animation need | Recommended runtime | Read first |
+| 动画需求 | 推荐运行时 | 先读 |
 |---|---|---|
-| Simple fade / slide / scale / spring | Remotion primitives (no plugin) | `.agents/skills/remotion` |
-| Two-state spring with physics | Remotion `spring()` | `.agents/skills/remotion` |
-| Multi-step sequence with offsets | Remotion `Sequence` + `interpolate()` **or** GSAP timeline | `.agents/skills/remotion` + optionally `.agents/skills/gsap-timeline` |
-| Per-word text reveal synced to narration | Remotion `interpolate` driven by word-level transcript (existing `CaptionOverlay` pattern) | `.agents/skills/remotion` |
-| Per-character kinetic typography (SplitText style) | GSAP SplitText inside Remotion | `.agents/skills/gsap-plugins` (SplitText), `.agents/skills/gsap-react` |
-| SVG shape morph between two paths | GSAP MorphSVG inside Remotion | `.agents/skills/gsap-plugins` (MorphSVG) |
-| Curved camera / object motion along a custom path | GSAP MotionPath inside Remotion | `.agents/skills/gsap-plugins` (MotionPath) |
-| SVG line drawing / stroke reveal | GSAP DrawSVG | `.agents/skills/gsap-plugins` (DrawSVG) |
-| Bespoke bezier / elastic / stutter easing | GSAP CustomEase / EasePack / CustomWiggle | `.agents/skills/gsap-plugins` |
-| Layout-to-layout transition (FLIP) | GSAP Flip inside Remotion | `.agents/skills/gsap-plugins` (Flip) |
-| Disney's 12 animation principles for UI motion | framer-motion + Lottie | `.agents/skills/framer-motion`, `.agents/skills/lottie-bodymovin` |
-| Lottie export from After Effects / Figma | Lottie | `.agents/skills/lottie-bodymovin` |
-| Synthetic terminal / CLI demo | Remotion TerminalScene | `.agents/skills/synthetic-screen-recording` |
-| Mathematical / scientific visualization | Manim | `.agents/skills/manim-composer`, `.agents/skills/manimce-best-practices` |
-| D3 data-driven visualization | D3 | `.agents/skills/d3-viz` |
-| Data chart (bar/line/pie/KPI) | Remotion built-in chart components | `remotion-composer/SCENE_TYPES.md` |
-| HyperFrames composition — animation knowledge (rules, blueprints, transitions, runtime adapters) | HyperFrames + GSAP default | `.agents/skills/hyperframes-animation` (consolidated motion skill) + `.agents/skills/gsap-core`, `.agents/skills/gsap-timeline` |
-| HyperFrames composition structure (data-* timing, tracks, sub-compositions) | HyperFrames | `.agents/skills/hyperframes-core` |
-| HyperFrames creative direction (palette, type, narration, beat planning) | HyperFrames | `.agents/skills/hyperframes-creative` |
-| HyperFrames audio/media (TTS, BGM, SFX, transcription, captions, bg-removal) | HyperFrames | `.agents/skills/hyperframes-media` |
-| HyperFrames composition CLI work (lint/validate/inspect/snapshot/benchmark/render/lambda) | HyperFrames CLI 0.7+ | `.agents/skills/hyperframes-cli` |
-| HyperFrames registry block install (`hyperframes add ...`) | HyperFrames registry | `.agents/skills/hyperframes-registry` |
+| 简单的淡入 / 滑动 / 缩放 / 弹簧 | Remotion 原语（不用插件） | `.agents/skills/remotion` |
+| 带物理的双状态弹簧 | Remotion `spring()` | `.agents/skills/remotion` |
+| 带偏移量的多步序列 | Remotion `Sequence` + `interpolate()` **或** GSAP 时间线 | `.agents/skills/remotion` + 可选 `.agents/skills/gsap-timeline` |
+| 与旁白同步的逐词文字揭示 | 由词级转写稿驱动的 Remotion `interpolate`（现有的 `CaptionOverlay` 范式） | `.agents/skills/remotion` |
+| 逐字符的动态排版（SplitText 风格） | 在 Remotion 内使用 GSAP SplitText | `.agents/skills/gsap-plugins`（SplitText）、`.agents/skills/gsap-react` |
+| 两条路径之间的 SVG 形状变形 | 在 Remotion 内使用 GSAP MorphSVG | `.agents/skills/gsap-plugins`（MorphSVG） |
+| 沿自定义路径的曲线镜头 / 物体运动 | 在 Remotion 内使用 GSAP MotionPath | `.agents/skills/gsap-plugins`（MotionPath） |
+| SVG 线条绘制 / 描边显现 | GSAP DrawSVG | `.agents/skills/gsap-plugins`（DrawSVG） |
+| 定制的贝塞尔 / 弹性 / 顿挫缓动 | GSAP CustomEase / EasePack / CustomWiggle | `.agents/skills/gsap-plugins` |
+| 版式到版式的过渡（FLIP） | 在 Remotion 内使用 GSAP Flip | `.agents/skills/gsap-plugins`（Flip） |
+| 用于 UI 运动的迪士尼十二动画法则 | framer-motion + Lottie | `.agents/skills/framer-motion`、`.agents/skills/lottie-bodymovin` |
+| 从 After Effects / Figma 导出 Lottie | Lottie | `.agents/skills/lottie-bodymovin` |
+| 合成终端 / CLI 演示 | Remotion TerminalScene | `.agents/skills/synthetic-screen-recording` |
+| 数学 / 科学可视化 | Manim | `.agents/skills/manim-composer`、`.agents/skills/manimce-best-practices` |
+| D3 数据驱动可视化 | D3 | `.agents/skills/d3-viz` |
+| 数据图表（柱状/折线/饼图/KPI） | Remotion 内置图表组件 | `remotion-composer/SCENE_TYPES.md` |
+| HyperFrames composition —— 动画知识（规则、蓝图、转场、运行时适配器） | HyperFrames + 默认 GSAP | `.agents/skills/hyperframes-animation`（整合后的运动技能）+ `.agents/skills/gsap-core`、`.agents/skills/gsap-timeline` |
+| HyperFrames composition 结构（data-* 时序、tracks、子 composition） | HyperFrames | `.agents/skills/hyperframes-core` |
+| HyperFrames 创意指导（配色、字体、旁白、节拍规划） | HyperFrames | `.agents/skills/hyperframes-creative` |
+| HyperFrames 音频/媒体（TTS、BGM、SFX、转写、字幕、背景移除） | HyperFrames | `.agents/skills/hyperframes-media` |
+| HyperFrames composition 的 CLI 工作（lint/validate/inspect/snapshot/benchmark/render/lambda） | HyperFrames CLI 0.7+ | `.agents/skills/hyperframes-cli` |
+| HyperFrames registry block 安装（`hyperframes add ...`） | HyperFrames registry | `.agents/skills/hyperframes-registry` |
 
-## The "keep it simple" bias
+## "保持简单"的倾向
 
-Before reaching for GSAP, ask: **does Remotion's primitive API solve this in ≤ 20 lines?**
+在动手用 GSAP 之前，先问：**Remotion 的原语 API 能不能用 20 行以内解决这个问题？**
 
-- Fade/slide/scale/rotate → `interpolate(frame, [inFrame, outFrame], [from, to])`
-- Natural "bouncy" motion → `spring({ frame, fps, config: { damping, stiffness } })`
-- Word-level caption highlight → iterate transcript, filter by `frame / fps`
+- 淡入/滑动/缩放/旋转 → `interpolate(frame, [inFrame, outFrame], [from, to])`
+- 自然的"弹跳"运动 → `spring({ frame, fps, config: { damping, stiffness } })`
+- 词级字幕高亮 → 遍历转写稿，按 `frame / fps` 过滤
 
-If yes, use Remotion primitives. If no, that's your signal to escalate to a GSAP plugin.
+如果能，就用 Remotion 原语。如果不能，那才是升级到 GSAP 插件的信号。
 
-GSAP is a powerful escape hatch, not the default. Every plugin adds bundle weight, registration boilerplate, and another skill to read.
+GSAP 是强力的逃生通道，不是默认项。每引入一个插件都会增加打包体积、注册样板代码，以及又一份要读的技能文档。
 
-## Running GSAP deterministically inside Remotion
+## 在 Remotion 内确定性地运行 GSAP
 
-Standard GSAP runs on `requestAnimationFrame` — not deterministic, not Remotion-compatible out of the box. Three patterns that ARE Remotion-safe:
+标准的 GSAP 跑在 `requestAnimationFrame` 上 —— 不确定，开箱也不兼容 Remotion。以下三种范式**是** Remotion 安全的：
 
 ```jsx
-// Pattern 1: paused timeline, seek by progress
+// 范式 1：暂停的时间线，按进度 seek
 const tl = useRef(gsap.timeline({ paused: true })).current;
 useEffect(() => {
   tl.to('.x', { x: 500 }).to('.y', { opacity: 0 });
 }, []);
 tl.progress(frame / durationInFrames);
 
-// Pattern 2: paused timeline, seek by time
+// 范式 2：暂停的时间线，按时间 seek
 tl.seek(frame / fps);
 
-// Pattern 3: GSAP as value calculator only
+// 范式 3：只把 GSAP 当作数值计算器
 const easeFn = gsap.parseEase('power2.out');
 const t = frame / durationInFrames;
 const easedValue = easeFn(t);
 ```
 
-For the full breakdown, read `.agents/skills/gsap-react/SKILL.md`.
+完整拆解请读 `.agents/skills/gsap-react/SKILL.md`。
 
-## Check against the pipeline's stage director
+## 与管线的阶段导演对照
 
-Every pipeline's asset-director has animation-specific guidance. If you're in:
-- **animated-explainer** → read `skills/pipelines/explainer/asset-director.md` — it references the text/SVG options for kinetic typography
-- **animation** → read `skills/pipelines/animation/asset-director.md` — it references MorphSVG and MotionPath for logo/motion-graphics work
-- **cinematic** → read `skills/pipelines/cinematic/asset-director.md` — it references MotionPath for cinematic camera moves
+每条管线的 asset-director 都有动画方面的专门指导。如果你正在：
+- **animated-explainer** → 读 `skills/pipelines/explainer/asset-director.md` —— 它给出了动态排版的文字/SVG 选项
+- **animation** → 读 `skills/pipelines/animation/asset-director.md` —— 它给出了 Logo/动态图形工作中的 MorphSVG 与 MotionPath
+- **cinematic** → 读 `skills/pipelines/cinematic/asset-director.md` —— 它给出了电影感镜头运动中的 MotionPath
 
-The asset-director tells you *what* to build in the context of this pipeline. This selector tells you *how*.
+asset-director 告诉你在这条管线的语境下*要做什么*。本选择器告诉你*怎么做*。
 
-## Never do
+## 绝不要做
 
-- ❌ Pull GSAP into a scene that needs only fade/slide — use Remotion primitives.
-- ❌ Use GSAP with `requestAnimationFrame` inside Remotion — render will be non-deterministic.
-- ❌ Skip reading the matching Layer 3 skill when a plugin is indicated — per-plugin prompting guidance matters.
-- ❌ Register GSAP plugins inside a component body — register once at module scope or app entry.
+- ❌ 在只需要淡入/滑动的场景里引入 GSAP —— 用 Remotion 原语。
+- ❌ 在 Remotion 内让 GSAP 跑 `requestAnimationFrame` —— 渲染会变得不确定。
+- ❌ 在已经指明要用某个插件时跳过对应的 Layer 3 技能 —— 逐插件的用法指导很重要。
+- ❌ 在组件函数体内注册 GSAP 插件 —— 在模块作用域或应用入口处注册一次。

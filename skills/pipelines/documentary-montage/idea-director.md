@@ -1,120 +1,118 @@
-# Idea Director - Documentary Montage Pipeline
+# 创意导演 —— Documentary Montage 管线
 
-## When To Use
+## 何时使用
 
-You are turning a user prompt into the brief artifact that every
-downstream stage will read. For this pipeline, the brief is the
-thematic core: what the montage is ABOUT, what it should feel like,
-and how long it should run.
+你要把用户的一句话变成 brief artifact，而下游每一个阶段
+都会读它。对本管线而言，brief 就是主题内核：这支蒙太奇
+**讲的是什么**、它应当**给人什么感觉**、以及它应当**多长**。
 
-## Runtime Selection (MANDATORY — present the constraint, don't silently pick)
+## 运行时选择（强制 —— 把约束讲出来，不要静默选定）
 
-Lock `render_runtime = "remotion"`. **HyperFrames is NOT a valid runtime on this pipeline in Phase 1** — documentary-montage depends on the Remotion `CinematicRenderer` composition and its ProRes-4444 alpha end-tag overlay stack, neither of which has HyperFrames parity.
+锁定 `render_runtime = "remotion"`。**在 Phase 1 中，HyperFrames 在本管线上不是合法运行时** —— documentary-montage 依赖 Remotion 的 `CinematicRenderer` composition 及其 ProRes-4444 带 alpha 的片尾标签叠加栈，两者都没有 HyperFrames 的对等能力。
 
-Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": do NOT silently default. Tell the user: "HyperFrames is available on your machine as an alternative runtime, but documentary-montage depends on the Remotion CinematicRenderer + end-tag overlay stack, so remotion is the only viable choice here — OK to proceed?" Record a `render_runtime_selection` decision in `decision_log` listing both runtimes in `options_considered`, with hyperframes `rejected_because: "CinematicRenderer + end-tag overlay parity deferred on documentary-montage"`.
+按 AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)"：**不要**静默取默认值。告诉用户："你的机器上有 HyperFrames 这个替代运行时，但 documentary-montage 依赖 Remotion 的 CinematicRenderer + 片尾标签叠加栈，所以这里 remotion 是唯一可行的选择 —— 可以这样推进吗？" 在 `decision_log` 中记录一条 `render_runtime_selection` 决策，`options_considered` 里列出两个运行时，并把 hyperframes 标为 `rejected_because: "CinematicRenderer + end-tag overlay parity deferred on documentary-montage"`。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/brief.schema.json` | Artifact validation |
-| User input | Conversation history | The raw ask |
-| Meta | `skills/meta/reviewer.md` | Self-review pass |
+| Schema | `schemas/artifacts/brief.schema.json` | Artifact 校验 |
+| 用户输入 | 对话历史 | 原始诉求 |
+| 元技能 | `skills/meta/reviewer.md` | 自评轮次 |
 
-## Process
+## 流程
 
-### 1. Extract The Thematic Question
+### 1. 提炼那个主题性问题
 
-A documentary montage answers a question the user could not put into
-a sentence. Your job is to name that question in ONE line.
+一支纪录片蒙太奇回答的，是用户自己说不成一句话的那个问题。你的
+工作是用**一行**把那个问题命名出来。
 
-Good thematic questions:
+好的主题性问题：
 
-- "What does it feel like to come home?"
-- "How did the 20th century think about the future?"
-- "What happens in a city at 4am?"
-- "What do all the footprints on Earth look like?"
+- "回到家，是什么感觉？"
+- "20 世纪是如何想象未来的？"
+- "凌晨 4 点的城市里发生着什么？"
+- "地球上所有的脚印看起来是什么样？"
 
-Bad thematic questions (too abstract or too concrete):
+差的主题性问题（太抽象或太具体）：
 
-- "A video about cities" (too abstract — no feeling)
-- "A montage with 8 specific shots of the moon" (too concrete — that's
-  a shot list, not a theme)
+- "一支关于城市的视频"（太抽象 —— 没有感受）
+- "一支包含 8 个特定月亮镜头的蒙太奇"（太具体 —— 那是
+  一份镜头表，不是主题）
 
-### 2. Fix The Tone
+### 2. 定下调性
 
-Choose ONE emotional register. Write it down. Everything downstream
-keys off this.
+选定**一个**情绪基调。写下来。下游的一切
+都以它为准。
 
-Common registers for this pipeline:
+本管线常见的基调：
 
-- **elegiac** — long holds, muted color, slow cuts (loss, memory, home)
-- **urgent** — short cuts, hard sync, motion-heavy (crisis, cities, now)
-- **reverent** — stately, symmetrical, patient (nature, ritual, scale)
-- **wry** — ironic juxtaposition, cut on absurdity (consumer culture,
-  politics, mid-century optimism)
-- **dreamlike** — slow dissolves, repeated motifs, non-linear (childhood,
-  grief, memory)
+- **哀歌式（elegiac）** —— 长停留、低饱和、慢切（失去、记忆、家）
+- **紧迫（urgent）** —— 短切、硬同步、运动密集（危机、城市、当下）
+- **庄重（reverent）** —— 沉稳、对称、耐心（自然、仪式、尺度）
+- **戏谑（wry）** —— 反讽并置、在荒诞处下刀（消费文化、
+  政治、中世纪乐观主义）
+- **梦境（dreamlike）** —— 慢叠化、重复母题、非线性（童年、
+  悲伤、记忆）
 
-### 3. Pick A Duration And A Shape
+### 3. 选定时长与形状
 
-Duration matters because it caps the number of beats.
+时长很重要，因为它给节拍数量封了顶。
 
-| Duration | Beats | Use |
+| 时长 | 节拍 | 用途 |
 |----------|-------|-----|
-| 30-45s | 8-12 cuts | Social/Instagram/reel — one feeling, no arc |
-| 60-90s | 15-25 cuts | Standard short — mini arc with a turn |
-| 2-3 min | 30-50 cuts | Proper essay montage — 3-act arc possible |
+| 30-45 秒 | 8-12 个切点 | 社交/Instagram/reel —— 一种感受，没有弧线 |
+| 60-90 秒 | 15-25 个切点 | 标准短片 —— 带一个转折的迷你弧线 |
+| 2-3 分钟 | 30-50 个切点 | 真正的随笔式蒙太奇 —— 可以有三幕弧线 |
 
-Shape options:
+形状选项：
 
-- **single-image expansion** — one idea, held from many angles (good
-  for elegiac pieces under 60s)
-- **before/after** — first half establishes, second half turns (good
-  for wry or urgent registers)
-- **three-act** — setup → turn → release (the Adam Curtis move, needs
-  >90s)
-- **list/catalogue** — "everyone who..." structure, no arc, just
-  accumulation (good for reverent or elegiac)
+- **单意象展开** —— 一个想法，从多个角度呈现（适合 60 秒以内的
+  哀歌式作品）
+- **前后对照** —— 前半段确立，后半段翻转（适合戏谑或
+  紧迫的基调）
+- **三幕** —— 铺陈 → 转折 → 释放（Adam Curtis 式手法，需要
+  90 秒以上）
+- **清单/编目** —— "所有那些……的人"式结构，没有弧线，只有
+  累积（适合庄重或哀歌式）
 
-### 4. Note Music Intent (MANDATORY)
+### 4. 记下音乐意图（强制）
 
-Documentary montage is inseparable from its music bed. **Music is MANDATORY
-for this pipeline.** The ONLY way out is an explicit user opt-out (e.g.
-"no music, I want it silent") — which MUST be recorded as
-`music_plan.source = "none"` with a `music_plan.opt_out_reason` field.
+纪录片蒙太奇与它的音乐铺底密不可分。**本管线的音乐是强制的。**
+唯一的例外是用户明确表示不要（例如
+"不要音乐，我想要它是静默的"）—— 这**必须**记录为
+`music_plan.source = "none"` 并附带 `music_plan.opt_out_reason` 字段。
 
-Silent-by-design briefs that feel "pure" at the idea stage regularly look
-like abandoned footage at compose time. Do not assume silence will earn
-itself. If the user has not mentioned music, ASSUME THEY WANT IT and pick:
+那些在创意阶段"纯粹"得动人的静默设计，到合成时经常看起来
+像被遗弃的素材。不要假定静默能自己挣来分量。若用户没提音乐，
+就**假定他们想要**，并从中挑一个：
 
-- user-provided track (put path in `music_plan.source_path`),
-- music library pick (list what's in `music_library/`),
-- generated (name the tool and prompt seed with register),
-- explicit opt-out (`source: "none"` + `opt_out_reason`).
+- 用户提供的曲目（把路径写进 `music_plan.source_path`），
+- 从音乐库里挑（列出 `music_library/` 里有什么），
+- 生成（点名工具，并用基调作为提示词种子），
+- 明确弃用（`source: "none"` + `opt_out_reason`）。
 
-**Warn the user if no music source is available.** Do not silently
-defer this — it becomes an expensive surprise at the asset stage.
+**若没有任何音乐来源可用，就提醒用户。** 不要静默地
+把它往后拖 —— 那会在 assets 阶段变成一个昂贵的意外。
 
-### 5. Note End-Tag Intent (MANDATORY)
+### 5. 记下片尾标签意图（强制）
 
-Every documentary-montage film closes on a philosophical end-tag — one
-short, abstract line that gives the whole thing meaning. It is rendered
-as a Remotion end-card ("shining underlined tag" register — bold weight,
-letter-spaced, animated underline).
+每一部 documentary-montage 影片都以一句富有哲思的片尾标签收束 —— 一句
+短小、抽象、赋予整件作品意义的话。它会被渲染
+成 Remotion 的片尾卡（"发光下划线标签"的调性 —— 粗体字重、
+拉开字距、带动画的下划线）。
 
-**Default mode is `"overlay"`** — the tag fades in over the final scenes
-of the body footage, so it feels like part of the film rather than a
-separate card tacked on at the end. The alternative is `"concat"` which
-appends a standalone black-card after the body. Use concat only when the
-user explicitly asks for a separated title card, or when the final
-footage is too visually busy for legible text overlay.
+**默认模式是 `"overlay"`** —— 标签在正片素材的最后几个场景上淡入，
+让它感觉像是影片的一部分，而不是结尾硬贴上去的一张
+独立卡片。另一个选项是 `"concat"`，它在正片之后追加一张独立黑卡。
+只有当用户明确要求一张分离的标题卡，或者最终
+素材在视觉上太繁忙、文字叠上去不可读时，才用 concat。
 
-**End-tag is MANDATORY.** The ONLY way out is an explicit user opt-out
-recorded as `end_tag_plan: null` with an `end_tag_opt_out_reason` field.
+**片尾标签是强制的。** 唯一的例外是用户明确弃用，
+记录为 `end_tag_plan: null` 并附带 `end_tag_opt_out_reason` 字段。
 
-Propose the end-tag at the brief stage. Write 3 options and recommend one.
-Expected shape:
+在 brief 阶段就提出片尾标签。写 3 个选项并推荐其中一个。
+预期形态：
 
 ```json
 {
@@ -129,31 +127,30 @@ Expected shape:
 }
 ```
 
-Fields:
-- `text` — 3-9 words. A thesis, not a summary.
-- `palette` — `"cool_offwhite_on_black"` or `"warm_ivory_on_black"`.
-- `duration_seconds` — total tag screen time (fade-in + hold + fade-out).
-  5-8s is the sweet spot.
-- `render_engine` — always `"remotion"`.
-- `component` — always `"EndTag"`.
-- `mode` — `"overlay"` (default) or `"concat"`.
-  - **overlay**: tag rendered as ProRes 4444 with alpha → composited on
-    final body footage via FFmpeg overlay filter. Tag fades appear over
-    the last N seconds of live footage. The body's own fade-out and the
-    tag's fade-out should align.
-  - **concat**: tag rendered as opaque MP4 → appended after body via
-    FFmpeg concat. Total output duration = body + tag.
+字段：
+- `text` —— 3-9 个词。一个论点，不是一句总结。
+- `palette` —— `"cool_offwhite_on_black"` 或 `"warm_ivory_on_black"`。
+- `duration_seconds` —— 标签的总屏幕时间（淡入 + 停留 + 淡出）。
+  5-8 秒是甜点。
+- `render_engine` —— 恒为 `"remotion"`。
+- `component` —— 恒为 `"EndTag"`。
+- `mode` —— `"overlay"`（默认）或 `"concat"`。
+  - **overlay**：标签渲染成带 alpha 的 ProRes 4444 → 通过 FFmpeg 的 overlay
+    滤镜合成到正片素材上。标签在实拍素材的最后 N 秒里淡入淡出。
+    正片自身的淡出应与标签的淡出对齐。
+  - **concat**：标签渲染成不透明 MP4 → 通过 FFmpeg concat 追加到正片之后。
+    输出总时长 = 正片 + 标签。
 
-### 6. Note Narration Intent (OPTIONAL)
+### 6. 记下旁白意图（可选）
 
-Unlike music and end-tag, narration is OPTIONAL. Absence is fine if
-visuals + music + end-tag carry the register. If narration IS used, name
-the TTS provider and voice. Record `narration: "none"` explicitly if
-there's no narration — don't leave the field missing.
+与音乐和片尾标签不同，旁白是**可选的**。若 画面 + 音乐 + 片尾标签
+已经承载了基调，没有旁白也没问题。若确实要用旁白，就点名
+TTS provider 和音色。若没有旁白，就显式记 `narration: "none"` ——
+不要把这个字段留空。
 
-### 7. Record The Brief
+### 7. 写下 Brief
 
-Minimum fields the brief must carry:
+brief 必须携带的最小字段集：
 
 ```json
 {
@@ -182,41 +179,41 @@ Minimum fields the brief must carry:
 }
 ```
 
-`era_mix` is a documentary-specific field: "modern" biases toward
-Pexels, "vintage" biases toward Archive.org Prelinger, "any" leaves it
-open for the scene director to decide per slot.
+`era_mix` 是纪录片专属字段："modern" 偏向
+Pexels，"vintage" 偏向 Archive.org 的 Prelinger 档案，"any" 则留给
+场景导演逐槽位决定。
 
-### 8. Quality Gate
+### 8. 质量门
 
-- Thematic question is ONE sentence.
-- Tone is ONE register from the fixed list.
-- Duration and shape are concrete numbers / enum values.
-- `music_plan` is present AND either names a real source OR has
-  `source: "none"` + `opt_out_reason` (explicit user decision).
-- `end_tag_plan` is present AND either has a non-empty `text` OR is
-  `null` with `end_tag_opt_out_reason` (explicit user decision).
-- Sources list is non-empty and at least one requested source is
-  `available` per `corpus_builder.source_provider_menu` surfaced in
-  preflight.
+- 主题性问题是**一句话**。
+- 调性是固定清单里的**一个**基调。
+- 时长与形状是具体的数字/枚举值。
+- `music_plan` 存在，并且要么点名了一个真实来源，要么带有
+  `source: "none"` + `opt_out_reason`（用户的明确决定）。
+- `end_tag_plan` 存在，并且要么有非空的 `text`，要么是
+  `null` 并带 `end_tag_opt_out_reason`（用户的明确决定）。
+- 来源清单非空，且按 preflight 中呈现的
+  `corpus_builder.source_provider_menu`，至少有一个被请求的来源是
+  `available`。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Stating multiple themes ("it's about cities AND technology AND loss").
-  Pick one. The others become downstream associations.
-- Jumping to shot lists. The brief is about MEANING. Shots come next.
-- Ignoring duration. A 45s piece with 50 cuts is nausea. A 3-minute
-  piece with 12 cuts is a slideshow.
-- Forgetting to ask about music. The user usually has an opinion.
-- Assuming silence will earn itself. It won't. Music is mandatory unless
-  the user explicitly says no.
-- Skipping the end-tag because "the images speak for themselves". They
-  don't — the end-tag is the thesis. Propose one every time.
+- 同时陈述多个主题（"它讲的是城市**和**科技**和**失去"）。
+  选一个。其余的会成为下游的联想。
+- 直接跳到镜头表。brief 关心的是**意义**。镜头是下一步的事。
+- 无视时长。45 秒配 50 个切点会让人反胃。3 分钟只有
+  12 个切点就是幻灯片。
+- 忘了问音乐。用户通常是有想法的。
+- 假定静默能自己挣来分量。它挣不来。除非用户明确说不要，
+  否则音乐是强制的。
+- 因为"画面自己会说话"就跳过片尾标签。它们不会 ——
+  片尾标签就是那个论点。每次都要提出一个。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

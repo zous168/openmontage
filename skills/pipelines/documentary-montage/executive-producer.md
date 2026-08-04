@@ -1,89 +1,88 @@
-# Executive Producer - Documentary Montage Pipeline
+# 监制（Executive Producer）—— Documentary Montage 管线
 
-## When To Use
+## 何时使用
 
-The user wants a short (30-180s) non-narrative piece built from existing
-footage — a thematic collage, essay film, or Adam-Curtis-style tone
-poem. The piece is NOT a narrated explainer, NOT a talking head, NOT a
-single extended scene. It is an arranged sequence of real-world clips
-whose meaning emerges from juxtaposition (Kuleshov effect,
-Eisenstein's intellectual montage).
+用户想要一支由现有素材构建的短篇（30-180 秒）非叙事作品 ——
+主题拼贴、随笔电影，或 Adam Curtis 式的音诗。这件作品**不是**
+带旁白的讲解、**不是**口播人像、**不是**单一的长场景。它是
+一段被编排过的真实世界片段序列，其意义从并置中涌现（库里肖夫效应、
+爱森斯坦的理性蒙太奇）。
 
-This is the right pipeline when the brief includes phrases like:
+当 brief 里出现这些说法时，本管线就是对的选择：
 
-- "a montage about...",
-- "show me the feeling of...",
-- "like a tone poem",
-- "documentary-style collage",
-- "everyone who has ever..." / "the life of..." / "a portrait of...",
-- "cut together from stock footage",
-- "Adam Curtis", "Errol Morris", "Chris Marker",
-- "no narration, just images".
+- "一支关于……的蒙太奇"，
+- "让我看到……的那种感觉"，
+- "像一首音诗"，
+- "纪录片式拼贴"，
+- "所有曾经……的人" / "……的一生" / "……的一幅肖像"，
+- "用素材片段剪出来"，
+- "Adam Curtis"、"Errol Morris"、"Chris Marker"，
+- "不要旁白，只要画面"。
 
-If the user asks for an explainer, a trailer with generated clips, or
-a talking-head video, pick a different pipeline.
+若用户要的是讲解视频、用生成片段做的预告片，或
+口播人像视频，请换一条管线。
 
-## Philosophy
+## 理念
 
-Documentary montage is retrieval-first, not generation-first.
-The corpus is the raw material; the edit is the thinking. Your job
-across all stages is to:
+纪录片蒙太奇是**检索优先**的，不是生成优先的。
+素材库是原材料；剪辑才是思考。你在所有阶段的
+工作是：
 
-1. **Enlarge the search space before committing**. Build a corpus
-   bigger than you think you need so the edit has room to breathe.
-2. **Let juxtaposition do the talking**. Two mundane clips next to
-   each other can mean something neither one means alone.
-3. **Trust the footage**. If a clip shows a thing plainly, don't
-   explain it with text or voice-over.
-4. **Pace is the message**. Cut on beat. Hold on images that earn it.
-   Short cuts = urgency, long holds = grief/weight/awe.
+1. **在做决定之前先扩大搜索空间**。把素材库建得比你以为需要的
+   更大，好让剪辑有喘息余地。
+2. **让并置去说话**。两个平淡的片段挨在一起，能表达出
+   任何一个单独都表达不了的东西。
+3. **信任素材**。若一个片段已经把某件事拍得清清楚楚，就不要再用
+   文字或配音去解释它。
+4. **节奏就是信息**。在节拍上下刀。在配得上的画面上停留。
+   短切 = 紧迫，长停 = 悲伤/重量/敬畏。
 
-## Stages
+## 阶段
 
-| Stage | Director skill | Produces |
+| 阶段 | Director 技能 | 产出 |
 |-------|----------------|----------|
-| `idea` | `idea-director.md` | brief (topic, tone, duration, shape) |
-| `scene` | `scene-director.md` | shot_list (slot descriptions + queries) |
-| `assets` | `asset-director.md` | asset_manifest (corpus built + per-slot picks) |
-| `edit` | `edit-director.md` | edit_decisions (timeline + transitions + music) |
-| `compose` | `compose-director.md` | render_report (final mp4) |
+| `idea` | `idea-director.md` | brief（题材、调性、时长、形状） |
+| `scene` | `scene-director.md` | shot_list（槽位描述 + 检索词） |
+| `assets` | `asset-director.md` | asset_manifest（已建成的素材库 + 逐槽位选片） |
+| `edit` | `edit-director.md` | edit_decisions（时间线 + 转场 + 音乐） |
+| `compose` | `compose-director.md` | render_report（最终 mp4） |
 
-Each director skill has its own quality gate. Read the director skill
-before starting the stage.
+每个 director 技能都有自己的质量门。开始某个阶段之前，先读
+它的 director 技能。
 
-## Core Tools
+## 核心工具
 
-| Tool | Role |
+| 工具 | 角色 |
 |------|------|
-| `corpus_builder` | Fans out across Pexels/Archive.org/NASA/Wikimedia/Unsplash, downloads + embeds + indexes |
-| `clip_search` | Ranks clips for a slot, finds similar sets, diversifies selections |
-| `video_compose` / Remotion | Renders the final timeline |
+| `corpus_builder` | 横跨 Pexels/Archive.org/NASA/Wikimedia/Unsplash 扇出检索，下载 + 嵌入 + 建索引 |
+| `clip_search` | 为某个槽位给片段排序、找相似集合、让选片更多样 |
+| `video_compose` / Remotion | 渲染最终时间线 |
 
-The agent talks to the stock sources through `corpus_builder` — never
-call adapter classes directly from a skill or director.
+agent 通过 `corpus_builder` 与素材来源打交道 —— 绝不要
+在技能或 director 里直接调用适配器类。
 
-## Cross-Stage Rules
+## 跨阶段规则
 
-- **No generated clips** unless the user explicitly asks. This pipeline
-  is about REAL footage, real texture, real grain. Generated B-roll
-  breaks the aesthetic.
-- **No narration** unless the user explicitly asks. The brief should
-  default to image-only + music. Adding voice is a MAJOR change and
-  requires user approval per the Decision Communication Contract.
-- **Build the corpus before picking clips**. Do not run clip_search
-  against an empty or half-built corpus. If retrieval results are
-  weak (all scores < 0.25), grow the corpus with new queries.
-- **Keep a decision log of rejected picks**. When you pass on a clip
-  with a high score, note why (wrong era, overlit, wrong emotional
-  register). This helps the review stage.
+- **不要生成片段**，除非用户明确要求。本管线讲的
+  是**真实**素材、真实质感、真实颗粒。生成的 B-roll
+  会破坏这种美学。
+- **不要旁白**，除非用户明确要求。brief 应当
+  默认只有画面 + 音乐。加人声是一次**重大**变更，
+  按决策沟通契约需要用户批准。
+- **先建素材库，再选片**。不要对着一个空的或
+  只建了一半的素材库跑 clip_search。若检索结果
+  很弱（全部分数 < 0.25），就用新的检索词把素材库扩大。
+- **为被否决的选片留一份决策记录**。当你放过一个高分
+  片段时，记下原因（年代不对、过曝、情绪基调不对）。
+  这对复看阶段有帮助。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Treating the corpus as a stock library to pick from sequentially
-  instead of as a search index to query per slot.
-- Arranging clips by score rather than by narrative beat.
-- Letting visually-repetitive clips sit adjacent. Use
-  `clip_search` with `operation=diversify` before locking the edit.
-- Over-cutting. Documentary montage lives in the hold, not the jump.
-- Quietly inserting a narration track because the edit feels "thin".
-  Fix the edit; don't paper over it.
+- 把素材库当成一个按顺序挑选的素材库，
+  而不是一个逐槽位查询的检索索引。
+- 按分数而不是按叙事节拍来编排片段。
+- 让视觉上重复的片段挨在一起。锁定剪辑之前用
+  `clip_search` 的 `operation=diversify`。
+- 剪得过碎。纪录片蒙太奇活在停留里，不在跳切里。
+- 因为剪辑感觉"单薄"就悄悄塞进一条旁白轨。
+  去把剪辑修好；不要拿它糊墙。

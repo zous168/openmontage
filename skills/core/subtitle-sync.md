@@ -1,64 +1,64 @@
-# Subtitle Sync Skill
+# 字幕同步技能
 
-## When to Use
+## 何时使用
 
-Use the `subtitle_gen` tool to convert transcript data (from `transcriber`)
-into properly timed subtitle files. This skill covers timing strategy,
-formatting, and readability for both vertical and horizontal video.
+使用 `subtitle_gen` 工具把转写数据（来自 `transcriber`）
+转换为时序正确的字幕文件。本技能涵盖时序策略、
+格式规范，以及竖屏和横屏视频的可读性。
 
-## Tool
+## 工具
 
-| Tool | Capability |
+| 工具 | 能力 |
 |------|-----------|
-| `subtitle_gen` | Generate SRT, VTT, or caption JSON from word-level timestamps |
+| `subtitle_gen` | 从词级时间戳生成 SRT、VTT 或 caption JSON |
 
-## Output Formats
+## 输出格式
 
-| Format | Extension | Use Case |
+| 格式 | 扩展名 | 使用场景 |
 |--------|-----------|----------|
-| SRT | `.srt` | Universal — works with FFmpeg, players, YouTube upload |
-| VTT | `.vtt` | Web-native — HTML5 video, browser playback |
-| Caption JSON | `.caption.json` | Programmatic — word-level data for custom renderers |
+| SRT | `.srt` | 通用 —— 适配 FFmpeg、播放器、YouTube 上传 |
+| VTT | `.vtt` | Web 原生 —— HTML5 video、浏览器播放 |
+| Caption JSON | `.caption.json` | 程序化 —— 供自定义渲染器使用的词级数据 |
 
-## Cue Length by Format
+## 按格式划分的字幕条长度
 
-### Vertical Short-form (TikTok, Reels, Shorts)
+### 竖屏短视频（TikTok、Reels、Shorts）
 
-- **Max 3-4 words per cue** — screen is narrow, text must be large enough to read
-- **Max 20 characters per line** — prevents wrapping on narrow screens
-- Subtitles are **mandatory** (most viewers watch muted)
+- **每条最多 3-4 个词** —— 屏幕窄，文字必须足够大才能看清
+- **每行最多 20 个字符** —— 防止在窄屏上换行
+- 字幕是**必需的**（多数观众静音观看）
 
-### Horizontal Standard (YouTube, web)
+### 横屏标准（YouTube、Web）
 
-- **Max 6-8 words per cue** — wider screen accommodates more text
-- **Max 42 characters per line** — standard broadcast limit
+- **每条最多 6-8 个词** —— 更宽的屏幕能容纳更多文字
+- **每行最多 42 个字符** —— 标准广播限制
 
-### General Rules
+### 通用规则
 
-- Average viewer reads ~15 characters/second
-- Minimum display time: 0.5 seconds per cue
-- Maximum display time: 5 seconds per cue
+- 普通观众阅读速度约为每秒 15 个字符
+- 最短显示时间：每条 0.5 秒
+- 最长显示时间：每条 5 秒
 
-## Styling for Burn-in (ASS force_style)
+## 烧录样式（ASS force_style）
 
-When burning subtitles via `video_compose`, these parameters are passed as ASS
-`force_style`. Use the correct ASS color format: `&HAABBGGRR` (not hex RGB).
+通过 `video_compose` 烧录字幕时，这些参数会作为 ASS
+`force_style` 传入。要使用正确的 ASS 颜色格式：`&HAABBGGRR`（不是十六进制 RGB）。
 
-### Vertical Video (1080x1920)
+### 竖屏视频（1080x1920）
 
 ```
 font: Arial
 font_size: 18
 bold: true
-primary_color: &H00FFFFFF      # white (ASS format: alpha=00, BGR=FFFFFF)
-outline_color: &H00000000      # black
-outline_width: 3               # thick outline for readability on varied backgrounds
+primary_color: &H00FFFFFF      # 白色（ASS 格式：alpha=00，BGR=FFFFFF）
+outline_color: &H00000000      # 黑色
+outline_width: 3               # 粗描边，保证在各种背景上都可读
 shadow: 2
-margin_v: 50                   # pixels from bottom edge
-alignment: 2                   # bottom center
+margin_v: 50                   # 距底边的像素数
+alignment: 2                   # 底部居中
 ```
 
-### Horizontal Video (1920x1080)
+### 横屏视频（1920x1080）
 
 ```
 font: Arial
@@ -72,33 +72,33 @@ margin_v: 40
 alignment: 2
 ```
 
-### Common Mistakes
+### 常见错误
 
-- **Wrong color format:** `&HFFFFFF` breaks positioning. Always use full 8-char `&H00FFFFFF`.
-- **Font too large on vertical:** `font_size: 28` fills the center of a 9:16 frame. Use 18 max.
-- **Too many words per cue on vertical:** 5+ words creates multi-line blocks that cover the face.
-- **MarginV too large:** Values over 200 push text off-screen. Stay under 100 for most cases.
+- **颜色格式写错：** `&HFFFFFF` 会破坏定位。始终使用完整的 8 位 `&H00FFFFFF`。
+- **竖屏字号过大：** `font_size: 28` 会填满 9:16 画面的中央区域。最大用 18。
+- **竖屏每条词数过多：** 5 个词以上会形成多行文字块，遮住人脸。
+- **MarginV 过大：** 超过 200 会把文字推出画面。多数情况下保持在 100 以内。
 
-## Timing Best Practices
+## 时序最佳实践
 
-### Alignment with Speech
+### 与语音对齐
 
-- Cue start must match word onset (not before the speaker starts)
-- Cue end should extend ~200ms past the last word for comfortable reading
-- Never let a cue linger into the next speaker's turn
+- 字幕起始时间必须与词的发声起点一致（不能早于说话人开口）
+- 字幕结束时间应比最后一个词多延长约 200ms，方便阅读
+- 绝不让一条字幕拖进下一位说话人的发言段
 
-### Word Boundary Grouping
+### 词边界分组
 
-The `subtitle_gen` tool groups words respecting `max_words_per_cue` and
-`max_chars_per_line`. When word timestamps are unavailable, it falls back
-to segment-level timing with even distribution.
+`subtitle_gen` 工具在分组时会遵守 `max_words_per_cue` 与
+`max_chars_per_line`。当词级时间戳不可用时，它会退回到
+段落级时序并均匀分配。
 
-## Quality Checklist
+## 质量检查清单
 
-- [ ] Every spoken word appears in a subtitle cue
-- [ ] No cue exceeds the character limit for the target format
-- [ ] Subtitles are in the bottom 20% of frame — never covering the face
-- [ ] Text is readable on mobile at native resolution
-- [ ] Timing matches speech — no early or late cues
-- [ ] Cues don't overlap each other
-- [ ] Outline/shadow provides sufficient contrast against all backgrounds
+- [ ] 每个说出的词都出现在某条字幕中
+- [ ] 没有任何一条字幕超出目标格式的字符上限
+- [ ] 字幕位于画面底部 20% 区域 —— 绝不遮挡人脸
+- [ ] 文字在移动端原生分辨率下可读
+- [ ] 时序与语音吻合 —— 没有过早或过晚的字幕
+- [ ] 字幕条之间没有重叠
+- [ ] 描边/阴影在所有背景上都提供了足够的对比度

@@ -1,46 +1,46 @@
-# Scene Director - Character Animation Pipeline
+# 场景导演 —— Character Animation 管线
 
-## Goal
+## 目标
 
-Produce a `scene_plan` where each scene is feasible for rigged character
-animation.
+产出一份 `scene_plan`，其中每个场景对绑定骨骼的角色动画而言
+都是可行的。
 
-## Scene Planning Fields
+## 场景规划字段
 
-For each scene, include:
+对每个场景，包含：
 
-- character IDs,
-- emotional beat,
-- action sequence,
-- camera/framing,
-- background,
-- props,
-- effects,
-- required assets,
-- transition notes.
+- 角色 ID，
+- 情绪节拍，
+- 动作序列，
+- 镜头/构图，
+- 背景，
+- 道具，
+- 特效，
+- 所需素材，
+- 转场备注。
 
-Use `type: "character_scene"` for rigged character acting scenes. Store
-character-specific detail in `character_actions`; do not put per-scene acting
-data in arbitrary metadata because the shared `scene_plan` schema rejects
-unknown per-scene fields.
+绑定骨骼的角色表演场景使用 `type: "character_scene"`。把
+角色专属的细节放进 `character_actions`；不要把逐场景的表演
+数据塞进任意元数据里，因为共享的 `scene_plan` schema 会拒绝
+未知的逐场景字段。
 
-## Complexity Budget
+## 复杂度预算
 
-Prefer fewer, stronger shots:
+宁可镜头更少但更有力：
 
-- one establish,
-- one action beat,
-- one reaction beat,
-- one resolution beat.
+- 一个定场，
+- 一个动作节拍，
+- 一个反应节拍，
+- 一个收束节拍。
 
-Avoid scenes that require many unique views or complex physical contact unless
-the user approved that complexity.
+除非用户已批准那种复杂度，否则避免需要大量独特视角或复杂
+肢体接触的场景。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

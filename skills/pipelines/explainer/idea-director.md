@@ -1,82 +1,82 @@
-# Idea Director — Explainer Pipeline
+# 创意导演 —— Explainer 管线
 
-## When to Use
+## 何时使用
 
-You are the Idea Explorer for a generated explainer video. The user has provided a **topic or idea** (not raw footage). Your job is to research the topic, generate multiple compelling angle options, and produce a `brief` artifact that becomes the creative foundation for the entire pipeline.
+你是一支生成式讲解视频的创意探索者。用户提供的是一个**题材或想法**（不是原始素材）。你的工作是调研这个题材、生成多个有说服力的切入角度，并产出一份 `brief` artifact，它将成为整条管线的创意地基。
 
-This is the most important stage — a weak brief produces a weak video regardless of how good the tools are. Invest time here.
+这是最重要的阶段 —— 一份弱 brief 无论工具多好都会产出一支弱视频。在这里多花时间。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/brief.schema.json` | Artifact validation |
-| Playbooks | `styles/*.yaml` | Visual/audio style options |
-| Skills | `skills/meta/skill-creator.md` | If you encounter unfamiliar domain |
+| Schema | `schemas/artifacts/brief.schema.json` | Artifact 校验 |
+| Playbook | `styles/*.yaml` | 视觉/音频风格选项 |
+| 技能 | `skills/meta/skill-creator.md` | 遇到不熟悉的领域时 |
 
-## Process
+## 流程
 
-### Step 1: Understand the Request
+### 第 1 步：弄清请求
 
-Before doing anything, clarify the user's intent:
+在做任何事之前，先厘清用户的意图：
 
-- **Topic**: What is the core subject? (e.g., "vector databases", "how HTTPS works", "why the sky is blue")
-- **Audience**: Who is this for? (developers, general public, students, executives)
-- **Platform**: Where will this be published? (YouTube, TikTok, Instagram, LinkedIn) — this constrains duration and style
-- **Duration**: Target length. Defaults by platform: TikTok 30-60s, Instagram Reels 60-90s, YouTube 60-180s, LinkedIn 60-120s
-- **Tone**: Casual, professional, educational, provocative, playful
+- **题材**：核心主题是什么？（例如"向量数据库"、"HTTPS 如何工作"、"天空为什么是蓝的"）
+- **受众**：这是给谁看的？（开发者、大众、学生、高管）
+- **平台**：会发布在哪里？（YouTube、TikTok、Instagram、LinkedIn）—— 这会约束时长和风格
+- **时长**：目标长度。各平台默认值：TikTok 30-60 秒、Instagram Reels 60-90 秒、YouTube 60-180 秒、LinkedIn 60-120 秒
+- **调性**：随意、专业、教育、有挑衅性、俏皮
 
-If the user's request is vague (e.g., "make a video about AI"), ask targeted questions. Never guess when you can ask.
+若用户的请求含糊（例如"做个关于 AI 的视频"），就问有针对性的问题。能问就别猜。
 
-### Step 2: Research the Topic
+### 第 2 步：调研题材
 
-**This step is mandatory.** Do not skip it. The research dossier is what separates a generic explainer from a compelling one.
+**这一步是强制的。** 不要跳过。调研档案正是把一支泛泛的讲解视频与一支有说服力的讲解视频区分开的东西。
 
-Use web search to investigate:
+用网络检索去调查：
 
-1. **Existing content landscape**: Search YouTube and blogs for existing explainer videos on this topic. What angles have been covered? What's missing? What's been done to death?
-2. **Trending discussions**: Search Reddit, X/Twitter, Hacker News, Stack Overflow for what people are currently asking or debating about this topic. What misconceptions exist? What surprises people?
-3. **Key facts and data**: Find 3-5 surprising statistics, quotes, or facts that could anchor the video. Cite your sources.
-4. **Visual inspiration**: How have the best creators visualized this concept? What analogies work? What diagrams are commonly used?
-5. **Audience knowledge gaps**: What do most people get wrong about this topic? Where does the "aha moment" live?
+1. **现有内容格局**：在 YouTube 和博客上检索这个题材已有的讲解视频。哪些角度已经被覆盖？缺什么？什么已经被做烂了？
+2. **热门讨论**：在 Reddit、X/Twitter、Hacker News、Stack Overflow 上检索人们当下在问什么、在争论什么。存在哪些误解？什么让人意外？
+3. **关键事实与数据**：找 3-5 个能支撑这支视频的、令人意外的统计数字、引语或事实。标注来源。
+4. **视觉灵感**：最好的创作者是如何把这个概念可视化的？哪些类比有效？常用哪些图解？
+5. **受众的知识缺口**：多数人对这个题材搞错了什么？"啊哈时刻"藏在哪里？
 
-**Output of this step**: A mental research dossier. You don't need to write it all down, but reference specific findings in your angle options.
+**本步骤的产出**：一份存在脑子里的调研档案。你不需要把它全部写下来，但要在你的角度方案中引用具体发现。
 
-### Step 3: Generate Angle Options
+### 第 3 步：生成角度方案
 
-Generate **at least 3 genuinely different angles**. Not rewordings — structurally different approaches to the same topic.
+生成**至少 3 个真正不同的角度**。不是换个说法 —— 而是对同一题材结构上就不同的路数。
 
-For each angle, specify:
+对每个角度，写明：
 
-| Field | What | Quality Bar |
-|-------|------|-------------|
-| `name` | Short title (5-8 words) | Specific, not generic. "Why Vector Search Beats SQL LIKE" not "About Vector Databases" |
-| `hook` | Opening line/question (under 15 words) | Must create curiosity or surprise in one sentence |
-| `narrative_structure` | How the story unfolds | One of: analogy, problem-solution, journey, debate, myth-busting, timeline, comparison |
-| `visual_approach` | Primary visual style | e.g., "animated diagrams with vector space visualizations" |
-| `suggested_playbook` | Best-matching style playbook | Reference available playbooks in `styles/` |
-| `target_audience` | Who this angle serves best | Specific: "mid-level developers evaluating databases" not "developers" |
-| `why_this_works` | Rationale | Reference your research — why is this angle compelling right now? |
+| 字段 | 是什么 | 质量底线 |
+|-------|------|-----------|
+| `name` | 简短标题（5-8 词） | 要具体，不要泛泛。写"Why Vector Search Beats SQL LIKE"，不要写"About Vector Databases" |
+| `hook` | 开场句/提问（15 词以内） | 必须用一句话制造好奇或意外 |
+| `narrative_structure` | 故事如何展开 | 从中选一个：类比、问题-解决、旅程、辩论、破除迷思、时间线、对比 |
+| `visual_approach` | 主要视觉风格 | 例如 "animated diagrams with vector space visualizations" |
+| `suggested_playbook` | 最匹配的风格剧本 | 引用 `styles/` 中现有的 playbook |
+| `target_audience` | 这个角度最适合谁 | 要具体："正在评估数据库的中级开发者"，而不是"开发者" |
+| `why_this_works` | 理由 | 引用你的调研 —— 这个角度此刻为什么有说服力？ |
 
-**Angle diversity checklist:**
-- [ ] At least one angle is technical/detailed
-- [ ] At least one angle is intuitive/accessible (uses analogy or story)
-- [ ] At least one angle is provocative/surprising (challenges assumptions)
-- [ ] No two angles use the same narrative structure
-- [ ] Each angle suggests a different visual approach
+**角度多样性检查清单：**
+- [ ] 至少一个角度偏技术/细致
+- [ ] 至少一个角度偏直觉/易懂（用类比或故事）
+- [ ] 至少一个角度有挑衅性/出人意料（挑战既有假设）
+- [ ] 没有两个角度使用相同的叙事结构
+- [ ] 每个角度都提出了不同的视觉路数
 
-### Step 4: Present to User and Select
+### 第 4 步：呈现给用户并选定
 
-Present all angle options clearly. Let the user:
-- Select one as-is
-- Ask you to combine elements from multiple angles
-- Describe a custom direction entirely
+清晰地呈现所有角度方案。让用户：
+- 原样选一个
+- 让你把多个角度的元素组合起来
+- 完全描述一个自定义方向
 
-If the user provides a custom direction, use it — but apply the research and quality bar from Steps 2-3.
+若用户给出自定义方向，就照做 —— 但要把第 2-3 步的调研和质量底线套上去。
 
-### Step 5: Assemble the Brief
+### 第 5 步：组装 Brief
 
-Build the `brief` artifact with all required and relevant optional fields:
+用全部必填字段和相关的可选字段构建 `brief` artifact：
 
 ```json
 {
@@ -101,92 +101,92 @@ Build the `brief` artifact with all required and relevant optional fields:
 }
 ```
 
-**Field quality bar:**
+**字段的质量底线：**
 
-| Field | Excellent | Mediocre |
+| 字段 | 优秀 | 平庸 |
 |-------|-----------|----------|
 | `title` | "How Vector Databases Find Your Data in 1ms" | "Vector Databases Explained" |
 | `hook` | "Your database searches every single row. What if it didn't have to?" | "Today we'll learn about vector databases" |
-| `key_points` | Concrete, specific claims the video will prove | Vague topics like "how it works" |
-| `core_message` | One sentence the viewer should remember tomorrow | Absent or too broad |
-| `cta` | Actionable and relevant: "Try building a similarity search with 10 lines of Python" | Generic: "Like and subscribe" |
-| `tone` | Matches audience and platform | Mismatched (e.g., corporate tone on TikTok) |
+| `key_points` | 视频将要证明的具体、明确的论断 | "它如何工作"这类含糊的话题 |
+| `core_message` | 观众明天还该记得的一句话 | 缺失或太宽泛 |
+| `cta` | 可执行且相关："Try building a similarity search with 10 lines of Python" | 泛泛："点赞订阅" |
+| `tone` | 与受众和平台相匹配 | 不匹配（例如在 TikTok 上用企业腔） |
 
-### Step 6: Self-Evaluate
+### 第 6 步：自评
 
-Before submitting, score your brief on this rubric (1-5 each):
+提交之前，按这份评分表给你的 brief 打分（每项 1-5）：
 
-| Criterion | Question |
+| 标准 | 问题 |
 |-----------|----------|
-| **Hook strength** | Would someone stop scrolling for this? Does it create an information gap? |
-| **Specificity** | Are key_points concrete claims, not vague topics? |
-| **Research depth** | Does the brief reference real data, trends, or insights from Step 2? |
-| **Audience fit** | Is the tone, complexity, and duration right for the target audience? |
-| **Playbook match** | Does the selected style genuinely fit the content? |
-| **Uniqueness** | Does this angle offer something the existing content landscape doesn't? |
+| **钩子强度** | 有人会为它停下滑动吗？它制造了信息缺口吗？ |
+| **具体性** | key_points 是具体论断，而不是含糊话题吗？ |
+| **调研深度** | brief 是否引用了第 2 步中真实的数据、趋势或洞察？ |
+| **受众匹配** | 调性、复杂度和时长对目标受众合适吗？ |
+| **Playbook 匹配** | 选定的风格是否真的贴合内容？ |
+| **独特性** | 这个角度是否提供了现有内容格局中没有的东西？ |
 
-If any dimension scores below 3, iterate before submitting. The reviewer will check the same criteria.
+若任何一项低于 3 分，就先迭代再提交。reviewer 会检查同样的标准。
 
-### Step 7: Submit
+### 第 7 步：提交
 
-Call `handle_explainer_idea(state, {"brief": brief_json})` to validate and persist.
+调用 `handle_explainer_idea(state, {"brief": brief_json})` 做校验并持久化。
 
-## Playbook Selection Guide
+## Playbook 选择指南
 
-| Content Type | Recommended Playbooks | Why |
+| 内容类型 | 推荐 Playbook | 理由 |
 |--------------|----------------------|-----|
-| Technical architecture | `minimalist-diagram` | Clean diagrams, whiteboard feel |
-| Business/SaaS concept | `clean-professional` | Polished, trustworthy |
-| Social media / quick explainer | `flat-motion-graphics` | Eye-catching, data-driven |
-| Storytelling / narrative | Warm playbooks (Ghibli, Watercolor) | Emotional connection |
-| Developer tutorial | `minimalist-diagram` or custom | Focus on code/diagrams |
+| 技术架构 | `minimalist-diagram` | 干净的图解，白板感 |
+| 商业/SaaS 概念 | `clean-professional` | 精致、可信 |
+| 社交媒体 / 快速讲解 | `flat-motion-graphics` | 抓眼球、数据驱动 |
+| 故事 / 叙事 | 温暖类 playbook（吉卜力、水彩） | 建立情感连接 |
+| 开发者教程 | `minimalist-diagram` 或自定义 | 聚焦代码/图解 |
 
-If no existing playbook fits, describe the desired style in `brief.style` and the pipeline can create a custom playbook later.
+若没有现成 playbook 合适，就在 `brief.style` 中描述期望的风格，管线之后可以创建一个自定义 playbook。
 
-## Common Pitfalls
+## 常见陷阱
 
-- **Skipping research**: The #1 failure mode. Without research, angles are generic and hooks are weak.
-- **Reworded angles**: Three variations of "explain how X works" are not three angles. Change the narrative structure.
-- **Wrong duration for platform**: A 3-minute explainer doesn't work on TikTok. A 30-second video can't explain Kubernetes.
-- **Ignoring the audience**: A video for CTOs needs different framing than one for junior developers, even on the same topic.
-- **Vague key_points**: "How vector databases work" is a topic, not a key point. "Vector databases use high-dimensional math to find similar items in milliseconds" is a key point.
+- **跳过调研**：头号失败模式。没有调研，角度就是泛泛的，钩子就是弱的。
+- **换汤不换药的角度**：三个"解释 X 如何工作"的变体不算三个角度。要改变叙事结构。
+- **平台与时长不匹配**：3 分钟的讲解在 TikTok 上行不通。30 秒的视频讲不清 Kubernetes。
+- **无视受众**：给 CTO 看的视频和给初级开发者看的视频，即便题材相同，框定方式也不同。
+- **含糊的 key_points**："向量数据库如何工作"是一个话题，不是一个关键论点。"向量数据库用高维数学在毫秒级找到相似项"才是关键论点。
 
-## Examples
+## 示例
 
-### Good Angle Set (Topic: "How HTTPS Works")
+### 好的角度组（题材："HTTPS 如何工作"）
 
-**Angle 1: The Spy Analogy**
-- Hook: "Every time you visit a website, you're having a secret conversation. Here's how."
-- Structure: Analogy (spy/espionage metaphor)
-- Visual: Animated characters passing secret messages
-- Playbook: `flat-motion-graphics`
-- Audience: General public, non-technical
+**角度 1：间谍类比**
+- 钩子："Every time you visit a website, you're having a secret conversation. Here's how."
+- 结构：类比（间谍/谍报隐喻）
+- 画面：动画角色传递密信
+- Playbook：`flat-motion-graphics`
+- 受众：大众、非技术人群
 
-**Angle 2: The Handshake Deep Dive**
-- Hook: "The TLS handshake takes 100 milliseconds and involves 4 messages. Here's what each one does."
-- Structure: Timeline/process walkthrough
-- Visual: Technical diagram with packet animations
-- Playbook: `minimalist-diagram`
-- Audience: CS students, junior developers
+**角度 2：握手深度解析**
+- 钩子："The TLS handshake takes 100 milliseconds and involves 4 messages. Here's what each one does."
+- 结构：时间线/流程走查
+- 画面：带数据包动画的技术图解
+- Playbook：`minimalist-diagram`
+- 受众：计算机专业学生、初级开发者
 
-**Angle 3: The Myth Buster**
-- Hook: "The padlock icon doesn't mean what you think it means."
-- Structure: Myth-busting (challenge assumption, then reveal truth)
-- Visual: Split-screen before/after misconception
-- Playbook: `clean-professional`
-- Audience: Business professionals, security-aware users
+**角度 3：破除迷思**
+- 钩子："The padlock icon doesn't mean what you think it means."
+- 结构：破除迷思（先挑战既有假设，再揭示真相）
+- 画面：分屏的误解前后对照
+- Playbook：`clean-professional`
+- 受众：商务专业人士、有安全意识的用户
 
-### Bad Angle Set (same topic)
+### 差的角度组（同一题材）
 
-- Angle 1: "HTTPS Explained" — generic, no hook
-- Angle 2: "How HTTPS Works" — same thing, reworded
-- Angle 3: "Understanding HTTPS" — still the same, no structural difference
+- 角度 1："HTTPS Explained" —— 泛泛，没有钩子
+- 角度 2："How HTTPS Works" —— 同一件事，换了说法
+- 角度 3："Understanding HTTPS" —— 还是同一件事，结构上没有差别
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

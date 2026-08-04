@@ -1,53 +1,53 @@
-# Capability Extension Protocol
+# 能力扩展协议
 
-## When to Use
+## 何时使用
 
-When you encounter a production need that no existing tool covers. The agent can extend the system — but with guardrails. This replaces the blanket "do NOT write ad-hoc Python scripts" rule with a structured protocol.
+当你遇到现有工具都覆盖不了的制作需求时。agent 可以扩展系统 —— 但要有护栏。本协议取代了那条一刀切的"不要写临时 Python 脚本"规则。
 
-## Assessment First
+## 先做评估
 
-Before writing anything, classify the gap:
+在动手写任何东西之前，先给这个缺口分类：
 
-| Gap Type | Example | Action |
+| 缺口类型 | 示例 | 措施 |
 |----------|---------|--------|
-| **One-off transform** | Custom image crop, color adjustment, format conversion | Write a project-scoped Python script |
-| **Recurring visual need** | New illustration style, custom chart type | Generate a custom playbook or Remotion component |
-| **Missing provider** | User wants a specific API not in the registry | Create a minimal tool wrapper |
-| **Missing knowledge** | Agent doesn't know how to prompt a specific model | Use web search to learn, then document as a Layer 3 skill |
+| **一次性变换** | 自定义图像裁切、颜色调整、格式转换 | 写一个项目作用域的 Python 脚本 |
+| **反复出现的视觉需求** | 新的插画风格、自定义图表类型 | 生成自定义 playbook 或 Remotion 组件 |
+| **缺少 provider** | 用户想用某个不在注册表里的 API | 创建一个最小的工具包装器 |
+| **缺少知识** | agent 不知道如何为某个特定模型写提示词 | 用网络检索去学，然后写成一份 Layer 3 技能文档 |
 
-## Rules for Ad-Hoc Scripts
+## 临时脚本的规则
 
-Scripts are allowed ONLY when:
-1. No existing tool covers the need (verified against registry via preflight)
-2. The script is idempotent (safe to re-run)
-3. The script produces a file artifact in the project workspace
-4. The script is logged in the decision log: `category: "capability_extension"`
-5. The user is informed: "I wrote a custom script for X because no existing tool handles Y"
-6. The script does NOT call external APIs without user approval
+**仅**在满足以下全部条件时才允许写脚本：
+1. 没有现成工具能覆盖该需求（已通过 preflight 对照注册表核实）
+2. 脚本是幂等的（可以安全重跑）
+3. 脚本在项目工作区中产出一个文件 artifact
+4. 脚本已记入 decision log：`category: "capability_extension"`
+5. 已告知用户："我为 X 写了一个自定义脚本，因为没有现成工具能处理 Y"
+6. 脚本在未经用户批准的情况下**不**调用外部 API
 
-Scripts go in: `projects/<project-name>/scripts/`
+脚本放在：`projects/<project-name>/scripts/`
 
-**Never use a script to substitute the pipeline.** A script must perform ONE bounded transform (crop, rename, format conversion). It must NOT chain multiple pipeline stages (e.g. assets → edit → compose), write gated checkpoints as `completed` without user approval, or live at the repo root under `scripts/rerun_*.py`. Multi-stage production belongs to director skills + registry tools + `write_checkpoint`. See AGENT_GUIDE.md → Pipeline Bypass Prohibition.
+**绝不要用脚本来替代管线。** 一个脚本必须只执行**一项**有界的变换（裁切、重命名、格式转换）。它**不得**串联多个管线阶段（例如 assets → edit → compose）、在未经用户批准的情况下把受门禁的检查点写成 `completed`，也不得放在仓库根目录的 `scripts/rerun_*.py`。多阶段生产属于 director 技能 + 注册表工具 + `write_checkpoint`。见 AGENT_GUIDE.md → Pipeline Bypass Prohibition。
 
-Repo-root utilities such as `scripts/reset_project_pipeline.py` (checkpoint reset only) are allowed; media-generating bypass scripts must carry `OPENMONTAGE_NON_PRODUCTION_SCRIPT` and are for maintainer dogfood only.
+仓库根目录的工具（例如只做检查点重置的 `scripts/reset_project_pipeline.py`）是允许的；会生成媒体的绕行脚本必须带上 `OPENMONTAGE_NON_PRODUCTION_SCRIPT` 标记，且仅供维护者自测使用。
 
 ```python
-"""<One-line description of what this script does>
+"""<一句话描述这个脚本做什么>
 
-Created by capability extension protocol because: <reason no existing tool covers this>
-Decision log entry: <decision_id>
+由能力扩展协议创建，原因：<为什么没有现成工具能覆盖这件事>
+Decision log 条目：<decision_id>
 """
 import sys
 from pathlib import Path
 
 def main(input_path: str, output_path: str) -> None:
-    # Idempotent: check if output already exists
+    # 幂等：先检查输出是否已存在
     out = Path(output_path)
     if out.exists():
         print(f"Output already exists: {out}")
         return
 
-    # ... transformation logic ...
+    # ... 变换逻辑 ...
 
     print(f"Created: {out}")
 
@@ -55,62 +55,62 @@ if __name__ == "__main__":
     main(sys.argv[1], sys.argv[2])
 ```
 
-## Rules for Custom Playbooks
+## 自定义 Playbook 的规则
 
-When the existing playbooks don't match the brief:
-1. Use `lib/playbook_generator.py` to create a new playbook
-2. Base it on the closest existing playbook if possible
-3. Validate against `schemas/styles/playbook.schema.json`
-4. Save to `styles/custom/<project-name>.yaml`
-5. Log as decision: `category: "playbook_selection"`, `subject: "custom playbook created"`
+当现有 playbook 都不匹配 brief 时：
+1. 用 `lib/playbook_generator.py` 创建一个新 playbook
+2. 尽可能以最接近的现有 playbook 为基础
+3. 按 `schemas/styles/playbook.schema.json` 校验
+4. 保存到 `styles/custom/<project-name>.yaml`
+5. 记入决策：`category: "playbook_selection"`、`subject: "custom playbook created"`
 
-## Rules for New Skills (Technique Learning)
+## 新技能的规则（技法学习）
 
-When the agent discovers technique knowledge during web research:
-1. Document it as a project-scoped skill: `projects/<project-name>/skills/<name>.md`
-2. Follow the Layer 3 skill format:
-   - Provider name and version
-   - Provider-specific prompting patterns
-   - Optimal parameters for this use case
-   - Quality tips and known failure modes
-   - Source URLs for the information
-3. Reference it in the decision log
-4. Suggest promoting to `.agents/skills/` if it's generally useful
+当 agent 在网络调研中发现了技法知识时：
+1. 把它写成项目作用域的技能：`projects/<project-name>/skills/<name>.md`
+2. 遵循 Layer 3 技能格式：
+   - provider 名称与版本
+   - provider 专属的提示词范式
+   - 针对该用途的最佳参数
+   - 质量技巧与已知失败模式
+   - 信息的来源 URL
+3. 在 decision log 中引用它
+4. 若它具有普遍价值，建议把它提升到 `.agents/skills/`
 
-## Rules for Tool Wrappers
+## 工具包装器的规则
 
-When a user needs a specific provider that isn't in the registry:
-1. The agent can create a minimal `BaseTool` subclass
-2. Save to `projects/<project-name>/tools/<name>.py`
-3. It MUST inherit from `BaseTool` and implement the full contract (input_schema, execute, capabilities, etc.)
-4. It MUST be registered before use
-5. Log as decision: `category: "capability_extension"`
-6. Requires user approval before first paid API call
+当用户需要某个不在注册表里的 provider 时：
+1. agent 可以创建一个最小的 `BaseTool` 子类
+2. 保存到 `projects/<project-name>/tools/<name>.py`
+3. 它**必须**继承 `BaseTool` 并实现完整契约（input_schema、execute、capabilities 等）
+4. 使用前**必须**先注册
+5. 记入决策：`category: "capability_extension"`
+6. 首次付费 API 调用之前需要用户批准
 
-## What Is Still Forbidden
+## 仍然被禁止的事
 
-- Bypassing the pipeline (all production still goes through stages)
-- Calling external APIs without user knowledge
-- Modifying existing tools in `tools/` (create wrappers, don't modify originals)
-- Skipping the decision log
-- Writing scripts that have side effects beyond their output file (no sending emails, no pushing to remote, no deleting files outside project workspace)
+- 绕过管线（所有生产仍然要走各阶段）
+- 在用户不知情的情况下调用外部 API
+- 修改 `tools/` 中的现有工具（写包装器，不要改原件）
+- 跳过 decision log
+- 编写有超出其输出文件之外副作用的脚本（不发邮件、不推送远端、不删除项目工作区之外的文件）
 
-## Decision Log Entry Format
+## Decision Log 条目格式
 
-Every extension must be logged:
+每一次扩展都必须记录：
 
 ```json
 {
   "decision_id": "ext-001",
-  "stage": "<current stage>",
+  "stage": "<当前阶段>",
   "category": "capability_extension",
   "subject": "Created custom <script|playbook|skill|tool> for <purpose>",
   "options_considered": [
-    {"option_id": "existing-tool", "label": "<closest existing tool>", "rejected_because": "<why it doesn't work>"},
-    {"option_id": "extension", "label": "<what was created>", "reason": "<why this approach>"}
+    {"option_id": "existing-tool", "label": "<最接近的现有工具>", "rejected_because": "<为什么它不行>"},
+    {"option_id": "extension", "label": "<创建了什么>", "reason": "<为什么选这个做法>"}
   ],
   "selected": "extension",
-  "reason": "<concise justification>",
+  "reason": "<简明的论证>",
   "user_visible": true,
   "confidence": 0.8
 }

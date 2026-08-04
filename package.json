@@ -5,11 +5,13 @@
   "description": "OpenMontage — npm workspaces root (remotion-composer + vendored remotion core)",
   "workspaces": [
     "remotion-composer",
-    "vendor/remotion/packages/*"
+    "vendor/remotion/packages/*",
+    "vendor/hyperframes/packages/*"
   ],
   "scripts": {
     "build:vendor": "node scripts/build-vendor.mjs",
-    "install:all": "npm install && node scripts/build-vendor.mjs"
+    "build:hyperframes-vendor": "node scripts/build-hyperframes-vendor.mjs",
+    "install:all": "npm install && node scripts/build-vendor.mjs && node scripts/build-hyperframes-vendor.mjs"
   },
   "devDependencies": {
     "@types/bun": "1.3.3",

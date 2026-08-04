@@ -1,59 +1,59 @@
-# Asset Director - Podcast Repurpose Pipeline
+# 素材导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-This stage builds the reusable kit for podcast-derived video assets: subtitles, speaker cards, quote cards, optional topic art, and optional music support.
+本阶段为播客衍生的视频素材构建可复用套件：字幕、说话人卡、语录卡、可选的话题配图，以及可选的音乐支持。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["scene_plan"]["scene_plan"]`, `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Deliverable plan and transcript truth |
-| Tools | `subtitle_gen`, `image_selector`, `diagram_gen`, `music_gen`, `audio_enhance` | Asset generation |
-| Playbook | Active style playbook | Brand consistency |
+| Schema | `schemas/artifacts/asset_manifest.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["scene_plan"]["scene_plan"]`、`state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 交付物方案与转写事实 |
+| 工具 | `subtitle_gen`、`image_selector`、`diagram_gen`、`music_gen`、`audio_enhance` | 素材生成 |
+| Playbook | 当前生效的风格 playbook | 品牌一致性 |
 
-## Process
+## 流程
 
-### 1. Start With Mandatory Assets
+### 1. 从必备素材开始
 
-Highest priority:
+最高优先级：
 
-- subtitles for every clip,
-- clean audio where needed,
-- speaker attribution assets if multiple speakers appear,
-- quote-card templates for quote-led outputs.
+- 每条片段的字幕，
+- 需要处理的地方要有干净音频，
+- 若出现多位说话人，要有说话人署名素材，
+- 语录主导的输出要有语录卡模板。
 
-### 1b. Hero Scene Sample (Mandatory)
+### 1b. 主场景样片（强制）
 
-Before batch asset generation:
-1. Identify the hero clip (the most important or impactful clip in the batch)
-2. Generate ONE sample asset for that clip (subtitle style, speaker card, or quote card)
-3. Present it: "This is the visual direction for the most important clip. Does this match what you're imagining? I'll generate the rest in this style."
-4. Wait for approval before proceeding to batch generation
+批量生成素材之前：
+1. 找出主片段（这一批中最重要或最有冲击力的那条）
+2. 为那条片段生成**一个**样本素材（字幕样式、说话人卡或语录卡）
+3. 呈现它："这是最重要那条片段的视觉方向。这符合你的设想吗？我会按这个风格生成其余的。"
+4. 在进入批量生成之前等待批准
 
-This prevents the most expensive mistake: generating 10+ assets in a direction the user doesn't like.
+这可以避免代价最高的错误：朝着用户并不喜欢的方向生成了 10 多个素材。
 
-### 2. Treat Topic Graphics As Optional
+### 2. 把话题图形当作可选项
 
-Generated graphics should support the batch, not dominate it. Use them only when:
+生成的图形应当为这一批服务，而不是喧宾夺主。只在以下情况使用它们：
 
-- the topic truly benefits from a clarifying image,
-- the episode companion needs chapter separation,
-- the budget can support consistent outputs.
+- 这个话题确实能从一张澄清用的图中受益，
+- 整集配套视频需要章节分隔，
+- 预算能支撑产出保持一致。
 
-### 3. Use Templates, Not Reinvention
+### 3. 用模板，不要每次重造
 
-Prefer reusable templates for:
+以下内容优先使用可复用模板：
 
-- speaker cards,
-- quote cards,
-- end cards,
-- brand containers.
+- 说话人卡，
+- 语录卡，
+- 片尾卡，
+- 品牌容器。
 
-### 4. Store Rich Asset Truth In Metadata
+### 4. 把详尽的素材事实存进元数据
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `speaker_assets`
 - `subtitle_assets`
@@ -61,54 +61,54 @@ Recommended metadata keys:
 - `topic_graphics`
 - `music_assets`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- all clips have subtitle assets,
-- speaker identity is visually consistent,
-- quote-card text remains mobile-readable,
-- optional generated art stays within budget and style constraints.
+- 所有片段都有字幕素材，
+- 说话人身份在视觉上保持一致，
+- 语录卡文字在移动端依然可读，
+- 可选的生成配图控制在预算和风格约束之内。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during asset generation:
-- Use `web_search` to verify visual accuracy of subjects (e.g. what does this building actually look like?)
-- Use `web_search` to find reference images before generating illustrations
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在素材生成过程中遇到不确定之处：
+- 用 `web_search` 核实对象的视觉准确性（例如：这栋建筑实际上长什么样？）
+- 在生成插画之前用 `web_search` 找参考图
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Visual accuracy matters. If the script mentions a specific place, person, or object,
-verify what it actually looks like before generating images. Don't rely on
-the AI model's training data — it may be wrong or outdated.
+视觉准确性很重要。若脚本提到某个具体的地点、人物或物件，
+先核实它实际长什么样，再去生成图像。不要依赖
+AI 模型的训练数据 —— 它可能是错的或过时的。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Spending budget on optional art before subtitles and attribution assets are complete.
-- Creating inconsistent speaker cards across the same episode.
-- Overproducing topic graphics for long-form companion videos.
+- 在字幕和署名素材还没做完时，就把预算花在可选配图上。
+- 同一集里做出彼此不一致的说话人卡。
+- 为长视频配套过度制作话题图形。
 
 
-## When You Do Not Know How
+## 当你不知道该怎么做时
 
-If you encounter a generation technique, provider behavior, or prompting pattern you are unsure about:
+若你遇到一种拿不准的生成技法、provider 行为或提示词范式：
 
-1. **Search the web** for current best practices — models and APIs change frequently, and the agent's training data may be stale
-2. **Check `.agents/skills/`** for existing Layer 3 knowledge (provider-specific prompting guides, API patterns)
-3. **If neither helps**, write a project-scoped skill at `projects/<project-name>/skills/<name>.md` documenting what you learned
-4. **Reference source URLs** in the skill so the knowledge is traceable
-5. **Log it** in the decision log: `category: "capability_extension"`, `subject: "learned technique: <name>"`
+1. **上网检索**当前最佳实践 —— 模型和 API 变动频繁，agent 的训练数据可能已经过时
+2. **查 `.agents/skills/`** 中已有的 Layer 3 知识（provider 专属提示词指南、API 范式）
+3. **若两者都无济于事**，在 `projects/<project-name>/skills/<name>.md` 写一份项目作用域的技能，记录你学到的东西
+4. 在技能中**引用来源 URL**，让知识可追溯
+5. 在 decision log 中**记录它**：`category: "capability_extension"`、`subject: "learned technique: <name>"`
 
-This is especially important for:
-- **Video generation prompting** — models respond to specific vocabularies that change with each version
-- **Image model parameters** — optimal settings for FLUX, GPT Image, Imagen differ and evolve
-- **Audio provider quirks** — voice cloning, music generation, and TTS each have model-specific best practices
-- **Remotion component patterns** — new composition techniques emerge as the framework evolves
+这对以下情况尤其重要：
+- **视频生成提示词** —— 模型响应的是随版本变化的特定词汇
+- **图像模型参数** —— FLUX、GPT Image、Imagen 的最优设置各不相同且在演进
+- **音频 provider 的怪癖** —— 音色克隆、音乐生成和 TTS 各有其模型专属的最佳实践
+- **Remotion 组件范式** —— 随框架演进会出现新的合成技法
 
-Do not rely on stale knowledge. When in doubt, search first.
+不要依赖过时的知识。拿不准就先检索。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

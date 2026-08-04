@@ -1,102 +1,102 @@
-# Idea Director - Screen Demo Pipeline
+# 创意导演 —— Screen Demo 管线
 
-## Runtime Selection (MANDATORY — present all viable runtimes)
+## 运行时选择（强制 —— 呈现所有可行的运行时）
 
-Lock `render_runtime` at the idea stage alongside the production mode. Which runtimes are viable depends on the mode:
+在 idea 阶段就与制作模式一并锁定 `render_runtime`。哪些运行时可行取决于模式：
 
-| Production mode | Viable runtimes |
+| 制作模式 | 可行运行时 |
 |-----------------|-----------------|
-| `real_capture` (actual screen recording) | `remotion` (preferred — mix capture with overlays), `ffmpeg` (pure concat/trim) |
-| `synthetic_terminal` (Remotion `TerminalScene`) | `remotion` only |
-| `synthetic_ui` (custom HTML UI demo) | `remotion` OR `hyperframes` — real choice, present both |
+| `real_capture`（真实屏幕录制） | `remotion`（首选 —— 录制与叠加层混合）、`ffmpeg`（纯拼接/裁切） |
+| `synthetic_terminal`（Remotion `TerminalScene`） | 仅 `remotion` |
+| `synthetic_ui`（自定义 HTML UI 演示） | `remotion` 或 `hyperframes` —— 这是真选择，两个都要呈现 |
 
-Per AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)": when the mode allows multiple runtimes AND both are available on the machine (check `video_compose.get_info()["render_engines"]`), present both to the user with brief-specific analysis, recommend one, wait for approval. Do NOT silently default. When the mode constrains the choice (e.g. `synthetic_terminal` is Remotion-only), tell the user the constraint explicitly rather than silently locking remotion. Record every choice in `decision_log` under `render_runtime_selection` with all considered options.
+按 AGENT_GUIDE.md → "Present Both Composition Runtimes (HARD RULE)"：当模式允许多个运行时**且**机器上两者都可用时（检查 `video_compose.get_info()["render_engines"]`），把两者都呈现给用户，配上针对本 brief 的分析，推荐其中一个，然后等待审批。**不要**静默采用默认值。当模式本身限定了选择（例如 `synthetic_terminal` 只能用 Remotion），要明确告诉用户这个约束，而不是静默锁定 remotion。每一次选择都要连同所有考虑过的选项，记录到 `decision_log` 的 `render_runtime_selection` 下。
 
-## When To Use
+## 何时使用
 
-Use this pipeline whenever the deliverable is a screen-recording-style demo. There are **two production modes** — pick one in the brief:
+只要交付物是屏幕录制风格的演示，就用这条管线。它有**两种制作模式** —— 在 brief 中选定其一：
 
-| Mode | Source material | Pick when |
+| 模式 | 源素材 | 何时选它 |
 |---|---|---|
-| **`real_capture`** | An actual screen recording (MP4) captured via `screen_recorder`, `cap_recorder`, or `playwright-recording` | Real app UI, live behavior, browser flows, IDE plugins, user asked for their own screen |
-| **`synthetic_terminal`** | None — nothing is captured. You author a `terminal_scene` cut for Remotion | CLI / terminal / install flow / make targets / git clone / API key config — anything scriptable where every command and output is predictable |
+| **`real_capture`** | 一段真实的屏幕录制（MP4），由 `screen_recorder`、`cap_recorder` 或 `playwright-recording` 采集 | 真实 app UI、实时行为、浏览器流程、IDE 插件、用户要求录他们自己的屏幕 |
+| **`synthetic_terminal`** | 无 —— 什么都不采集。你为 Remotion 编写一个 `terminal_scene` 镜头 | CLI / 终端 / 安装流程 / make 目标 / git clone / API key 配置 —— 任何每条命令和输出都可预测、可脚本化的场景 |
 
-**Decision question:** *"Can I predict every command and its output before shooting?"* If yes → synthetic. If no → real capture.
+**判定问题：** *"我能在开拍之前预测每条命令及其输出吗？"* 能 → synthetic。不能 → real capture。
 
-**Record the mode in `brief.metadata.production_mode`.** The asset-director reads this field to choose between capture+overlay assets vs a `steps` list paced with narration.
+**把模式记入 `brief.metadata.production_mode`。** asset-director 会读这个字段，来决定是走「采集 + 叠加层素材」，还是走一份与旁白配速的 `steps` 列表。
 
-For `synthetic_terminal`, also read `.agents/skills/synthetic-screen-recording/SKILL.md` before proceeding — it encodes the pacing rule that killed an earlier showcase render (commands burned through in 40% of scene time, then terminal froze for the remaining 60%).
+对 `synthetic_terminal`，在继续之前还要读 `.agents/skills/synthetic-screen-recording/SKILL.md` —— 它固化了那条节奏规则，正是它此前搞砸过一次样片渲染（命令在 40% 的场景时长里就跑完了，剩下 60% 终端一动不动）。
 
-Your job at this stage is to turn the user's request into a clear procedural video plan. The main deliverable is a schema-valid `brief`, with pipeline-specific detail stored in `brief.metadata`.
+本阶段你的工作，是把用户的请求变成一份清晰的流程型视频方案。主要交付物是一份符合 schema 的 `brief`，管线专属的细节存放在 `brief.metadata` 中。
 
-## Operating Principles
+## 运作原则
 
-Screen-demo best practices are consistent:
+屏幕演示的最佳实践是一致的：
 
-- prioritize procedure over theory,
-- keep scope to one workflow or one outcome,
-- map narration to visible action,
-- plan attention guidance with restraint,
-- optimize for legibility before style.
+- 流程优先于理论，
+- 范围控制在一个工作流或一个结果上，
+- 让旁白与可见操作对应，
+- 有节制地规划注意力引导，
+- 先保可读性，再谈风格。
 
-Reference docs:
+参考文档：
 - `docs/screen-demo-best-practices.md`
 - `skills/creative/screen-recording.md`
 
-## Process
+## 流程
 
-### 1. Inspect The Source
+### 1. 检视源素材
 
-Use the available analysis tools before writing the brief:
+在动笔写 brief 之前，先用可用的分析工具：
 
-- `frame_sampler` for representative frames and dense samples around likely key moments
-- `scene_detect` for window switches, page changes, and major layout changes
-- `transcriber` to determine whether the recording has narration, system audio only, or silence
+- `frame_sampler` 取代表性帧，并在可能的关键时刻附近做密集采样
+- `scene_detect` 找窗口切换、页面变化和主要版式变化
+- `transcriber` 判断录制里是有旁白、只有系统声音，还是完全静音
 
-Identify:
+识别出：
 
-- software and surfaces shown,
-- the single workflow being taught,
-- critical interactions: click, type, scroll, submit, result,
-- moments that obviously need zoom or highlight support,
-- dead time: installs, builds, loading, repetitive typing,
-- whether `9:16` is even feasible without losing meaning.
+- 出现了哪些软件和界面，
+- 正在教的那**一个**工作流，
+- 关键交互：点击、输入、滚动、提交、结果，
+- 明显需要缩放或高亮辅助的时刻，
+- 空白时间：安装、构建、加载、重复打字，
+- `9:16` 在不丢失信息的前提下究竟可不可行。
 
-### 2. Classify The Demo
+### 2. 给演示分类
 
-Choose one dominant archetype:
+选定一种主导原型：
 
-- `tutorial`: step-by-step task completion
-- `feature_showcase`: show what a feature does
-- `troubleshooting`: reproduce and fix a problem
-- `walkthrough`: explain a multi-step flow across tools
-- `comparison`: compare two approaches or outcomes
+- `tutorial`：一步步完成一项任务
+- `feature_showcase`：展示某个功能能做什么
+- `troubleshooting`：复现并修复一个问题
+- `walkthrough`：讲解跨工具的多步流程
+- `comparison`：对比两种做法或两种结果
 
-If the footage mixes several archetypes, pick the one that should drive pacing and packaging.
+若素材混合了多种原型，就选那个应当主导节奏与包装的原型。
 
-### 3. Set Deliverable Intent
+### 3. 确定交付意图
 
-Screen demos should stay narrow and outcome-led:
+屏幕演示应当保持窄口径、以结果为导向：
 
-- `30-60s`: quick tip or feature reveal
-- `60-120s`: focused product walkthrough or bug fix
-- `120-300s`: chaptered tutorial
+- `30-60s`：快速技巧或功能揭示
+- `60-120s`：聚焦的产品走查或 bug 修复
+- `120-300s`：分章节的教程
 
-Default to the shortest duration that still teaches the task cleanly. Do not preserve raw duration unless the user explicitly wants training footage with minimal compression.
+默认取「仍能把任务讲干净」的最短时长。除非用户明确要的是尽量少压缩的培训素材，否则不要保留原始时长。
 
-### 4. Choose A Viable Output Shape
+### 4. 选一个可行的输出形态
 
-Plan the platform around readability, not trend pressure:
+围绕可读性来规划平台，而不是围绕潮流压力：
 
-- use `youtube` or `linkedin` for dense desktop UI,
-- use `instagram` or `tiktok` only if the active area can survive a narrow crop,
-- prefer `1:1` or `16:9` when the interface has multiple panels or code windows.
+- 密集的桌面 UI 用 `youtube` 或 `linkedin`，
+- 只有当活跃区域扛得住窄画幅裁切时，才用 `instagram` 或 `tiktok`，
+- 界面有多个面板或代码窗口时，优先 `1:1` 或 `16:9`。
 
-### 5. Build The Brief
+### 5. 搭建 Brief
 
-Use the schema fields for the concise creative contract and store the richer production detail in `metadata`.
+用 schema 字段写下简洁的创意契约，把更丰富的制作细节存进 `metadata`。
 
-Recommended `metadata` keys:
+推荐的 `metadata` 键：
 
 - `source_path`
 - `source_duration_seconds`
@@ -109,36 +109,36 @@ Recommended `metadata` keys:
 - `recommended_aspect_ratios`
 - `notes_for_scene_planner`
 
-The brief should answer:
+Brief 应当回答：
 
-- what the viewer will learn,
-- who this is for,
-- what proof/result the video should land on,
-- what the must-show actions are,
-- which crop directions are safe.
+- 观众会学到什么，
+- 这是给谁看的，
+- 视频最终要落在什么证据/结果上，
+- 必须展示的操作有哪些，
+- 哪些裁切方向是安全的。
 
-### 6. Quality Gate
+### 6. 质量门
 
-Before checkpointing, verify:
+写检查点之前，确认：
 
-- the workflow is narrow enough for the chosen duration,
-- the "aha" result is clearly identified,
-- the target platform matches the UI density,
-- the brief names the actual software rather than describing it vaguely,
-- the metadata gives downstream stages enough production truth.
+- 工作流对选定时长而言足够窄，
+- "恍然大悟"的那个结果已被清晰指认，
+- 目标平台与 UI 密度相匹配，
+- brief 点名了真实的软件，而不是含糊地描述，
+- metadata 给了下游阶段足够的制作实况。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Treating a 7-minute recording as a 7-minute deliverable by default.
-- Choosing `9:16` for a dense desktop capture just because the user asked for Shorts.
-- Writing a concept-heavy brief when the user really needs task completion.
-- Failing to note silence; if there is no voiceover, downstream stages must know immediately.
+- 默认把一段 7 分钟的录制当成 7 分钟的交付物。
+- 仅因为用户提了 Shorts，就给密集的桌面录制选 `9:16`。
+- 用户真正需要的是把任务做完，你却写了一份概念繁重的 brief。
+- 没有标注静音；若没有旁白，下游阶段必须立刻知道。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

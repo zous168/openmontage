@@ -1,70 +1,70 @@
-# Publish Director - Podcast Repurpose Pipeline
+# 发布导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-Package podcast-derived clips and companion assets so that every short-form piece points back to the episode instead of drifting as an isolated fragment.
+把播客衍生的片段和配套素材打包，让每一条短视频都指回那一集，而不是变成一块漂流的孤立碎片。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["compose"]["render_report"]`, `state.artifacts["idea"]["brief"]`, `state.artifacts["script"]["script"]` | Outputs, source truth, chapters |
-| Playbook | Active style playbook | Brand voice |
+| Schema | `schemas/artifacts/publish_log.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["compose"]["render_report"]`、`state.artifacts["idea"]["brief"]`、`state.artifacts["script"]["script"]` | 产出、源素材实况、章节 |
+| Playbook | 当前生效的风格 playbook | 品牌语气 |
 
-## Process
+## 流程
 
-### 1. Link Every Clip Back To The Episode
+### 1. 让每条片段都指回那一集
 
-Each short-form asset should reference:
+每个短视频素材都应当引用：
 
-- show name,
-- episode title or number,
-- guest name where relevant,
-- full episode destination.
+- 节目名，
+- 单集标题或期号，
+- 相关时的嘉宾姓名，
+- 完整单集的去处。
 
-### 2. Tailor The Copy
+### 2. 定制文案
 
-- Shorts / Reels / TikTok: hook-led and concise
-- LinkedIn: insight-led and more contextual
-- YouTube companion: chapter-rich and search-friendly
+- Shorts / Reels / TikTok：钩子先行、简洁
+- LinkedIn：以洞察为主、更有语境
+- YouTube 配套：章节丰富、便于检索
 
-### 3. Sequence The Release
+### 3. 排定发布顺序
 
-Recommended order:
+推荐顺序：
 
-1. strongest announcement clip
-2. next-best insight clip
-3. quote-led or guest-led follow-ups
-4. remaining supporting clips
+1. 最强的宣发片段
+2. 次强的洞察片段
+3. 语录主导或嘉宾主导的后续片段
+4. 其余的辅助片段
 
-### 4. Store Cross-Linking Truth In Metadata
+### 4. 把互链事实存进元数据
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `episode_reference`
 - `guest_tags`
 - `posting_schedule`
 - `clip_to_episode_map`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- every clip points back to the episode,
-- guest attribution is correct,
-- copy matches the platform,
-- the release order reflects actual clip strength.
+- 每条片段都指回那一集，
+- 嘉宾署名正确，
+- 文案与平台相匹配，
+- 发布顺序反映了片段的真实强弱。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Publishing clips without clear episode references.
-- Forgetting to tag or mention the guest when that audience matters.
-- Reusing one caption style across every platform.
+- 发布片段却没有清晰的单集索引。
+- 当嘉宾的受众很重要时，却忘了标注或提及嘉宾。
+- 在所有平台上复用同一种文案风格。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

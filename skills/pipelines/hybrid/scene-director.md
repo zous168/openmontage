@@ -1,46 +1,46 @@
-# Scene Director - Hybrid Pipeline
+# 场景导演 —— Hybrid 管线
 
-## When To Use
+## 何时使用
 
-You are translating the hybrid structure into a visual system that keeps the source visible and the support layers under control.
+你要把混合结构翻译成一套视觉体系，让源素材保持可见、让辅助层受控。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact validation |
-| Prior artifacts | `state.artifacts["script"]["script"]`, `state.artifacts["idea"]["brief"]` | Hybrid structure and source truth |
-| Tools | `frame_sampler`, `scene_detect` | Optional source inspection |
-| Playbook | Active style playbook | Layout consistency |
+| Schema | `schemas/artifacts/scene_plan.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["script"]["script"]`、`state.artifacts["idea"]["brief"]` | 混合结构与源素材实况 |
+| 工具 | `frame_sampler`、`scene_detect` | 可选的源素材检视 |
+| Playbook | 当前生效的风格 playbook | 版式一致性 |
 
-## Process
+## 流程
 
-### 1. Keep The Anchor Medium Visible
+### 1. 让主导媒介保持可见
 
-If the piece is source-led, the source must remain visually primary in the scene plan. Do not hide the anchor behind constant overlays.
+若这件作品是源素材主导的，那么在场景方案中源素材必须保持视觉上的主体地位。不要用不间断的叠加层把主心骨藏起来。
 
-### 2. Reserve Support For Clear Jobs
+### 2. 把辅助层留给明确的任务
 
-Use support scenes for:
+在这些地方使用辅助场景：
 
-- chapter transitions,
-- clarifying diagrams,
-- stat emphasis,
-- CTA or summary moments,
-- gap-filling inserts.
+- 章节转场，
+- 澄清用的图解，
+- 数据强调，
+- CTA 或总结时刻，
+- 补缺的插入镜头。
 
-### 3. Plan Variant Safety
+### 3. 规划变体安全
 
-If the project needs multiple aspect ratios, define where:
+若项目需要多种画幅比，就定义好：
 
-- subtitles live,
-- speaker labels live,
-- chart or code safe zones live,
-- crop-sensitive source media becomes unsafe.
+- 字幕放在哪里，
+- 说话人标签放在哪里，
+- 图表或代码的安全区在哪里，
+- 对裁剪敏感的源素材在什么情况下会变得不安全。
 
-### 4. Use Metadata For Balance Rules
+### 4. 用元数据表达平衡规则
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `anchor_rules`
 - `support_rules`
@@ -48,24 +48,24 @@ Recommended metadata keys:
 - `variant_rules`
 - `overlay_density_limits`
 
-### 5. Quality Gate
+### 5. 质量门
 
-- the anchor medium stays primary where intended,
-- support layers are limited and purposeful,
-- aspect-ratio planning is explicit,
-- no scene relies on invisible future magic.
+- 在预期的地方，主导媒介保持主体地位，
+- 辅助层数量有限且有目的，
+- 画幅比规划是明确的，
+- 没有场景依赖那种"以后总会有办法"的魔法。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Turning source-led scenes into overlay soup.
-- Forgetting variant-safe zones until compose.
-- Using generated inserts for every transition.
+- 把源素材主导的场景变成一锅叠加层乱炖。
+- 把变体安全区拖到合成阶段才想起来。
+- 每个转场都用生成的插入镜头。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

@@ -1,28 +1,28 @@
-# Script Director - Podcast Repurpose Pipeline
+# 脚本导演 —— Podcast Repurpose 管线
 
-## When To Use
+## 何时使用
 
-This stage creates the transcript truth, speaker attribution, highlight set, and chapter structure that every later stage depends on.
+本阶段建立后续每个阶段都依赖的转写事实、说话人归属、亮点集合和章节结构。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/script.schema.json` | Artifact validation |
-| Prior artifact | `state.artifacts["idea"]["brief"]` | Deliverable mix and source truth |
-| Tools | `transcriber`, `audio_enhance` | Diarized transcript and cleanup |
+| Schema | `schemas/artifacts/script.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["idea"]["brief"]` | 交付物组合与源素材实况 |
+| 工具 | `transcriber`、`audio_enhance` | 带说话人分离的转写与清理 |
 
-## Process
+## 流程
 
-### 1. Protect Transcript Quality
+### 1. 保住转写质量
 
-If the source audio is weak, use `audio_enhance` before or alongside transcription. Speaker diarization quality directly affects quote attribution and clip quality.
+若源音频质量差，就在转写之前或同时使用 `audio_enhance`。说话人分离的质量直接影响引语归属和片段质量。
 
-### 2. Produce A Speaker-Aware Transcript
+### 2. 产出感知说话人的转写稿
 
-Diarization is not optional for multi-speaker episodes. Verify speaker mapping early and store the richer diarization detail in `script.metadata`.
+对多说话人的节目而言，说话人分离不是可选项。尽早核实说话人映射，并把更详细的分离信息存进 `script.metadata`。
 
-Recommended metadata keys:
+推荐的元数据键：
 
 - `speaker_map`
 - `transcript_path`
@@ -30,61 +30,60 @@ Recommended metadata keys:
 - `highlight_candidates`
 - `rejected_highlights`
 
-### 3. Rank Highlight Moments
+### 3. 给亮点时刻排序
 
-Use the episode transcript to find:
+用整集转写稿去找：
 
-- concise insights,
-- surprising claims,
-- emotional peaks,
-- debates,
-- practical advice,
-- memorable phrasing.
+- 简洁的洞察，
+- 出人意料的论断，
+- 情绪高点，
+- 争论，
+- 实用建议，
+- 令人记住的措辞。
 
-Every highlight should be evaluated for:
+每个亮点都要从以下角度评估：
 
-- standalone clarity,
-- hook strength,
-- attribution confidence,
-- platform fit.
+- 独立成立的清晰度，
+- 钩子强度，
+- 归属的确定性，
+- 平台适配。
 
-### 4. Build Chapters For Long-Form Packaging
+### 4. 为长视频打包构建章节
 
-If the user wants a full-episode companion asset, identify the topic shifts now. These become chapter markers and later visual transition points.
+若用户想要一份整集配套素材，现在就把话题切换点找出来。它们会成为章节标记，以及之后的视觉转场点。
 
-### 5. Keep The Schema Clean
+### 5. 保持 Schema 干净
 
-Use `sections[]` for the structured production-facing segments and put the richer highlight inventory in metadata.
+用 `sections[]` 承载面向生产的结构化段落，把更丰富的亮点清单放进元数据。
 
-### 6. Quality Gate
+### 6. 质量门
 
-- speaker attribution is trustworthy,
-- the highlight set is strong enough for the requested deliverables,
-- weak clips are rejected instead of padded,
-- chapter markers cover the long-form conversation cleanly.
+- 说话人归属可信，
+- 亮点集合足以支撑所要求的交付物，
+- 弱片段被否决，而不是用来凑数，
+- 章节标记干净地覆盖了整段长对话。
 
-### Mid-Production Fact Verification
+### 生产中途的事实核验
 
-If you encounter uncertainty during script writing:
-- Use `web_search` to verify factual claims before committing them to the script
-- Use `web_search` to find reference images for visual accuracy
-- Log verification in the decision log: `category="visual_accuracy_check"`
+若你在写脚本时遇到不确定之处：
+- 在把某个事实性论断写进脚本之前，用 `web_search` 核实它
+- 用 `web_search` 找参考图以保证视觉准确性
+- 在 decision log 中记录核验：`category="visual_accuracy_check"`
 
-Every factual claim in the script should be traceable to the `research_brief`.
-If you make a claim that isn't in the research, do additional research and
-add the source. Do not invent statistics, dates, or attributions.
+脚本中的每一条事实性论断都应当能追溯到 `research_brief`。
+若你做出了调研中没有的论断，就补做调研并补上来源。不要编造统计数字、日期或出处。
 
-## Common Pitfalls
+## 常见陷阱
 
-- Treating diarization errors as minor when they change who said the quote.
-- Selecting clips that need too much earlier context.
-- Overfitting the batch to one section of the episode.
+- 在说话人分离错误会改变"这句话是谁说的"时，还把它当成小问题。
+- 挑了那些需要太多前文语境才能理解的片段。
+- 让这一批片段过度集中在这一集的某一个段落上。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。

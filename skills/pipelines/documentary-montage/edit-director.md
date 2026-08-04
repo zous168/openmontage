@@ -1,140 +1,138 @@
-# Edit Director - Documentary Montage Pipeline
+# 剪辑导演 —— Documentary Montage 管线
 
-## When To Use
+## 何时使用
 
-Every slot has a clip. You now have to turn a pile of clips into a
-piece. This stage decides in-points, out-points, transitions, music
-sync, and the order the clips actually run. The output is an
-`edit_decisions` artifact with a concrete timeline.
+每个槽位都有了片段。你现在得把一堆片段变成
+一件**作品**。本阶段决定入点、出点、转场、音乐
+同步，以及片段实际的播放顺序。产出是一份
+带具体时间线的 `edit_decisions` artifact。
 
-This is where documentary technique lives. If the asset director did
-its job, you have the raw material. The edit is the thinking.
+纪录片的技法就活在这里。若素材导演干好了它的活，
+你手上有的是原材料。剪辑才是思考。
 
-## Prerequisites
+## 前置条件
 
-| Layer | Resource | Purpose |
+| 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact validation |
-| Prior artifact | `state.artifacts["assets"]["asset_manifest"]` | Picked clips + music bed |
-| Prior artifact | `state.artifacts["scene_plan"]["scene_plan"]` | Slot order, hero flags, target holds |
-| Prior artifact | `state.artifacts["idea"]["brief"]` | Tone register, duration, shape |
-| Tool (optional) | `video_analyzer` | Probe a clip's motion if you need to re-check |
+| Schema | `schemas/artifacts/edit_decisions.schema.json` | Artifact 校验 |
+| 上游 artifact | `state.artifacts["assets"]["asset_manifest"]` | 选中的片段 + 音乐铺底 |
+| 上游 artifact | `state.artifacts["scene_plan"]["scene_plan"]` | 槽位顺序、hero 标记、目标停留 |
+| 上游 artifact | `state.artifacts["idea"]["brief"]` | 调性基调、时长、形状 |
+| 工具（可选） | `video_analyzer` | 需要复核时探测某个片段的运动量 |
 
-## Mental Model
+## 心智模型
 
-Documentary montage lives in four dimensions you have to balance:
+纪录片蒙太奇活在你必须平衡的四个维度里：
 
-1. **Rhythm** — how long each hold lasts and how the holds relate.
-2. **Juxtaposition** — which image follows which, and what it means.
-3. **Music sync** — cuts landing on beats, dropouts earning weight.
-4. **Continuity of register** — the grain, color, and era don't swing
-   wildly unless the swing is the point.
+1. **律动** —— 每次停留有多长，以及各次停留之间的关系。
+2. **并置** —— 哪个画面接在哪个画面之后，以及它意味着什么。
+3. **音乐同步** —— 剪辑点落在节拍上，抽空处挣得分量。
+4. **基调的连续性** —— 颗粒、色彩和年代不会剧烈摇摆，
+   除非这种摇摆本身就是重点。
 
-The enemy is "slideshow" — a sequence of clips played back-to-back
-with the same hold length and no sound design. If it feels like a
-slideshow, the edit has failed, regardless of how good the clips are.
+敌人是"幻灯片" —— 一串停留时长相同、没有声音设计的片段
+一个接一个播。若它感觉像幻灯片，剪辑就失败了，
+无论片段本身多好。
 
-This stage also locks the render grammar. For documentary montage,
-set `renderer_family` to `documentary-montage` so compose stays on the
-approved Remotion-first path.
+本阶段还会锁定渲染语法。对纪录片蒙太奇，把
+`renderer_family` 设为 `documentary-montage`，好让 compose 留在
+已获批的 Remotion 优先路径上。
 
-## Process
+## 流程
 
-### 0. Guardrails — No Silent Major Changes
+### 0. 护栏 —— 不许静默做重大变更
 
-Before touching the timeline, re-read the brief. If any of these are
-true, STOP and surface to the user per the Decision Communication
-Contract:
+在动时间线之前，重读 brief。若下面任何一条
+成立，就**停下**并按决策沟通
+契约向用户呈现：
 
-- The brief approved "no narration" but the edit feels like it needs
-  voice-over. Narration is a MAJOR change.
-- The brief approved a music track that the edit director now wants
-  to replace. Music swap is a MAJOR change.
-- The brief approved a 90s duration but the natural cut wants 2m30s.
-  Duration stretch is a MAJOR change.
+- brief 批准了"不要旁白"，但剪辑感觉需要
+  配音。旁白是**重大**变更。
+- brief 批准了某首音乐曲目，而剪辑导演现在想
+  替换掉它。换音乐是**重大**变更。
+- brief 批准了 90 秒时长，但自然的剪辑想要 2 分 30 秒。
+  拉长时长是**重大**变更。
 
-Fix the edit, don't paper over it. If the edit genuinely needs
-one of these, ask.
+去把剪辑修好，不要拿它糊墙。若剪辑确实需要
+其中之一，那就去问。
 
-### 1. Set The Rhythm Grid
+### 1. 设定律动网格
 
-Read `brief.tone` and `brief.duration_seconds`. Compute the hold
-table from the scene director's tone chart:
+读 `brief.tone` 和 `brief.duration_seconds`。按场景导演的
+调性表算出停留表：
 
-| Tone | Base hold | Min hold | Max hold |
+| 调性 | 基准停留 | 最短停留 | 最长停留 |
 |------|-----------|----------|----------|
-| elegiac | 4.0s | 2.5s | 7.0s |
-| reverent | 3.5s | 2.0s | 6.0s |
-| dreamlike | 3.0s | 1.5s | 5.5s |
-| wry | 2.0s | 1.0s | 4.0s |
-| urgent | 1.2s | 0.5s | 2.5s |
+| elegiac（哀歌） | 4.0 秒 | 2.5 秒 | 7.0 秒 |
+| reverent（庄重） | 3.5 秒 | 2.0 秒 | 6.0 秒 |
+| dreamlike（梦境） | 3.0 秒 | 1.5 秒 | 5.5 秒 |
+| wry（戏谑） | 2.0 秒 | 1.0 秒 | 4.0 秒 |
+| urgent（紧迫） | 1.2 秒 | 0.5 秒 | 2.5 秒 |
 
-**Hero slots get max hold.** Mid-sequence cutaways get base. Quick
-transitions get min.
+**主槽位取最长停留。** 中段的切出镜头取基准。快速
+转场取最短。
 
-Total hold time must sum to within ±10% of `brief.duration_seconds`.
-If you overshoot, compress non-hero holds first — never cut heroes
-short to fit duration.
+停留总时长必须落在 `brief.duration_seconds` 的 ±10% 以内。
+若超了，先压缩非主槽位的停留 —— 绝不为了凑时长而
+削短主槽位。
 
-### 2. Arrange By Narrative Beat, Not By Score
+### 2. 按叙事节拍编排，不按分数
 
-The scene director gave you a slot order. That order is the intent.
-Don't rearrange it by CLIP score, motion score, or resolution.
+场景导演给了你一个槽位顺序。那个顺序就是意图。
+不要按 CLIP 分数、运动分数或分辨率去重排它。
 
-You MAY reorder slots when:
+在以下情况你**可以**重排槽位：
 
-- The music bed has a downbeat at a known timestamp and reordering
-  two slots lands a hero on the beat (see step 4).
-- Two adjacent slots are visually identical and swapping one breaks
-  the monotony (but see step 7 — diversify should have caught this
-  already).
-- The final image isn't landing. The last 5-10s carries
-  disproportionate weight; if the scene director's choice dies, move
-  a stronger candidate to the tail.
+- 音乐铺底在某个已知时间点有重拍，重排两个槽位
+  能让一个主镜头落在拍上（见第 4 步）。
+- 相邻两个槽位在视觉上一模一样，换掉一个能打破
+  单调（但见第 7 步 —— diversify 本应已经抓到这一点）。
+- 最后一个画面没有落住。最后 5-10 秒承载着
+  不成比例的分量；若场景导演选的那个撑不住，就把
+  更强的候选挪到片尾。
 
-Always log the reorder in `edit_decisions.metadata.reorder_notes`
-with the reason.
+始终把重排连同理由记入
+`edit_decisions.metadata.reorder_notes`。
 
-### 3. Trim Each Clip To Its Beat
+### 3. 把每个片段修到它的节拍
 
-For every picked clip, decide `in_seconds` and `out_seconds`. Three
-rules:
+对每个选中的片段，决定 `in_seconds` 和 `out_seconds`。三条
+规则：
 
-- **Find the best sub-window, not the whole clip.** A 12-second Pexels
-  clip usually contains one 3-second moment that earns the hold and
-  9 seconds of setup/settle. Find the moment.
-- **Cut BEFORE the action's natural end.** End on a look, not on a
-  move-off. The cut feels intentional instead of exhausted.
-- **Leave a handle at both ends.** 4-6 frames of headroom so the
-  composer can apply a fade or dissolve without clipping the moment.
+- **找出最好的那一小段，而不是整段片段。** 一段 12 秒的 Pexels
+  片段通常只有 3 秒配得上这次停留，其余 9 秒是起势/收势。
+  把那一刻找出来。
+- **在动作自然结束**之前**下刀。** 结束在一个眼神上，而不是在人物
+  走出画面之后。这样的剪辑显得有意图，而不是精疲力竭。
+- **两端各留一点余量。** 留 4-6 帧余头，好让合成时能施加
+  淡变或叠化而不切掉那个瞬间。
 
-If a clip is too short to fill its target hold, either:
+若某个片段太短、填不满它的目标停留，那就：
 
-- slow it down (speed 0.5-0.75, fine on static-ish footage, bad on
-  anything with sync motion or faces talking),
-- let it cut early and borrow the remaining duration from the next
-  slot's hold,
-- or swap to the #2 candidate from the rejected-picks log.
+- 放慢它（速度 0.5-0.75，对偏静态的素材没问题，对任何有同步
+  运动或人物说话的素材都很糟），
+- 让它提前切掉，把剩余时长从下一个槽位的停留里借，
+- 或者从 rejected-picks 记录里换成第 2 名候选。
 
-Do NOT hold on the last frozen frame. A freeze-frame in a doc montage
-reads as a technical mistake.
+**不要**停在最后一帧定格。纪录片蒙太奇里的定格帧
+读起来像技术失误。
 
-### 4. Sync To The Music Bed
+### 4. 与音乐铺底同步
 
-Read `asset_manifest` for the music asset and load its duration.
-Documentary montages earn their emotional weight from cuts landing
-on musical events. Three sync moves:
+从 `asset_manifest` 读音乐素材并载入它的时长。
+纪录片蒙太奇的情绪分量来自剪辑点落在
+音乐事件上。三种同步动作：
 
-- **Downbeat cuts.** If you have bars and beats metadata (from a
-  provided track) or can hear them, place hero cuts on downbeats.
-  If not, evenly-spaced cuts on 4s intervals for a 60bpm bed are a
-  safe default.
-- **One held silence.** Drop the music out for ~2s at the piece's
-  emotional center. Silence is a tool. Use it once. Use it hard.
-- **Tail fade.** Music fades under the last 3-5s so the final image
-  can breathe without a musical resolution fighting it.
+- **重拍剪辑。** 若你有小节和节拍元数据（来自用户提供的
+  曲目）或者能听出来，就把主剪辑点放在重拍上。
+  若没有，对 60bpm 的铺底而言，按 4 秒等距下刀是
+  安全的默认。
+- **一次刻意的静默。** 在作品的情绪中心把音乐抽掉约 2 秒。
+  静默是一件工具。只用一次。要用得狠。
+- **尾部淡出。** 音乐在最后 3-5 秒淡到画面之下，好让最后一个画面
+  能呼吸，不被音乐的收束抢戏。
 
-Record the music config in `edit_decisions.audio.music` with:
+把音乐配置记入 `edit_decisions.audio.music`：
 
 ```json
 {
@@ -146,98 +144,96 @@ Record the music config in `edit_decisions.audio.music` with:
 }
 ```
 
-`ducking: false` is the default for this pipeline — there's no
-narration to duck under. If the user approved a narration track, set
-ducking to true and let it dip during segments.
+本管线默认 `ducking: false` —— 没有旁白需要闪避。
+若用户批准了旁白轨，就把 ducking 设为 true，让它在
+旁白段落下压。
 
-### 5. Choose Transitions From A Small Vocabulary
+### 5. 从一个很小的词汇表里选转场
 
-Documentary montage uses maybe four transitions total across the
-entire piece:
+一支纪录片蒙太奇整件作品加起来大概只用四种转场：
 
-| Transition | Use |
+| 转场 | 用途 |
 |------------|-----|
-| `cut` (hard) | Default. Most cuts are hard cuts. |
-| `dissolve` (0.5-1.0s) | Emotional sibling clips, time passage |
-| `fade_to_black` (0.5s, then back up) | Act breaks in 3-act shape, or once near the end |
-| `fade_in` (first shot) / `fade_out` (last shot) | 0.5-1.0s bookends |
+| `cut`（硬切） | 默认。绝大多数剪辑点都是硬切。 |
+| `dissolve`（0.5-1.0 秒） | 情绪上互为姊妹的片段、时间流逝 |
+| `fade_to_black`（0.5 秒，再升起来） | 三幕结构里的幕间，或临近结尾处用一次 |
+| `fade_in`（第一个镜头）/ `fade_out`（最后一个镜头） | 0.5-1.0 秒的首尾书挡 |
 
-**Do not use:**
+**不要使用：**
 
-- wipes,
-- push/slide transitions,
-- zoom blurs,
-- RGB splits,
-- light leaks,
-- glitch effects.
+- 划像，
+- 推入/滑动转场，
+- 缩放模糊，
+- RGB 分离，
+- 漏光，
+- 故障特效。
 
-These read as social-media edit language and will break the
-documentary register. If the piece is getting boring, fix the clip
-choices or the pacing, don't add transition flash.
+这些读起来是社交媒体的剪辑语言，会破坏
+纪录片的基调。若作品变得无聊，那就去修片段
+选择或节奏，不要靠加转场特效。
 
-Record each cut's `transition_in` / `transition_out` per the schema.
-Default `transition_in: "cut"` on most cuts.
+按 schema 记录每个剪辑点的 `transition_in` / `transition_out`。
+多数剪辑点默认 `transition_in: "cut"`。
 
-### 6. Apply Register Continuity
+### 6. 施加基调连续性
 
-Mixed-era corpora look wildly different. Pexels 2023 is clean, sharp,
-color-graded. Prelinger 1962 is grainy, warm, squared-off aspect.
-NASA archival is often low-res with text overlays. If you mash them
-together raw, the piece looks like a Wikipedia article.
+年代混杂的素材库看起来差异极大。Pexels 2023 干净、锐利、
+调过色。Prelinger 1962 有颗粒、偏暖、画幅方正。
+NASA 档案常常低分辨率还带文字叠加。若你把它们生生
+糅在一起，作品看起来会像一篇维基百科词条。
 
-You have two tools to smooth this:
+你有两件工具来抹平它：
 
-1. **Crop to a uniform aspect ratio.** Pick one: 16:9 cinematic
-   (`2.35:1` letterbox on top/bottom) for hero pieces, 9:16 for
-   social. Enforce in the `transform.crop` field of each cut.
-2. **Flag the piece for a uniform color grade at compose time.** Put
-   a `grade_profile` hint in `edit_decisions.metadata`. The compose
-   director will apply a LUT across the whole timeline.
+1. **裁剪到统一画幅比。** 挑一个：主作品用 16:9 电影感
+   （上下加 `2.35:1` 黑边），社交用 9:16。在每个 cut 的
+   `transform.crop` 字段里强制执行。
+2. **给整件作品标记出在合成时统一调色的需求。** 在
+   `edit_decisions.metadata` 里放一个 `grade_profile` 提示。合成
+   导演会在整条时间线上应用一个 LUT。
 
-Don't try to color-grade individual clips here. That's the compose
-stage. Your job is to flag the need.
+不要在这里逐片段调色。那是合成阶段的事。你的
+工作是把这个需求标出来。
 
-### 7. Enforce Adjacent Diversity One More Time
+### 7. 再执行一次相邻多样性检查
 
-Walk the timeline in pairs. For each consecutive (cut_n, cut_n+1):
+成对地走一遍时间线。对每一组相邻的 (cut_n, cut_n+1)：
 
-- Are they the same subject at the same scale? If yes, you have a
-  slideshow moment. Swap one for a clip at a different scale (wide
-  vs close).
-- Are they the same color palette (two night-blue clips back to
-  back)? If yes, break the pattern at least every 4 cuts.
-- Are they the same motion direction (two left-to-right pans)? If
-  yes, flip the second's horizontal axis or reorder.
+- 它们是同一主体、同一景别吗？若是，你就有一个
+  幻灯片时刻。把其中一个换成不同景别的片段（全景 vs 特写）。
+- 它们配色相同吗（两个夜蓝色片段挨在一起）？若是，
+  至少每 4 个剪辑点打破一次这种规律。
+- 它们运动方向相同吗（两个从左到右的横摇）？若
+  是，把第二个水平镜像，或者重排。
 
-Log any swaps you made in `metadata.diversity_swaps`.
+把你做过的所有替换记入 `metadata.diversity_swaps`。
 
-### 8. The L-Cut Move (Optional But Powerful)
+### 8. L-Cut 手法（可选但很有力）
 
-For any transition between two clips where the outgoing clip has
-strong ambient audio (rain, footsteps, traffic), carry the audio
-under the incoming clip for 0.5-1.5s. This is an L-cut and it
-welds two shots together more tightly than any visual transition.
+对于任何一处转场，若切出的那个片段有强烈的环境
+音（雨、脚步、车流），就让那段音频在切入片段之下再延续
+0.5-1.5 秒。这就是 L-cut，它把两个镜头焊在一起的力度
+胜过任何视觉转场。
 
-Implement via the schema by using a short `dissolve` transition OR
-by layering the outgoing clip's audio as an SFX entry in
-`edit_decisions.audio.sfx` with a delayed end.
+在 schema 中的实现方式是：用一个很短的 `dissolve` 转场，**或者**
+把切出片段的音频作为一条 SFX 条目分层放进
+`edit_decisions.audio.sfx`，并让它延后结束。
 
-Documentary montages with L-cuts feel 50% more coherent than ones
-without. Use them on the 3-4 hardest transitions in the piece.
+带 L-cut 的纪录片蒙太奇，比不带的连贯度高出约 50%。
+在整件作品中最难处理的那 3-4 处转场上使用它们。
 
-### 8b. Place The End-Tag Overlay
+### 8b. 放置片尾标签叠加层
 
-If `brief.metadata.end_tag_plan.mode == "overlay"` (the default), the
-end-tag will be composited on top of the final body footage at compose
-time. The edit director's job is to decide **when** the tag appears.
+若 `brief.metadata.end_tag_plan.mode == "overlay"`（默认值），片尾
+标签会在合成时被叠到正片素材之上。
+剪辑导演的工作是决定这个标签**何时**出现。
 
-Compute the offset: `offset_seconds = body_duration - tag_duration`.
-This makes the tag's fade-out align with the body's closing fade-out
-(the last cut's `transition_out: fade_out`). If the final cut's hold
-is shorter than the tag duration, start the tag earlier so it overlaps
-the second-to-last cut as well — this is fine and often looks better.
+计算偏移量：`offset_seconds = 正片时长 - 标签时长`。
+这样标签的淡出就能与正片收尾的淡出对齐
+（最后一个 cut 的 `transition_out: fade_out`）。若最后一个 cut 的停留
+短于标签时长，就让标签更早开始，使它也覆盖
+倒数第二个 cut —— 这没问题，而且往往更好看。
 
-Record in `edit_decisions.end_tag`:
+记入 `edit_decisions.end_tag`：
 
 ```json
 {
@@ -248,12 +244,12 @@ Record in `edit_decisions.end_tag`:
 }
 ```
 
-If `mode == "concat"`, omit this section — the compose-director will
-append the tag after the body without needing a timing offset.
+若 `mode == "concat"`，就省略这一节 —— 合成导演会在正片之后
+追加标签，不需要时间偏移。
 
-### 9. Emit The Edit Decisions
+### 9. 产出剪辑决策
 
-Canonical shape for this pipeline:
+本管线的规范形态：
 
 ```json
 {
@@ -315,66 +311,65 @@ Canonical shape for this pipeline:
 }
 ```
 
-### 10. Quality Gate
+### 10. 质量门
 
-- `sum(out - in for cut in cuts)` is within ±10% of
-  `brief.duration_seconds`.
-- `renderer_family = "documentary-montage"` is present and unchanged.
-- Hero slots have the longest holds.
-- No two adjacent cuts share subject AND scale.
-- The transition vocabulary is at most 4 distinct values.
-- Music config exists (or brief explicitly says no music).
-- At least one `silence_window` entry for pieces >= 60s.
-- Every cut has a one-line `reason` — if you can't write one, the
-  cut is arbitrary and should be reconsidered.
-- `metadata.total_duration_seconds` matches the sum of cut durations.
+- `sum(out - in for cut in cuts)` 落在
+  `brief.duration_seconds` 的 ±10% 以内。
+- `renderer_family = "documentary-montage"` 存在且未被更改。
+- 主槽位拥有最长的停留。
+- 没有任何两个相邻剪辑点同时共享主体**和**景别。
+- 转场词汇最多 4 种不同取值。
+- 音乐配置存在（或 brief 明确说了不要音乐）。
+- 60 秒及以上的作品至少有一条 `silence_window` 条目。
+- 每个剪辑点都有一行 `reason` —— 若你写不出来，
+  这一刀就是随意的，应当重新考虑。
+- `metadata.total_duration_seconds` 与各 cut 时长之和一致。
 
-## Common Pitfalls
+## 常见陷阱
 
-- **Cutting by information density instead of rhythm.** A doc
-  montage is not a Wikipedia article. "But I need to show this" is
-  not a reason — if the image doesn't sustain a hold, it doesn't
-  belong.
-- **Over-using dissolves.** A dissolve on every cut says "I couldn't
-  commit". Commit.
-- **Ignoring the music bed until the end.** Music is not a sweetener
-  you add at compose time. It is a timing grid you cut TO.
-- **Letting the final image be a weak one.** The last frame is
-  disproportionately remembered. If it's weak, swap it — the scene
-  director's slot ordering is a strong suggestion, not a contract.
-- **Freeze-frame endings.** Reads as technical error. End on a
-  fade-to-black instead.
-- **Silently adding a narration because the edit feels thin.** Major
-  change. Ask.
-- **Hiding clip provider in the cuts.** Every `cut.source` must be
-  an `asset_manifest` asset_id so provenance survives.
-- **Three different transition types in the first 15 seconds.**
-  Readers will feel the edit working. Restraint is the brand.
+- **按信息密度而不是按律动下刀。** 纪录片
+  蒙太奇不是维基百科词条。"但我得把这个展示出来"不是
+  理由 —— 若这个画面撑不住一次停留，它就不属于这里。
+- **叠化用得太多。** 每一刀都叠化等于在说"我下不了决心"。
+  下决心。
+- **把音乐铺底拖到最后才考虑。** 音乐不是你在合成时
+  加的甜味剂。它是你据以下刀的时序网格。
+- **让最后一个画面是个弱镜头。** 最后一帧会被
+  不成比例地记住。若它弱，就换掉 —— 场景
+  导演的槽位顺序是强建议，不是契约。
+- **定格帧结尾。** 读起来像技术失误。改用
+  淡入黑场结束。
+- **因为剪辑感觉单薄就悄悄加旁白。** 这是重大
+  变更。去问。
+- **在 cut 里隐藏片段的 provider。** 每个 `cut.source` 都必须是
+  一个 `asset_manifest` 的 asset_id，好让来源信息延续下来。
+- **前 15 秒里出现三种不同的转场类型。**
+  观众会感觉到剪辑在"用力"。克制才是这个类型的品牌。
 
-## Worked Pacing Example — "A Minute in the Rain"
+## 完整节奏示例 —— "雨中的一分钟"
 
-90 seconds, elegiac, list shape, 15 hero-flagged slots.
+90 秒，哀歌式，清单形状，15 个带 hero 标记的槽位。
 
-- Base hold 4.0s × 15 = 60s. Short by 30s.
-- Add 30s across 3 hero slots (1, 11, 15) at +10s each:
-  hero_1 = 5.5s, hero_11 = 6.0s, hero_15 = 7.0s.
-- Tighten slots 4, 7, 13 to 3.0s each (small cutaways).
-- Insert silence_window 54.0-56.0s (right before hero_11).
-- L-cut slot_10 (boot in puddle) → slot_11 (lit window across
-  street), carry rain-on-glass ambient 1.2s.
-- First cut `fade_in` 1.0s, last cut `fade_out` 1.5s.
-- All other cuts hard.
-- Music fades in 1.0s, fades out 4.0s under hero_15 + black.
+- 基准停留 4.0 秒 × 15 = 60 秒。差 30 秒。
+- 把 30 秒加到 3 个主槽位（1、11、15）上，每个 +10 秒：
+  hero_1 = 5.5 秒，hero_11 = 6.0 秒，hero_15 = 7.0 秒。
+- 把槽位 4、7、13 各收紧到 3.0 秒（小型切出镜头）。
+- 在 54.0-56.0 秒处插入 silence_window（就在 hero_11 之前）。
+- 对 slot_10（水洼里的雨靴）→ slot_11（街对面亮灯的
+  窗）做 L-cut，把雨打玻璃的环境声延续 1.2 秒。
+- 第一个 cut `fade_in` 1.0 秒，最后一个 cut `fade_out` 1.5 秒。
+- 其余全部硬切。
+- 音乐淡入 1.0 秒，在 hero_15 + 黑场之下淡出 4.0 秒。
 
-This gives a 90s piece with 3 breathing points (fade_in, silence,
-fade_out), a clear hero arc (slots 1 → 11 → 15), and no adjacent
-scale collisions.
+这样得到一支 90 秒的作品：有 3 个呼吸点（淡入、静默、
+淡出）、一条清晰的主镜头弧线（槽位 1 → 11 → 15），并且没有相邻
+景别撞车。
 
 ---
 
-## Gate Reminder (Binding)
+## 门禁提醒（有约束力）
 
-This stage gates on human approval (`human_approval_default: true`). After review passes:
-checkpoint with `status="awaiting_human"`, present the summary (the Backlot board renders
-the artifact), and **END YOUR TURN**. Do not start the next stage in the same response.
-Approval is per-gate — an earlier "go ahead" does not cover this gate.
+本阶段设人工审批门禁（`human_approval_default: true`）。复看通过之后：
+把检查点写成 `status="awaiting_human"`，呈现摘要（Backlot 看板会渲染
+artifact），然后**结束你的回合**。不要在同一次回复中开启下一阶段。
+审批是逐门禁的 —— 先前的"你继续"不覆盖这道门。
