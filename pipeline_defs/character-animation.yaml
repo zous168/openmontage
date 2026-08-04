@@ -64,7 +64,7 @@ stages:
   - At least 3 comparable character-animation examples or techniques are summarized
   - Feasibility separates rigged local animation from frame-by-frame traditional animation
   success_criteria:
-  - Schema-valid research_brief
+  - Schema-valid research_brief with character_animation_context
   - Technique notes identify reusable rigs, pose libraries, and effects needs
 - name: proposal
   skill: pipelines/character-animation/proposal-director

@@ -39,11 +39,11 @@
    - 参考驱动调研："什么动画方式能让我们与参考视频**拉开差异**，同时保留
      用户喜欢的元素？" + "对这个题材，还有哪些参考视频**没用**的动画技法？"
 
-3. 在 research_brief 中加一个 `reference_context` 小节：
-   - 参考视频的动画风格与技法
-   - 它用了哪些动画模式（动态图形、manim、插画式等）
-   - 我们可以改用的替代动画方式
-   - 参考视频哪里做得好，我们在哪里可以做得更好
+3. 在 research_brief 中加一个 **`reference_context`** 对象（schema 字段，reference-driven 时必填）：
+   - `reference_summary` —— 参考视频的动画风格、技法与模式（调研视角摘要）
+   - `gaps_vs_reference` —— 参考未用的动画方式或可做更好的环节（至少 1 条）
+   - `claims_to_verify` —— 参考隐含的技术/受众论断及调研核实（可选）
+   - `landscape_since_reference` —— 自参考发布以来同类动画或题材格局的变化
 
 4. `angles_discovered` 应明确相对于参考视频定位：
    - "参考视频用的是 X 动画风格。我们可以试 Y，因为[技法调研发现]，它更[有吸引力/更清晰/

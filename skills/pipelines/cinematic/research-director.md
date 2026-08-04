@@ -39,11 +39,11 @@
    - 参考驱动调研："什么电影方式能让我们与参考**拉开差异**，同时保留
      用户喜欢的元素？" + "哪些情绪疆域与它相邻却尚未被探索？"
 
-3. 在 research_brief 中加一个 `reference_context` 小节：
-   - 参考视频的电影语言（景别、节奏、配色）
-   - 它占据的是哪片情绪疆域
-   - 我们可以转而探索的相邻情绪疆域
-   - 参考视频的视觉方式可以如何演进或重新诠释
+3. 在 research_brief 中加一个 **`reference_context`** 对象（schema 字段，reference-driven 时必填）：
+   - `reference_summary` —— 参考视频的电影语言与情绪疆域（景别、节奏、配色等，调研视角摘要）
+   - `gaps_vs_reference` —— 相邻但参考未探索的情绪/视觉疆域（至少 1 条）
+   - `claims_to_verify` —— 参考隐含的风格/受众论断及调研核实（可选）
+   - `landscape_since_reference` —— 自参考发布以来同类片或题材格局的变化
 
 4. `angles_discovered` 应明确相对于参考视频定位：
    - "参考视频用的是 X 情绪/配色/节奏。我们可以试 Y，因为[调研发现]，

@@ -284,6 +284,65 @@ class TestSchemas:
     def test_video_analysis_brief_validates(self):
         validate_artifact("video_analysis_brief", sample_artifact("video_analysis_brief"))
 
+    def test_research_brief_validates(self):
+        validate_artifact("research_brief", sample_artifact("research_brief"))
+
+    def test_research_brief_reference_context_validates(self):
+        brief = sample_artifact("research_brief")
+        brief["reference_context"] = {
+            "reference_summary": "Reference covers Kubernetes networking basics.",
+            "gaps_vs_reference": ["NetworkPolicy and eBPF CNI not covered"],
+            "claims_to_verify": [
+                {
+                    "claim": "Calico is the default CNI everywhere",
+                    "verification_status": "updated",
+                    "finding": "Cilium adoption grew significantly since 2024.",
+                }
+            ],
+            "landscape_since_reference": "K8s 1.29+ changed default Service behavior.",
+        }
+        validate_artifact("research_brief", brief)
+
+    def test_research_brief_rejects_unknown_top_level_field(self):
+        brief = sample_artifact("research_brief")
+        brief["reference_context"] = {
+            "reference_summary": "Summary",
+            "gaps_vs_reference": ["gap"],
+            "extra_field": "not allowed",
+        }
+        with pytest.raises(Exception):
+            validate_artifact("research_brief", brief)
+
+    def test_research_brief_character_animation_context_validates(self):
+        brief = sample_artifact("research_brief")
+        brief["character_animation_context"] = {
+            "character_animation_fit": "medium",
+            "reference_motion_type": "rigged_local",
+            "required_character_actions": ["walk_cycle", "blink", "wave"],
+            "rig_complexity": "medium",
+            "manual_asset_risks": ["Hand-drawn turnaround sheets if no reference art"],
+            "local_runtime_candidates": ["remotion", "hyperframes"],
+            "comparable_examples": [
+                {
+                    "title": "Example A",
+                    "technique": "rigged_local",
+                    "takeaway": "Simple two-layer walk reads well at 720p",
+                },
+                {
+                    "title": "Example B",
+                    "technique": "hybrid",
+                    "takeaway": "Parallax BG + rigged foreground is feasible locally",
+                },
+                {
+                    "title": "Example C",
+                    "technique": "frame_by_frame",
+                    "takeaway": "Full frame-by-frame is out of scope for this pipeline",
+                },
+            ],
+            "reusable_animation_primitives": ["squash_stretch", "parallax_pan"],
+        }
+        validate_artifact("research_brief", brief)
+
 
 # ---- Checkpoint ----
 

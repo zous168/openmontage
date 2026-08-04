@@ -38,11 +38,11 @@
    - 参考驱动调研："这个题材里有什么是参考视频**没讲**的、且有意思的？"
      + "什么能让我们这一版**不同**且**更好**？"
 
-3. 在 research_brief 中加一个 `reference_context` 小节：
-   - 参考视频讲了什么
-   - 它漏了什么（这就是你的差异化机会）
-   - 它做出的哪些论断你可以核实或更新
-   - 自参考视频发布以来，格局发生了什么变化
+3. 在 research_brief 中加一个 **`reference_context`** 对象（schema 字段，reference-driven 时必填）：
+   - `reference_summary` —— 参考视频讲了什么（调研视角摘要，不要复读整份 analysis）
+   - `gaps_vs_reference` —— 它漏了什么（差异化机会，至少 1 条）
+   - `claims_to_verify` —— 参考中的论断及核实结果（`verification_status`: confirmed / updated / disputed / unverified）
+   - `landscape_since_reference` —— 自参考发布以来题材格局发生了什么变化
 
 4. `angles_discovered` 应明确相对于参考视频定位：
    - "参考视频取的是角度 X。我们可以取角度 Y，因为[调研发现]，

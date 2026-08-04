@@ -239,6 +239,138 @@
       "type": "string",
       "description": "One paragraph: the single most important insight from this research and why it matters for the video"
     },
+    "reference_context": {
+      "type": "object",
+      "description": "Reference-driven productions only (when video_analysis_brief exists). Web-research findings positioned against the inspiration video — not a duplicate of video_analysis_brief.",
+      "required": ["reference_summary", "gaps_vs_reference"],
+      "properties": {
+        "reference_summary": {
+          "type": "string",
+          "description": "What the reference video covers — research-lens summary, not a full re-export of video_analysis_brief"
+        },
+        "gaps_vs_reference": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1,
+          "description": "What the reference missed or under-explored — differentiation opportunities from research"
+        },
+        "claims_to_verify": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["claim", "verification_status"],
+            "properties": {
+              "claim": {
+                "type": "string",
+                "description": "Assertion stated or implied by the reference video"
+              },
+              "verification_status": {
+                "type": "string",
+                "enum": ["confirmed", "updated", "disputed", "unverified"]
+              },
+              "finding": {
+                "type": "string",
+                "description": "What research found; include when status is updated or disputed"
+              }
+            },
+            "additionalProperties": false
+          },
+          "description": "Reference claims checked or updated via web research"
+        },
+        "landscape_since_reference": {
+          "type": "string",
+          "description": "How the topic landscape changed since the reference was published"
+        }
+      },
+      "additionalProperties": false
+    },
+    "character_animation_context": {
+      "type": "object",
+      "description": "Character Animation pipeline only. Feasibility and technique research for local rigged/pose-library animation — separate from reference_context (topic differentiation).",
+      "required": [
+        "character_animation_fit",
+        "required_character_actions",
+        "rig_complexity",
+        "manual_asset_risks",
+        "local_runtime_candidates",
+        "comparable_examples"
+      ],
+      "properties": {
+        "character_animation_fit": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "How well this brief suits local character animation (rig + pose library + timeline)"
+        },
+        "reference_motion_type": {
+          "type": "string",
+          "enum": [
+            "rigged_local",
+            "frame_by_frame",
+            "video_generation",
+            "still_image_motion",
+            "hybrid",
+            "none"
+          ],
+          "description": "Primary motion technique in the reference video, or none when no reference"
+        },
+        "required_character_actions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Action beats the script/scenes will need (walk cycle, blink, wing flap, etc.)"
+        },
+        "rig_complexity": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Estimated rig and pose-library complexity for this production"
+        },
+        "manual_asset_risks": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Steps that need manual illustration, video-gen, or assets this pipeline cannot synthesize locally"
+        },
+        "local_runtime_candidates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["remotion", "hyperframes", "ffmpeg"]
+          },
+          "minItems": 1,
+          "description": "Render runtimes viable for character acting on this machine"
+        },
+        "comparable_examples": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["title", "technique", "takeaway"],
+            "properties": {
+              "title": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "technique": {
+                "type": "string",
+                "description": "rigged_local, frame_by_frame, hybrid, etc."
+              },
+              "takeaway": {
+                "type": "string",
+                "description": "What this example teaches for our production"
+              }
+            },
+            "additionalProperties": false
+          },
+          "minItems": 3,
+          "description": "3-5 comparable character-animation examples or techniques researched"
+        },
+        "reusable_animation_primitives": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Reusable motion primitives identified (walk cycle, squash/stretch, parallax, etc.)"
+        },
+        "traditional_animation_note": {
+          "type": "string",
+          "description": "When reference is hand-drawn or frame-by-frame, explicit honesty about rig limitations"
+        }
+      },
+      "additionalProperties": false
+    },
     "metadata": { "type": "object" }
   },
   "additionalProperties": false
