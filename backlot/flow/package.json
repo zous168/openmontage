@@ -1,0 +1,21 @@
+{
+  "name": "openmontage-backlot-flow",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "React Flow 管线图模式 — 同一管线流程的图视图,与 board 详情模式共用 /api/project/{id}/state",
+  "scripts": {
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.11.2",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3"
+  }
+}

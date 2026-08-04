@@ -350,6 +350,122 @@ class TestFindingsFixes:
         assert by_name["compose"]["status"] == "pending"
         assert by_name["compose"].get("blocked_by_upstream") is True
 
+    def test_headless_run_does_not_promote_blocked_downstream(self, projects_root):
+        """上游待审批时，runs/*.json 不得把 blocked 下游标成进行中。"""
+        p = _make_project(projects_root, "await-run")
+        _write(p / "project.json", {
+            "project_id": "await-run",
+            "title": "Await Run",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_script.json", {
+            "version": "1.0", "project_id": "await-run",
+            "pipeline_type": "reference-driven",
+            "stage": "script", "status": "completed",
+            "timestamp": "2026-01-01T03:00:00Z",
+            "human_approved": True, "artifacts": {},
+        })
+        _write(p / "checkpoint_scene_plan.json", {
+            "version": "1.0", "project_id": "await-run",
+            "pipeline_type": "reference-driven",
+            "stage": "scene_plan", "status": "awaiting_human",
+            "timestamp": "2026-01-01T04:00:00Z", "artifacts": {},
+        })
+        runs_dir = p / "runs"
+        runs_dir.mkdir()
+        _write(runs_dir / "orphan01.json", {
+            "task_id": "orphan01",
+            "project_id": "await-run",
+            "stage": "assets",
+            "status": "running",
+            "started_at": "2026-01-01T05:00:00Z",
+        })
+        s = load_board_state(p)
+        by_name = {st["name"]: st for st in s["stages"]}
+        assert by_name["scene_plan"]["status"] == "awaiting_human"
+        assert by_name["assets"]["status"] == "pending"
+        assert by_name["assets"].get("blocked_by_upstream") is True
+        assert not by_name["assets"].get("inferred_from_run")
+
+    def test_failed_stage_error_from_metadata(self, projects_root):
+        """Agent may write failure reason under metadata.error."""
+        p = _make_project(projects_root, "fail-meta")
+        _write(p / "project.json", {
+            "project_id": "fail-meta",
+            "title": "Fail Meta",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_assets.json", {
+            "version": "1.0", "project_id": "fail-meta",
+            "pipeline_type": "reference-driven",
+            "stage": "assets", "status": "failed",
+            "timestamp": "2026-01-01T05:00:00Z",
+            "metadata": {"error": "video_generation 不可用"},
+        })
+        s = load_board_state(p)
+        assets = next(x for x in s["stages"] if x["name"] == "assets")
+        assert assets["error"] == "video_generation 不可用"
+
+    def test_failed_stage_error_from_run(self, projects_root):
+        """Failed checkpoint without error field inherits message from runs/*.json."""
+        p = _make_project(projects_root, "fail-run")
+        _write(p / "project.json", {
+            "project_id": "fail-run",
+            "title": "Fail",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_assets.json", {
+            "version": "1.0", "project_id": "fail-run",
+            "pipeline_type": "reference-driven",
+            "stage": "assets", "status": "failed",
+            "timestamp": "2026-01-01T05:00:00Z", "artifacts": {},
+        })
+        runs_dir = p / "runs"
+        runs_dir.mkdir()
+        _write(runs_dir / "dead01.json", {
+            "task_id": "dead01",
+            "project_id": "fail-run",
+            "stage": "assets",
+            "status": "failed",
+            "error": "image_selector 超时",
+            "started_at": "2026-01-01T05:00:00Z",
+        })
+        s = load_board_state(p)
+        assets = next(x for x in s["stages"] if x["name"] == "assets")
+        assert assets["status"] == "failed"
+        assert assets["error"] == "image_selector 超时"
+
+    def test_failed_stage_error_from_succeeded_run_log(self, projects_root):
+        """Agent may exit 0 after writing failed checkpoint; log_tail has agent_run_summary."""
+        p = _make_project(projects_root, "fail-log")
+        _write(p / "project.json", {
+            "project_id": "fail-log",
+            "title": "Fail Log",
+            "pipeline_type": "reference-driven",
+        })
+        _write(p / "checkpoint_assets.json", {
+            "version": "1.0", "project_id": "fail-log",
+            "pipeline_type": "reference-driven",
+            "stage": "assets", "status": "failed",
+            "timestamp": "2026-01-01T05:00:00Z", "artifacts": {},
+        })
+        runs_dir = p / "runs"
+        runs_dir.mkdir()
+        _write(runs_dir / "ok01.json", {
+            "task_id": "ok01",
+            "project_id": "fail-log",
+            "stage": "assets",
+            "status": "succeeded",
+            "exit_code": 0,
+            "error": None,
+            "log_tail": "agent_run_summary: failed — video_generation 无可用 provider",
+            "started_at": "2026-01-01T05:00:00Z",
+            "finished_at": "2026-01-01T05:10:00Z",
+        })
+        s = load_board_state(p)
+        assets = next(x for x in s["stages"] if x["name"] == "assets")
+        assert assets["error"] == "failed — video_generation 无可用 provider"
+
     def test_rerun_assets_in_progress_keeps_downstream_completed(self, projects_root):
         """Re-running assets must not demote edit/compose or infer publish."""
         p = _make_project(projects_root, "rerun-live")

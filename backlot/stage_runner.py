@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import subprocess
 import time
 import uuid
@@ -37,6 +38,8 @@ KEEP_RUNS = 20
 HEARTBEAT_SECONDS = 25
 MONITOR_POLL_SECONDS = 5
 RECONCILE_STAGNANT_SECONDS = 120
+# prepare 加锁 → run_task 写出 runs/*.json 之间的窗口；超出视为孤儿锁。
+ORPHAN_LOCK_GRACE_SECONDS = 45
 DEFAULT_WALL_TIME_MINUTES = 30
 MIN_WALL_TIME_MINUTES = 10
 DEFAULT_BUDGET_USD = 5
@@ -263,20 +266,47 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 
-def _lock_is_stale(lock: dict) -> bool:
+def _lock_is_stale(lock: dict, project_dir: Optional[Path] = None) -> bool:
     expires = lock.get("expires_at")
     if isinstance(expires, (int, float)) and time.time() > expires:
         return True
     pid = lock.get("pid")
     if isinstance(pid, int) and pid > 0 and not _pid_alive(pid):
         return True
-    return False
+    if project_dir is None:
+        return False
+    task_id = str(lock.get("task_id") or "")
+    if not task_id:
+        return True
+    run = _read_run(project_dir, task_id)
+    if run is not None:
+        return run.get("status") not in ("queued", "running")
+    live = _TASKS.get(project_dir.name)
+    if live and live.task_id == task_id and live.status in ("queued", "running"):
+        return False
+    started = _parse_ts(lock.get("started_at"))
+    if started <= 0:
+        return True
+    return (time.time() - started) > ORPHAN_LOCK_GRACE_SECONDS
+
+
+def _reconcile_lock(project_dir: Path) -> None:
+    """清掉过期/孤儿 .run.lock（prepare 后崩溃会留下 pid=0 且无 runs/*.json）。"""
+    path = _lock_path(project_dir)
+    existing = _read_json(path)
+    if not existing or not _lock_is_stale(existing, project_dir):
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _acquire_lock(project_dir: Path, task: RunTask) -> None:
+    _reconcile_lock(project_dir)
     path = _lock_path(project_dir)
     existing = _read_json(path)
-    if existing and not _lock_is_stale(existing):
+    if existing and not _lock_is_stale(existing, project_dir):
         raise StageBusyError(
             f"该项目已有任务 {existing.get('task_id')} 在运行，请等待完成"
         )
@@ -360,6 +390,67 @@ def _brief(value: Any, limit: int = 120) -> str:
     return text[:limit] + ("…" if len(text) > limit else "")
 
 
+_READ_LINE_PREFIX = re.compile(r"^\d+\t")
+
+
+def _strip_read_line_numbers(text: str) -> str:
+    """Read 工具返回 ``1\\tline\\n2\\tline`` — 展示前去掉行号前缀。"""
+    lines = text.splitlines()
+    if not lines:
+        return text
+    numbered = sum(1 for ln in lines if _READ_LINE_PREFIX.match(ln))
+    if numbered < max(3, len(lines) // 2):
+        return text
+    out: list[str] = []
+    for ln in lines:
+        if _READ_LINE_PREFIX.match(ln):
+            out.append(ln.split("\t", 1)[1] if "\t" in ln else ln)
+        else:
+            out.append(ln)
+    return "\n".join(out)
+
+
+def _format_tool_result(content: Any, *, char_limit: int = 6000, line_limit: int = 48) -> str:
+    """tool_result → 可读正文（去 Read 行号、JSON 缩进、过长截断）。"""
+    if isinstance(content, list):
+        text = "\n".join(
+            (b.get("text", "") if isinstance(b, dict) else str(b))
+            for b in content
+            if (isinstance(b, dict) and b.get("text")) or (not isinstance(b, dict) and b)
+        )
+    elif isinstance(content, dict):
+        text = json.dumps(content, ensure_ascii=False, indent=2)
+    else:
+        text = str(content or "").strip()
+
+    if not text:
+        return "(empty)"
+
+    text = _strip_read_line_numbers(text)
+    stripped = text.lstrip()
+    if stripped.startswith("{") or stripped.startswith("["):
+        try:
+            text = json.dumps(json.loads(stripped), ensure_ascii=False, indent=2)
+        except json.JSONDecodeError:
+            pass
+
+    lines = text.splitlines()
+    if len(lines) > line_limit:
+        text = "\n".join(lines[:line_limit]) + f"\n… ({len(lines) - line_limit} more lines)"
+    if len(text) > char_limit:
+        text = text[:char_limit] + "\n…"
+    return text
+
+
+def _render_tool_result_lines(mark: str, body: str) -> list[str]:
+    """单行摘要 vs 多行正文 — 后者缩进展示，避免行号与 JSON 挤成一行。"""
+    if "\n" not in body and len(body) <= 160:
+        return [f"  {mark} {body}"]
+    out = [f"  {mark}"]
+    out.extend(f"    {ln}" for ln in body.splitlines())
+    return out
+
+
 def _render_stream_event(obj: dict) -> Optional[str]:
     """单个 stream-json 事件 → 展示行（None = 不展示）。"""
     typ = obj.get("type")
@@ -379,11 +470,13 @@ def _render_stream_event(obj: dict) -> Optional[str]:
                 out.append(f"▸ {block.get('name') or 'tool'}({_brief(block.get('input'))})")
         return "\n".join(out) or None
     if typ == "user":
+        out: list[str] = []
         for block in (obj.get("message") or {}).get("content") or []:
             if block.get("type") == "tool_result":
                 mark = "✗" if block.get("is_error") else "✓"
-                return f"  {mark} {_brief(block.get('content'))}"
-        return None
+                body = _format_tool_result(block.get("content"))
+                out.extend(_render_tool_result_lines(mark, body))
+        return "\n".join(out) if out else None
     if typ == "result":
         head = [f"● 结束 · {obj.get('subtype') or ''}"]
         duration = obj.get("duration_ms")
@@ -600,6 +693,12 @@ def prepare_stage_run(
             f"只能运行 {next_stage!r}（get_next_stage 指向的阶段）——当前是 {target!r}"
         )
 
+    awaiting = _awaiting_human_stage(project_dir, pipeline_type)
+    if awaiting:
+        raise StageRunError(
+            f"阶段 {awaiting!r} 待审批，请先批准或驳回后再继续"
+        )
+
     # 驳回后重跑：反馈落在 checkpoint 的 metadata.revision_request 上。调用方
     # 没显式带 feedback 时必须从那里捞回来——否则 agent 拿不到修改意见，
     # 驳回就成了空转（页面「运行下一阶段」按钮正是这条路径）。
@@ -641,11 +740,12 @@ def prepare_stage_run(
     return task
 
 
-async def run_task(task: RunTask) -> None:
+async def run_task(task: RunTask, *, chain: bool = True) -> None:
     """核心协程：spawn → stdin 送 prompt → 等退出 → 定终态。"""
     runs = _runs_dir(task.project_dir)
     runs.mkdir(parents=True, exist_ok=True)
     log_fh = open(task.log_path, "wb", buffering=0)  # 二进制句柄，防混编码
+    succeeded = False
     try:
         cmd = [*_resolve_claude_cmd(), *_build_cli_args(task.budget_usd)]
         task.proc = await _spawn_agent(cmd, cwd=REPO_ROOT, stdout=log_fh, stderr=log_fh)
@@ -665,6 +765,7 @@ async def run_task(task: RunTask) -> None:
             _finalize(task, "failed")
         elif task.exit_code == 0:
             _finalize(task, "succeeded")
+            succeeded = True
         else:
             task.error = f"agent 退出码 {task.exit_code}"
             _finalize(task, "failed")
@@ -684,6 +785,8 @@ async def run_task(task: RunTask) -> None:
             log_fh.close()
         except OSError:
             pass
+    if chain and succeeded:
+        await auto_advance_chain(task.project_dir, from_stage=task.stage)
 
 
 def _finalize(task: RunTask, status: str) -> None:
@@ -697,6 +800,87 @@ def _finalize(task: RunTask, status: str) -> None:
     _release_lock(task.project_dir, task.task_id)
     _TASKS.pop(task.project_id, None)
     _cleanup_old_runs(task.project_dir)
+
+
+def _stage_requires_human_gate(manifest: dict, stage_name: str) -> bool:
+    from lib.pipeline_loader import get_stage_human_approval_default
+
+    gate = get_stage_human_approval_default(manifest, stage_name)
+    return bool(gate) if gate is not None else False
+
+
+def _awaiting_human_stage(project_dir: Path, pipeline_type: str) -> Optional[str]:
+    """Return a stage name blocked on human approval, if any."""
+    from lib.checkpoint import read_checkpoint, get_pipeline_stages
+
+    project_id = project_dir.name
+    for stage in get_pipeline_stages(pipeline_type):
+        cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
+        if cp and cp.get("status") == "awaiting_human":
+            return stage
+    return None
+
+
+def maybe_auto_advance(
+    project_dir: Path,
+    *,
+    completed_stage: str,
+) -> Optional[RunTask]:
+    """上一阶段已完成（gated 阶段须已批准）→ 自动排队运行下一阶段。
+
+    ``human_approval_default`` 只表示该阶段**完成后**需人工审批，
+    不阻止从上游自动启动；gated 阶段跑完后会停在 awaiting_human。
+    """
+    from lib.checkpoint import get_next_stage, read_checkpoint
+    from lib.pipeline_loader import load_pipeline_readonly
+
+    project_id = project_dir.name
+    busy = _busy_or_none(project_dir)
+    if busy:
+        return None
+
+    cp = read_checkpoint(PROJECTS_DIR, project_id, completed_stage)
+    if not cp or cp.get("status") != "completed":
+        return None
+
+    pipeline_type = cp.get("pipeline_type")
+    if not pipeline_type:
+        return None
+
+    if _awaiting_human_stage(project_dir, pipeline_type):
+        return None
+
+    try:
+        manifest = load_pipeline_readonly(pipeline_type)
+    except Exception:
+        return None
+
+    if _stage_requires_human_gate(manifest, completed_stage) and not cp.get("human_approved"):
+        return None
+
+    next_stage = get_next_stage(PROJECTS_DIR, project_id, pipeline_type)
+    if not next_stage:
+        return None
+
+    try:
+        return prepare_stage_run(project_dir, stage=next_stage)
+    except (StageRunError, StageBusyError):
+        return None
+
+
+async def auto_advance_chain(project_dir: Path, *, from_stage: str) -> None:
+    """连续运行所有无需人工审批的后续阶段（直到 gated 阶段或失败）。"""
+    completed = from_stage
+    while True:
+        next_task = await asyncio.to_thread(
+            maybe_auto_advance, project_dir, completed_stage=completed,
+        )
+        if not next_task:
+            break
+        await run_task(next_task, chain=False)
+        if next_task.status != "succeeded":
+            break
+        completed = next_task.stage
 
 
 def _patch_stuck_in_progress(task: RunTask) -> None:
@@ -780,6 +964,7 @@ async def reconcile_runs() -> None:
     for project_dir in sorted(PROJECTS_DIR.iterdir()):
         if not project_dir.is_dir() or project_dir.name.startswith(("_", ".")):
             continue
+        _reconcile_lock(project_dir)
         for state in _list_runs(project_dir, limit=KEEP_RUNS):
             if state.get("status") not in ("queued", "running"):
                 continue
@@ -1212,7 +1397,8 @@ def reject_stage(project_dir: Path, stage: str, *, feedback: str) -> dict:
 
 def run_state_for_board(project_dir: Path) -> list[dict]:
     """BoardState 注入：最新运行摘要（含 log_tail 供 UI 预览）。"""
-    return [
+    _reconcile_lock(project_dir)
+    runs = [
         {
             "task_id": r["task_id"],
             "stage": r["stage"],
@@ -1225,3 +1411,23 @@ def run_state_for_board(project_dir: Path) -> list[dict]:
         }
         for r in _list_runs(project_dir, limit=5)
     ]
+    lock = _read_json(_lock_path(project_dir))
+    if lock and not _lock_is_stale(lock, project_dir):
+        task_id = str(lock.get("task_id") or "")
+        active = next(
+            (r for r in runs if r["task_id"] == task_id and r["status"] in ("queued", "running")),
+            None,
+        )
+        if task_id and not active:
+            log_path = project_dir / RUNS_DIRNAME / f"{task_id}.log"
+            runs.insert(0, {
+                "task_id": task_id,
+                "stage": lock.get("stage"),
+                "status": "running",
+                "started_at": lock.get("started_at"),
+                "finished_at": None,
+                "exit_code": None,
+                "error": None,
+                "log_tail": _log_tail(log_path, 500) if log_path.is_file() else "",
+            })
+    return runs[:5]

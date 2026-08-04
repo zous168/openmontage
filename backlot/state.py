@@ -194,6 +194,21 @@ def _collect_history(project_dir: Path) -> dict[str, list[dict]]:
     return out
 
 
+def _checkpoint_error(cp: Optional[dict[str, Any]]) -> Optional[str]:
+    """Error text from checkpoint top-level or metadata.error."""
+    if not cp:
+        return None
+    err = cp.get("error")
+    if err:
+        return str(err)
+    meta = cp.get("metadata")
+    if isinstance(meta, dict):
+        meta_err = meta.get("error")
+        if meta_err:
+            return str(meta_err)
+    return None
+
+
 def _build_stage_rail(
     pipeline_meta: dict,
     checkpoints: dict[str, dict],
@@ -215,7 +230,7 @@ def _build_stage_rail(
             "timestamp": cp.get("timestamp") if cp else None,
             "review": cp.get("review") if cp else None,
             "cost_snapshot": cp.get("cost_snapshot") if cp else None,
-            "error": cp.get("error") if cp else None,
+            "error": _checkpoint_error(cp),
             "human_approved": cp.get("human_approved") if cp else None,
             "partial_progress": (cp.get("metadata") or {}).get("partial_progress") if cp else None,
             "versions": len(versions) + (1 if cp else 0),
@@ -256,7 +271,7 @@ def _build_stage_rail(
             "timestamp": cp.get("timestamp"),
             "review": cp.get("review"),
             "cost_snapshot": cp.get("cost_snapshot"),
-            "error": cp.get("error"),
+            "error": _checkpoint_error(cp),
             "human_approved": cp.get("human_approved"),
             "partial_progress": None,
             "versions": 1 + len(history.get(name, [])),
@@ -1433,7 +1448,7 @@ def _enforce_stage_order(stages: list[dict[str, Any]]) -> None:
             if status in ("completed", "in_progress"):
                 st["raw_status"] = status
                 st["status"] = "pending"
-                st["blocked_by_upstream"] = True
+            st["blocked_by_upstream"] = True
         elif has_checkpoint and status in _UPSTREAM_HARD_BLOCK:
             blocked = True
 
@@ -1500,13 +1515,98 @@ def _infer_in_progress_from_events(
                 return
 
 
+def _apply_headless_run_to_stages(
+    stages: list[dict[str, Any]],
+    runs: list[dict[str, Any]],
+) -> None:
+    """Headless page runs write run state before the first checkpoint lands."""
+    active = next((r for r in runs if r.get("status") in ("queued", "running")), None)
+    if not active:
+        return
+    stage_name = active.get("stage")
+    for st in stages:
+        if st.get("name") != stage_name:
+            continue
+        if st.get("blocked_by_upstream"):
+            return
+        if st.get("status") == "pending":
+            st["status"] = "in_progress"
+            st["inferred_from_run"] = True
+            st["active_run_id"] = active.get("task_id")
+        return
+
+
+def _failure_hint_from_run(run: dict[str, Any]) -> Optional[str]:
+    """Best-effort error text from a headless run record (incl. exit-0 + failed checkpoint)."""
+    err = run.get("error")
+    if err:
+        return str(err).strip()[:400] or None
+    tail = str(run.get("log_tail") or "")
+    m = re.search(r"agent_run_summary:\s*(.+?)(?:\n|$)", tail, re.I)
+    if m:
+        text = m.group(1).strip()
+        if text:
+            return text[:400]
+    exit_code = run.get("exit_code")
+    if exit_code not in (None, 0):
+        return f"agent 退出码 {exit_code}"
+    tail = tail.strip()
+    if tail:
+        return tail[-400:]
+    return None
+
+
+def _enrich_stage_errors_from_runs(
+    stages: list[dict[str, Any]],
+    runs: list[dict[str, Any]],
+) -> None:
+    """Failed checkpoints often omit top-level error; runs/log_tail may still have the reason."""
+    failed_by_stage: dict[str, str] = {}
+    latest_by_stage: dict[str, dict[str, Any]] = {}
+    for run in runs:
+        stage = run.get("stage")
+        if not stage:
+            continue
+        key = str(stage)
+        latest_by_stage[key] = run
+        if run.get("status") == "failed":
+            err = _failure_hint_from_run(run)
+            if err and key not in failed_by_stage:
+                failed_by_stage[key] = err
+    for st in stages:
+        if st.get("status") != "failed" or st.get("error"):
+            continue
+        name = str(st.get("name"))
+        err = failed_by_stage.get(name)
+        if not err:
+            run = latest_by_stage.get(name)
+            if run:
+                err = _failure_hint_from_run(run)
+        if not err:
+            pp = st.get("partial_progress")
+            if isinstance(pp, str) and pp.strip():
+                err = pp.strip()[:400]
+        if err:
+            st["error"] = err
+
+
+def _mark_next_stage(stages: list[dict[str, Any]], next_stage: Optional[str]) -> None:
+    if not next_stage:
+        return
+    for st in stages:
+        st["is_next"] = st.get("name") == next_stage and st.get("status") == "pending"
+
+
 def _production_active(
     stages: list[dict[str, Any]],
     events: list[dict[str, Any]],
     *,
+    runs: Optional[list[dict[str, Any]]] = None,
     now: Optional[float] = None,
 ) -> bool:
     """True when a stage or tool run indicates work is still happening."""
+    if runs and any(r.get("status") in ("queued", "running") for r in runs):
+        return True
     for st in stages:
         if st.get("undeclared"):
             continue
@@ -1585,6 +1685,16 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         stages, events, pipeline_meta, last_activity=last_activity, now=now,
     )
 
+    runs = _collect_runs(project_dir)
+    _apply_headless_run_to_stages(stages, runs)
+    _enrich_stage_errors_from_runs(stages, runs)
+
+    from lib.checkpoint import get_next_stage
+    from lib.paths import PROJECTS_DIR
+
+    next_stage = get_next_stage(PROJECTS_DIR, project_id, pipeline_type)
+    _mark_next_stage(stages, next_stage)
+
     # Cost: latest checkpoint snapshot wins; fall back to manifest total.
     cost = None
     for cp in sorted(checkpoints.values(), key=lambda c: c.get("_mtime", 0), reverse=True):
@@ -1610,7 +1720,7 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
         project_dir, stages, artifacts, media, checkpoints, pipeline_meta,
     )
 
-    production_active = _production_active(stages, events, now=now)
+    production_active = _production_active(stages, events, runs=runs, now=now)
 
     style_playbook = marker.get("style_playbook")
 
@@ -1639,8 +1749,9 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
             and (now - last_activity) < LIVE_WINDOW_SECONDS
             and production_active
         ),
+        "next_stage": next_stage,
     }
-    state["runs"] = _collect_runs(project_dir)
+    state["runs"] = runs
     state["poster"] = _find_poster(project_dir, state)
     return state
 

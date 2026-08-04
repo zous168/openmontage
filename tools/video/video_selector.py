@@ -383,6 +383,11 @@ class VideoSelector(BaseTool):
         but the scoring engine drives the primary selection.
         """
         from lib.scoring import rank_providers, ProviderScore
+        from tools.video._shared import (
+            LOCAL_VIDEO_PROVIDER_ENV_MAP,
+            default_local_provider_id,
+            local_auto_fallback_active,
+        )
 
         preferred = inputs.get("preferred_provider", "auto")
         allowed = set(inputs.get("allowed_providers") or [])
@@ -391,16 +396,11 @@ class VideoSelector(BaseTool):
         candidates = self._filter_candidates(inputs, candidates)
 
         env_hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "").lower()
-        env_map = {
-            "wan2.1-1.3b": "wan",
-            "wan2.1-14b": "wan",
-            "hunyuan-1.5": "hunyuan",
-            "ltx2-local": "ltx",
-            "cogvideo-5b": "cogvideo",
-            "cogvideo-2b": "cogvideo",
-        }
-        if preferred == "auto" and env_hint in env_map:
-            preferred = env_map[env_hint]
+        if preferred == "auto":
+            if env_hint in LOCAL_VIDEO_PROVIDER_ENV_MAP:
+                preferred = LOCAL_VIDEO_PROVIDER_ENV_MAP[env_hint]
+            elif local_auto_fallback_active():
+                preferred = default_local_provider_id()
 
         rankings = rank_providers(candidates, task_context)
 

@@ -818,6 +818,8 @@ def style_playbook_label_zh(playbook_id: Optional[str]) -> str:
 
 
 _SETTINGS_LOCKED_PATH_KEYS = frozenset({"source_media_path", "reference_media_path"})
+# Flow / 项目设置里可写的工具路由偏好（不进 bootstrap_fields 表单）
+_PRODUCTION_TOOL_PREF_KEYS = frozenset({"preferred_video_provider"})
 
 
 def _read_project_marker(project_dir: Path) -> tuple[dict[str, Any], bool]:
@@ -925,6 +927,11 @@ def validate_production_inputs_partial(
             except ValueError as exc:
                 if str(exc) != "empty":
                     raise BootstrapError(str(exc)) from exc
+            continue
+        if key in _PRODUCTION_TOOL_PREF_KEYS:
+            if value is None or str(value).strip() == "":
+                continue
+            normalized[key] = str(value).strip()
             continue
         field = field_by_key.get(key)
         if field is None:

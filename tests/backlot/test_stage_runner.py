@@ -475,6 +475,105 @@ class TestPrompt:
         assert "END YOUR TURN" in prompt or "停止" in prompt
 
 
+class TestAutoAdvance:
+    @pytest.fixture
+    def ref_project_dir(self, projects_root):
+        return init_project(
+            "ref", title="Ref", pipeline_type="reference-driven",
+            pipeline_dir=projects_root,
+        )
+
+    def test_maybe_auto_advance_queues_gated_next(self, projects_root, ref_project_dir):
+        write_checkpoint(
+            projects_root, "ref", "reference_analysis", "completed",
+            artifacts={"video_analysis_brief": sample_artifact("video_analysis_brief")},
+            pipeline_type="reference-driven",
+            human_approved=False,
+        )
+        write_checkpoint(
+            projects_root, "ref", "research", "completed",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type="reference-driven",
+            human_approved=False,
+        )
+        task = stage_runner_mod.maybe_auto_advance(
+            ref_project_dir, completed_stage="research",
+        )
+        assert task is not None
+        assert task.stage == "proposal"
+        stage_runner_mod._release_lock(ref_project_dir, task.task_id)
+        stage_runner_mod._TASKS.pop("ref", None)
+
+    def test_maybe_auto_advance_queues_ungated_next(self, projects_root, ref_project_dir):
+        write_checkpoint(
+            projects_root, "ref", "reference_analysis", "completed",
+            artifacts={"video_analysis_brief": sample_artifact("video_analysis_brief")},
+            pipeline_type="reference-driven",
+            human_approved=False,
+        )
+        task = stage_runner_mod.maybe_auto_advance(
+            ref_project_dir, completed_stage="reference_analysis",
+        )
+        assert task is not None
+        assert task.stage == "research"
+        stage_runner_mod._release_lock(ref_project_dir, task.task_id)
+        stage_runner_mod._TASKS.pop("ref", None)
+
+    def test_maybe_auto_advance_stops_at_awaiting_human(self, projects_root, project_dir):
+        write_checkpoint(
+            projects_root, "film", "script", "awaiting_human",
+            artifacts={"script": sample_artifact("script")},
+            pipeline_type=PIPELINE,
+        )
+        assert stage_runner_mod.maybe_auto_advance(
+            project_dir, completed_stage="script",
+        ) is None
+
+    def test_prepare_stage_run_blocked_while_awaiting_human(
+        self, projects_root, ref_project_dir,
+    ):
+        write_checkpoint(
+            projects_root, "ref", "scene_plan", "awaiting_human",
+            artifacts={"scene_plan": sample_artifact("scene_plan")},
+            pipeline_type="reference-driven",
+        )
+        with pytest.raises(stage_runner_mod.StageRunError, match="待审批"):
+            stage_runner_mod.prepare_stage_run(ref_project_dir)
+
+
+class TestRunLock:
+    def test_orphan_lock_cleared(self, projects_root, project_dir):
+        import time as time_mod
+
+        lock_path = project_dir / ".run.lock"
+        lock_path.write_text(json.dumps({
+            "task_id": "deadbeef0001",
+            "stage": "research",
+            "pid": 0,
+            "started_at": "2020-01-01T00:00:00+00:00",
+            "expires_at": time_mod.time() + 99999,
+            "runner": "web",
+        }), encoding="utf-8")
+        stage_runner_mod._reconcile_lock(project_dir)
+        assert not lock_path.exists()
+
+    def test_orphan_lock_surfaces_on_board(self, projects_root, project_dir):
+        import time as time_mod
+
+        lock_path = project_dir / ".run.lock"
+        lock_path.write_text(json.dumps({
+            "task_id": "cafe0001dead",
+            "stage": "research",
+            "pid": 0,
+            "started_at": stage_runner_mod._now_iso(),
+            "expires_at": time_mod.time() + 99999,
+            "runner": "web",
+        }), encoding="utf-8")
+        runs = stage_runner_mod.run_state_for_board(project_dir)
+        assert runs[0]["task_id"] == "cafe0001dead"
+        assert runs[0]["status"] == "running"
+
+
 class TestStreamLogRendering:
     """stream-json 落盘保真，展示前渲染——运行中也能看到日志。"""
 
@@ -514,6 +613,30 @@ class TestStreamLogRendering:
             {"type": "tool_result", "content": "boom", "is_error": True},
         ]}})
         assert stage_runner_mod.render_run_log(raw) == ["  ✗ boom"]
+
+    def test_read_tool_result_strips_line_numbers(self):
+        numbered = "1\t# Title\n2\t\n3\tbody line"
+        raw = json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "content": numbered, "is_error": False},
+        ]}})
+        lines = stage_runner_mod.render_run_log(raw)
+        assert lines[0] == "  ✓"
+        assert "    # Title" in lines
+        assert "    body line" in lines
+        joined = "\n".join(lines)
+        assert "1\t" not in joined
+        assert " 2 " not in joined
+
+    def test_json_tool_result_pretty_printed(self):
+        payload = {"version": "1.0", "intake_mode": "reference"}
+        raw = json.dumps({"type": "user", "message": {"content": [
+            {"type": "tool_result", "content": json.dumps(payload), "is_error": False},
+        ]}})
+        lines = stage_runner_mod.render_run_log(raw)
+        joined = "\n".join(lines)
+        assert '"version": "1.0"' in joined
+        assert "intake_mode" in joined
+        assert "1 {" not in joined
 
     def test_non_json_lines_preserved(self):
         # CLI 崩溃栈/认证报错不是 JSON——失败诊断全靠它们，必须原样保留。

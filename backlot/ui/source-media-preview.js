@@ -1,6 +1,6 @@
 /** Shared source / reference media preview (board + project settings). */
 
-import { el, fmtDuration, mediaURL, thumbURL } from "/ui/lib.js";
+import { el, fmtDuration, mediaURL, takePinnedMedia, thumbURL } from "/ui/lib.js";
 import { t } from "/ui/i18n.js";
 
 /**
@@ -39,14 +39,18 @@ export function renderSourceMediaSection(projectId, src, opts = {}) {
   const playbackPath = src.playback_path || (src.playable ? src.path : src.preview_path);
 
   if (playbackPath) {
-    const video = el("video", {
-      src: mediaURL(projectId, playbackPath),
-      controls: "",
-      preload: "metadata",
-      playsinline: "",
-      poster: src.poster ? thumbURL(projectId, src.poster, 720) : null,
-    });
-    video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
+    const url = mediaURL(projectId, playbackPath);
+    let video = takePinnedMedia(url);
+    if (!video) {
+      video = el("video", {
+        src: url,
+        controls: "",
+        preload: "metadata",
+        playsinline: "",
+        poster: src.poster ? thumbURL(projectId, src.poster, 720) : null,
+      });
+      video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
+    }
     hero.append(video);
   } else if (src.poster) {
     hero.append(el("img", {

@@ -184,22 +184,83 @@ def local_generation_enabled() -> bool:
     return os.environ.get("VIDEO_GEN_LOCAL_ENABLED", "").lower() in {"true", "1", "yes"}
 
 
-def local_generation_status() -> ToolStatus:
-    if not local_generation_enabled():
-        return ToolStatus.UNAVAILABLE
+def local_auto_fallback_enabled() -> bool:
+    """When true (default), use local GPU video if no remote provider is configured."""
+    raw = os.environ.get("VIDEO_GEN_LOCAL_AUTO_FALLBACK", "true").lower()
+    return raw not in {"false", "0", "no", "off"}
+
+
+LOCAL_VIDEO_PROVIDER_ENV_MAP: dict[str, str] = {
+    "wan2.1-1.3b": "wan",
+    "wan2.1-14b": "wan",
+    "hunyuan-1.5": "hunyuan",
+    "ltx2-local": "ltx",
+    "cogvideo-5b": "cogvideo",
+    "cogvideo-2b": "cogvideo",
+}
+
+
+def _local_stack_ready() -> bool:
     try:
         import diffusers  # noqa: F401
         import torch  # noqa: F401
     except ImportError:
+        return False
+    return True
+
+
+def any_remote_video_provider_available() -> bool:
+    """True when a non-local GPU video_generation tool is AVAILABLE (API / stock keys, etc.)."""
+    try:
+        from tools.base_tool import ToolRuntime, ToolStatus
+        from tools.tool_registry import registry
+
+        registry.ensure_discovered()
+        for tool in registry.get_by_capability("video_generation"):
+            if tool.name == "video_selector":
+                continue
+            if tool.runtime == ToolRuntime.LOCAL_GPU:
+                continue
+            if tool.get_status() == ToolStatus.AVAILABLE:
+                return True
+        return False
+    except Exception:
+        return False
+
+
+def local_auto_fallback_active() -> bool:
+    """Local video should activate without VIDEO_GEN_LOCAL_ENABLED when cloud is unconfigured."""
+    return (
+        local_auto_fallback_enabled()
+        and not any_remote_video_provider_available()
+        and _local_stack_ready()
+    )
+
+
+def default_local_provider_id() -> str:
+    hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "ltx2-local").lower()
+    return LOCAL_VIDEO_PROVIDER_ENV_MAP.get(hint, "ltx")
+
+
+def local_generation_status() -> ToolStatus:
+    if not _local_stack_ready():
         return ToolStatus.UNAVAILABLE
-    return ToolStatus.AVAILABLE
+    if local_generation_enabled() or local_auto_fallback_active():
+        return ToolStatus.AVAILABLE
+    return ToolStatus.UNAVAILABLE
 
 
 def local_install_instructions() -> str:
     return (
-        "Enable local video generation and install the diffusers stack:\n"
-        "  export VIDEO_GEN_LOCAL_ENABLED=true\n"
+        "Install the local diffusers stack (auto-used when no cloud video API is configured):\n"
         "  uv pip install diffusers transformers accelerate torch pillow requests\n"
+        "\n"
+        "Optional explicit enable (always-on local, even if cloud keys exist):\n"
+        "  export VIDEO_GEN_LOCAL_ENABLED=true\n"
+        "  export VIDEO_GEN_LOCAL_MODEL=ltx2-local   # wan2.1-1.3b, hunyuan-1.5, …\n"
+        "\n"
+        "Disable automatic local fallback:\n"
+        "  export VIDEO_GEN_LOCAL_AUTO_FALLBACK=false\n"
         "\n"
         "GPU support — pick what matches your hardware:\n"
         "  NVIDIA CUDA    — works out of the box with the above\n"

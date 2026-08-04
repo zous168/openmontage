@@ -2,7 +2,8 @@
 
 import {
   STAGE_ICONS, brandMark, el, fmtAgo, fmtClock, fmtDuration, fmtMoney,
-  getJSON, mediaURL, postJSON, subscribe, thumbURL, waveBars,
+  getJSON, mediaURL, pinMediaElements, postJSON, releaseUnusedPinnedMedia,
+  subscribe, takePinnedMedia, thumbURL, waveBars,
 } from "/ui/lib.js";
 import {
   artifactLabel, decisionCategoryLabel, decisionSubjectLabel, stageLabel, statusLabel, t, toolLabel,
@@ -109,6 +110,11 @@ function renderSlate(s) {
       ),
     ),
     el("div", { class: "slate-actions" },
+      el("a", {
+        class: "board-settings-btn",
+        href: `/flow/${encodeURIComponent(projectId)}`,
+        title: t("flowViewTitle"),
+      }, t("flowView")),
       el("button", {
         class: "board-settings-btn board-summary-btn",
         type: "button",
@@ -165,6 +171,7 @@ function stageSub(st) {
 
 function railStatusLabel(st) {
   if (st.stalled) return t("stalledRail");
+  if (st.is_next && (st.status === "pending" || !st.status)) return statusLabel("pendingNext");
   return statusLabel(st.status || "pending");
 }
 
@@ -175,14 +182,18 @@ function renderRail(s) {
     const cls = st.status === "completed" ? "done"
       : st.status === "in_progress" ? (st.stalled ? "active stalled" : "active")
       : st.status === "awaiting_human" ? "await"
-      : st.status === "failed" ? "failed" : "pending";
+      : st.status === "failed" ? "failed"
+      : st.is_next ? "next"
+      : "pending";
     const icon = STAGE_ICONS[st.status] || String(pendingIndex);
     if (!STAGE_ICONS[st.status]) pendingIndex += 1;
     const statusCls = st.stalled ? "stalled"
       : st.status === "completed" ? "done"
       : st.status === "in_progress" ? "active"
       : st.status === "awaiting_human" ? "await"
-      : st.status === "failed" ? "failed" : "pending";
+      : st.status === "failed" ? "failed"
+      : st.is_next ? "next"
+      : "pending";
     const node = el("div", {
       class: `stage ${cls}${selectedStage === st.name ? " selected" : ""}${st.undeclared ? " undeclared" : ""}`,
       title: st.undeclared ? t("undeclaredStage", { name: st.name }) : null,
@@ -3567,6 +3578,7 @@ function openSceneImageModal(s, card, visual) {
 }
 
 function closeModal() {
+  stopRunLogSession();
   modal.classList.remove("open", "modal-bg--fullscreen");
   modal.innerHTML = "";
   modal.removeAttribute("role");
@@ -4050,23 +4062,11 @@ function renderRenders(s) {
   if (!renders.length) return null;
   if (activeRender >= renders.length) activeRender = 0;
   const current = renders[activeRender];
-  // Full re-renders (every SSE refresh) must not reset an in-progress
-  // watch: carry playback position/state over to the recreated element.
-  const prev = document.querySelector(".render-hero video");
   const src = mediaURL(s.project_id, current.path);
-  // preload="metadata" gives the element its intrinsic aspect ratio (and a
-  // poster frame) before playback — without it a portrait 9:16 render sits
-  // in a letterboxed 100%-wide black box that reads as landscape.
-  const video = el("video", { src, controls: "", preload: "metadata" });
-  // Click the frame to start playback (controls handle pause/scrub) — the
-  // big player was inert to a click on the picture itself.
-  video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
-  if (prev && prev.getAttribute("src") === src && (prev.currentTime > 0 || !prev.paused)) {
-    const t = prev.currentTime;
-    const wasPlaying = !prev.paused && !prev.ended;
-    video.addEventListener("loadedmetadata", () => { video.currentTime = t; }, { once: true });
-    video.setAttribute("preload", "metadata");
-    if (wasPlaying) video.autoplay = true;
+  let video = takePinnedMedia(src);
+  if (!video) {
+    video = el("video", { src, controls: "", preload: "metadata" });
+    video.addEventListener("click", () => { if (video.paused) video.play().catch(() => {}); });
   }
   const versions = el("div", { class: "render-meta" },
     renders.map((r, i) => el("span", {
@@ -4151,12 +4151,49 @@ function activeRun(s) {
 function nextRunStage(s) {
   if (activeRun(s)) return null;
   const awaiting = s.stages.find((x) => x.status === "awaiting_human");
-  if (awaiting) return null; // 审批横幅负责此阶段
+  if (awaiting) return null;
+  const nextName = s.next_stage;
+  const next = nextName ? s.stages.find((x) => x.name === nextName) : null;
+  if (next && next.status === "pending") {
+    const idx = s.stages.findIndex((x) => x.name === nextName);
+    const prev = idx > 0 ? s.stages[idx - 1] : null;
+    if (prev?.status === "completed") return null;
+  }
   return s.stages.find((x) => !x.undeclared && x.status !== "completed") || null;
 }
 
-async function runNextStage(stageName) {
-  if (!window.confirm(t("stageRunNextConfirm", { stage: stageLabel(stageName) }))) return;
+function pendingAutoRunStage(s) {
+  if (activeRun(s)) return null;
+  if (s.stages.some((x) => x.status === "awaiting_human")) return null;
+  const nextName = s.next_stage;
+  if (!nextName) return null;
+  const next = s.stages.find((x) => x.name === nextName);
+  if (!next || next.status !== "pending") return null;
+  const idx = s.stages.findIndex((x) => x.name === nextName);
+  const prev = idx > 0 ? s.stages[idx - 1] : null;
+  if (!prev || prev.status !== "completed") return null;
+  return next;
+}
+
+let autoRunInFlight = false;
+
+async function maybeAutoRunNextStage(s) {
+  const next = pendingAutoRunStage(s);
+  if (!next || autoRunInFlight) return;
+  autoRunInFlight = true;
+  try {
+    await postJSON(`/api/project/${encodedProjectId}/stage/run`, { stage: next.name });
+    render();
+  } catch (err) {
+    console.error("auto-run failed", err);
+    await refresh();
+  } finally {
+    autoRunInFlight = false;
+  }
+}
+
+async function runNextStage(stageName, { gated = true } = {}) {
+  if (gated && !window.confirm(t("stageRunNextConfirm", { stage: stageLabel(stageName) }))) return;
   try {
     await postJSON(`/api/project/${encodedProjectId}/stage/run`, { stage: stageName });
     render(); // SSE 也会刷新；立即 re-render 让运行态马上出现
@@ -4164,6 +4201,39 @@ async function runNextStage(stageName) {
     window.alert(err.message || String(err));
     render();
   }
+}
+
+function firstPipelineStageName(s) {
+  const declared = (s.pipeline?.stages || []).find((st) => st.name);
+  if (declared?.name) return declared.name;
+  const rail = (s.stages || []).find((st) => !st.undeclared);
+  return rail?.name || null;
+}
+
+async function resetPipelineFromStart(stageName) {
+  if (!window.confirm(t("stageResetFromStartConfirm", { stage: stageLabel(stageName) }))) return;
+  try {
+    const result = await postJSON(`/api/project/${encodedProjectId}/pipeline/reset`, {});
+    render();
+    if (result?.next_stage) {
+      window.alert(t("stageResetDone", { stage: stageLabel(result.next_stage) }));
+    }
+  } catch (err) {
+    window.alert(err.message || t("stageResetFailed"));
+    render();
+  }
+}
+
+function renderResetFromStartButton(s, { primary = false } = {}) {
+  const first = firstPipelineStageName(s);
+  const canReset = Boolean(first)
+    && (s.has_pipeline_state || (s.stages || []).some((st) => st.status === "completed"));
+  if (!canReset) return null;
+  return el("button", {
+    type: "button",
+    class: primary ? "run-btn run-btn-primary" : "run-btn run-btn-ghost",
+    onclick: () => resetPipelineFromStart(first),
+  }, t("stageResetFromStart", { stage: stageLabel(first) }));
 }
 
 async function approveStageNow(stageName) {
@@ -4240,13 +4310,103 @@ async function cancelRunNow(taskId) {
   }
 }
 
+/** 运行日志弹窗打开时的 live 会话（SSE + 轻量轮询）。 */
+let runLogSession = null;
+
+function stopRunLogSession() {
+  if (!runLogSession) return;
+  if (runLogSession.pollTimer) clearInterval(runLogSession.pollTimer);
+  if (runLogSession.debounceTimer) clearTimeout(runLogSession.debounceTimer);
+  runLogSession = null;
+}
+
+function maybeRefreshRunLog() {
+  if (!runLogSession || !modal.classList.contains("open")) return;
+  const run = (state?.runs || []).find((r) => r.task_id === runLogSession.taskId);
+  const active = Boolean(run && (run.status === "running" || run.status === "queued"));
+  runLogSession.active = active;
+  if (runLogSession.liveBadge) {
+    runLogSession.liveBadge.hidden = !active;
+  }
+  if (!active && runLogSession.pollTimer) {
+    clearInterval(runLogSession.pollTimer);
+    runLogSession.pollTimer = null;
+  }
+  clearTimeout(runLogSession.debounceTimer);
+  runLogSession.debounceTimer = setTimeout(() => {
+    if (runLogSession) void runLogSession.loadLog({ soft: true });
+  }, 300);
+}
+
+function parseRunLogResultBlock(lines, start) {
+  const line = lines[start];
+  const isErr = line.startsWith("  ✗");
+  const headerText = line.trim();
+  const bodyLines = [];
+  let i = start + 1;
+  while (i < lines.length && lines[i].startsWith("    ")) {
+    bodyLines.push(lines[i].slice(4));
+    i += 1;
+  }
+  const entry = el("div", { class: `run-log-entry${isErr ? " run-log-entry--err" : ""}` });
+  entry.append(el("div", { class: "run-log-entry-head" }, headerText));
+  if (bodyLines.length) {
+    entry.append(el("pre", { class: "run-log-entry-body" }, bodyLines.join("\n")));
+  }
+  return { entry, next: i };
+}
+
+function renderRunLogView(lines) {
+  const wrap = el("div", { class: "run-log-view" });
+  if (!lines || !lines.length) {
+    wrap.append(el("div", { class: "run-log-empty" }, t("stageRunLogEmpty")));
+    return wrap;
+  }
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith("▸")) {
+      const group = el("div", { class: "run-log-group" });
+      while (i < lines.length && lines[i].startsWith("▸")) {
+        group.append(el("div", { class: "run-log-line run-log-tool" }, lines[i]));
+        i += 1;
+      }
+      while (i < lines.length && (lines[i].startsWith("  ✓") || lines[i].startsWith("  ✗"))) {
+        const parsed = parseRunLogResultBlock(lines, i);
+        group.append(parsed.entry);
+        i = parsed.next;
+      }
+      wrap.append(group);
+      continue;
+    }
+    if (line.startsWith("  ✓") || line.startsWith("  ✗")) {
+      const parsed = parseRunLogResultBlock(lines, i);
+      wrap.append(parsed.entry);
+      i = parsed.next;
+      continue;
+    }
+    if (line.startsWith("●")) {
+      wrap.append(el("div", { class: "run-log-line run-log-meta" }, line));
+    } else {
+      wrap.append(el("div", { class: "run-log-line run-log-text" }, line));
+    }
+    i += 1;
+  }
+  return wrap;
+}
+
 function openRunLogModal(run) {
+  stopRunLogSession();
   modal.innerHTML = "";
-  const pre = el("pre", { class: "run-log" }, t("stageRunLogEmpty"));
-  const page = el("div", { class: "modal-page" },
-    el("h2", {}, t("stageRunLogTitle", { stage: stageLabel(run.stage) })),
-    el("button", { type: "button", class: "run-btn run-btn-ghost", onclick: loadLog }, t("stageRunLogRefresh")),
-    pre);
+  const logHost = el("div", { class: "run-log-host" });
+  const liveBadge = el("span", { class: "run-log-live", hidden: true }, t("stageRunLogLive"));
+  const page = el("div", { class: "modal-page modal-page-run-log" },
+    el("div", { class: "run-log-head" },
+      el("h2", {}, t("stageRunLogTitle", { stage: stageLabel(run.stage) })),
+      liveBadge,
+      el("button", { type: "button", class: "run-btn run-btn-ghost", onclick: () => loadLog() }, t("stageRunLogRefresh")),
+    ),
+    logHost);
   modal.append(
     el("span", { class: "modal-close", onclick: closeModal }, t("escClose")),
     page);
@@ -4255,22 +4415,50 @@ function openRunLogModal(run) {
   modal.setAttribute("aria-modal", "true");
   modal.setAttribute("aria-hidden", "false");
   document.body.style.overflow = "hidden";
-  async function loadLog() {
+
+  async function loadLog(opts = {}) {
+    const soft = opts.soft === true;
+    const stickBottom = !soft
+      || (logHost.scrollHeight - logHost.scrollTop - logHost.clientHeight < 48);
+    const prevScroll = logHost.scrollTop;
+    const prevHeight = logHost.scrollHeight;
     try {
       const res = await getJSON(
-        `/api/project/${encodedProjectId}/stage/run/${encodeURIComponent(run.task_id)}/log?limit=1000`);
-      pre.textContent = res.lines && res.lines.length ? res.lines.join("\n") : t("stageRunLogEmpty");
+        `/api/project/${encodedProjectId}/stage/run/${encodeURIComponent(run.task_id)}/log?limit=2000`);
+      if (soft && res.total === runLogSession?.lastTotal) return;
+      if (runLogSession) runLogSession.lastTotal = res.total;
+      logHost.replaceChildren(renderRunLogView(res.lines || []));
+      if (stickBottom) {
+        logHost.scrollTop = logHost.scrollHeight;
+      } else if (soft && logHost.scrollHeight !== prevHeight) {
+        logHost.scrollTop = prevScroll + (logHost.scrollHeight - prevHeight);
+      }
     } catch (err) {
-      pre.textContent = String(err.message || err);
+      logHost.replaceChildren(el("div", { class: "run-log-empty run-log-entry--err" }, String(err.message || err)));
     }
   }
-  loadLog();
-  if (run.status === "running") {
-    // 运行中自动跟随；modal 关闭即停。
-    const timer = setInterval(() => {
-      if (!modal.children.length) { clearInterval(timer); return; }
-      loadLog();
-    }, 5000);
+
+  const active = run.status === "running" || run.status === "queued";
+  liveBadge.hidden = !active;
+  runLogSession = {
+    taskId: run.task_id,
+    loadLog,
+    liveBadge,
+    active,
+    pollTimer: null,
+    debounceTimer: null,
+    lastTotal: null,
+  };
+  void loadLog();
+  if (active) {
+    // SSE（runs/*.log 写入）为主；Windows 上 watch 可能漏事件，1s 轮询兜底。
+    runLogSession.pollTimer = setInterval(() => {
+      if (!runLogSession || !modal.classList.contains("open")) {
+        stopRunLogSession();
+        return;
+      }
+      if (runLogSession.active) void runLogSession.loadLog({ soft: true });
+    }, 1000);
   }
 }
 
@@ -4290,7 +4478,9 @@ function renderRunControl(s) {
       }, t("stageRunCancel")));
   }
   const next = nextRunStage(s);
-  if (!next) {
+  const autoNext = pendingAutoRunStage(s);
+  const resetBtn = renderResetFromStartButton(s, { primary: !next && !autoNext });
+  if (!next && !autoNext) {
     const failed = (s.runs || []).find((r) => r.status === "failed");
     if (failed) {
       return el("div", { class: "stage-run-ctl failed" },
@@ -4299,15 +4489,26 @@ function renderRunControl(s) {
         el("button", {
           type: "button", class: "run-btn run-btn-ghost",
           onclick: () => openRunLogModal(failed),
-        }, t("stageRunLog")));
+        }, t("stageRunLog")),
+        resetBtn);
+    }
+    if (resetBtn) {
+      return el("div", { class: "stage-run-ctl" }, resetBtn);
     }
     return null;
+  }
+  if (autoNext) {
+    return el("div", { class: "stage-run-ctl active" },
+      el("span", { class: "spinner" }, "◌"),
+      el("span", {}, t("stageRunAutoNext", { stage: stageLabel(autoNext.name) })),
+      resetBtn);
   }
   return el("div", { class: "stage-run-ctl" },
     el("button", {
       type: "button", class: "run-btn run-btn-primary",
       onclick: () => runNextStage(next.name),
-    }, t("stageRunNext", { stage: stageLabel(next.name) })));
+    }, t("stageRunNext", { stage: stageLabel(next.name) })),
+    resetBtn);
 }
 
 function renderAwaitingNotice(s) {
@@ -4407,36 +4608,44 @@ function stateAt(s, T) {
   return view;
 }
 
-function renderReplayBar(s) {
+function renderReplayBar(s, runCtl = null) {
   const bounds = replayBounds(s);
-  if (!bounds) return null;
-  if (!replay) {
-    // collapsed: just the entry button
-    return el("div", { class: "replay-bar", style: "justify-content:flex-end" },
-      el("span", { class: "rp-time" }, t("scrubRun")),
-      el("span", { class: "rp-btn", onclick: startReplay }, t("replayRun")));
+  if (replay) {
+    const pos = (replay.t - replay.t0) / Math.max(1, replay.t1 - replay.t0);
+    const timeLabel = el("span", { class: "rp-time" },
+      new Date(replay.t).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
+    const setT = (value) => {
+      replay.t = replay.t0 + (Number(value) / 1000) * (replay.t1 - replay.t0);
+      timeLabel.textContent = new Date(replay.t)
+        .toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    };
+    return el("div", { class: "replay-bar replay-bar-active" },
+      el("span", { class: "rp-btn", onclick: toggleReplayPlay }, replay.playing ? "❚❚" : "▶"),
+      el("input", {
+        type: "range", min: "0", max: "1000", value: String(Math.round(pos * 1000)),
+        onpointerdown: () => { replay.playing = false; },
+        oninput: (e) => setT(e.target.value),
+        onchange: (e) => { setT(e.target.value); render(); },
+      }),
+      timeLabel,
+      el("span", { class: "rp-btn", onclick: stopReplay }, t("exitReplay")),
+    );
   }
-  const pos = (replay.t - replay.t0) / Math.max(1, replay.t1 - replay.t0);
-  const timeLabel = el("span", { class: "rp-time" },
-    new Date(replay.t).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" }));
-  const setT = (value) => {
-    replay.t = replay.t0 + (Number(value) / 1000) * (replay.t1 - replay.t0);
-    timeLabel.textContent = new Date(replay.t)
-      .toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  };
-  return el("div", { class: "replay-bar" },
-    el("span", { class: "rp-btn", onclick: toggleReplayPlay }, replay.playing ? "❚❚" : "▶"),
-    el("input", {
-      type: "range", min: "0", max: "1000", value: String(Math.round(pos * 1000)),
-      // A full render() would destroy this slider mid-drag: while dragging,
-      // only pause + track the time label; re-render the board on release.
-      onpointerdown: () => { replay.playing = false; },
-      oninput: (e) => setT(e.target.value),
-      onchange: (e) => { setT(e.target.value); render(); },
-    }),
-    timeLabel,
-    el("span", { class: "rp-btn", onclick: stopReplay }, t("exitReplay")),
-  );
+
+  if (!bounds && !runCtl) return null;
+
+  const left = el("div", { class: "pipeline-actions-left" });
+  if (runCtl) left.append(runCtl);
+
+  const right = el("div", { class: "pipeline-actions-right" });
+  if (bounds) {
+    right.append(
+      el("span", { class: "rp-time", title: t("replayRunHint") }, t("scrubRun")),
+      el("span", { class: "rp-btn", title: t("replayRunHint"), onclick: startReplay }, t("replayRun")),
+    );
+  }
+
+  return el("div", { class: "replay-bar pipeline-footer" }, left, right);
 }
 
 let replayTimer = null;
@@ -4491,6 +4700,7 @@ function render() {
   document.title = `Backlot — ${s.title}`;
   document.body.classList.toggle("first", firstPaint);
   firstPaint = false;
+  pinMediaElements();
   app.innerHTML = "";
   app.append(renderSlate(s));
 
@@ -4498,9 +4708,9 @@ function render() {
   const pipeline = el("section", { class: "board-pipeline", "aria-label": t("boardPipelineAria") });
   pipeline.append(renderRail(s));
   const runCtl = renderRunControl(s);
-  if (runCtl) pipeline.append(runCtl);
-  const replayBar = renderReplayBar(state);
+  const replayBar = renderReplayBar(state, runCtl);
   if (replayBar) pipeline.append(replayBar);
+  else if (runCtl) pipeline.append(runCtl);
   app.append(pipeline);
 
   // Zone 2 — workspace: alerts, stage drawer, main content
@@ -4552,6 +4762,7 @@ function render() {
   }
 
   if (workspace.childNodes.length) app.append(workspace);
+  releaseUnusedPinnedMedia();
 }
 
 // Defensive normalization (F-02): the server contract guarantees these
@@ -4595,6 +4806,8 @@ function normalize(s) {
 async function refresh() {
   state = normalize(await getJSON(`/api/project/${encodeURIComponent(projectId)}/state`));
   render();
+  maybeRefreshRunLog();
+  void maybeAutoRunNextStage(state);
 }
 
 refresh().catch((err) => {

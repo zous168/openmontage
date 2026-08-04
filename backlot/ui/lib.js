@@ -166,6 +166,31 @@ export function mediaURL(projectId, relPath) {
   return `/media/${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}`;
 }
 
+/** Detach hero <video> nodes before a full board re-render so SSE/replay ticks
+ *  do not reload the same src (which flashes the render-hero frame). */
+const pinnedMedia = new Map();
+
+export function pinMediaElements(selectors = [".render-hero video", ".source-hero video"]) {
+  for (const sel of selectors) {
+    for (const node of document.querySelectorAll(sel)) {
+      const src = node.getAttribute("src");
+      if (!src) continue;
+      node.remove();
+      pinnedMedia.set(src, node);
+    }
+  }
+}
+
+export function takePinnedMedia(src) {
+  const node = pinnedMedia.get(src);
+  if (node) pinnedMedia.delete(src);
+  return node || null;
+}
+
+export function releaseUnusedPinnedMedia() {
+  pinnedMedia.clear();
+}
+
 // Downscaled cached JPEG for images (full media only in players/lightbox).
 export function thumbURL(projectId, relPath, w = 640) {
   return `/thumb/${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}?w=${w}`;

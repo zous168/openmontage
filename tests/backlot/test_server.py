@@ -100,6 +100,36 @@ class TestBacklotServerApi:
         assert response.status_code == 200
         assert response.json() == {"ok": True, "app": "backlot", "api_version": API_VERSION}
 
+    def test_pipeline_reset_to_first_stage(self, client, projects_root, monkeypatch):
+        import lib.paths as paths_mod
+
+        monkeypatch.setattr(paths_mod, "PROJECTS_DIR", projects_root)
+        project = _make_project(projects_root, "film")
+        _write_json(
+            project / "checkpoint_research.json",
+            {
+                "version": "1.0",
+                "project_id": "film",
+                "pipeline_type": "cinematic",
+                "stage": "research",
+                "status": "completed",
+                "timestamp": "2026-07-02T00:00:30Z",
+                "artifacts": {},
+            },
+        )
+
+        res = client.post("/api/project/film/pipeline/reset", json={})
+        assert res.status_code == 200
+        body = res.json()
+        assert body["ok"] is True
+        assert body["from_stage"] == "research"
+        assert body["next_stage"] == "research"
+        assert "script" in body["removed_stages"]
+        assert "research" in body["removed_stages"]
+        assert not (project / "checkpoint_script.json").exists()
+        assert not (project / "checkpoint_research.json").exists()
+        assert list((project / "history").glob("checkpoint_*_reset_*.json"))
+
     def test_style_playbooks_api_returns_chinese_labels(self, client):
         res = client.get("/api/style-playbooks")
         assert res.status_code == 200
@@ -466,6 +496,36 @@ class TestBacklotServerApi:
         assert body["deliverable"]["aspect_ratio"] == "9:16"
         assert body["source_media"]["path"] == "assets/video/source.mp4"
         assert body["source_media"]["exists"] is False
+
+    def test_flow_layout_get_and_patch(self, client, projects_root):
+        project = projects_root / "flow-layout-demo"
+        project.mkdir()
+        _write_json(project / "project.json", {
+            "project_id": "flow-layout-demo",
+            "title": "Flow Layout",
+            "pipeline_type": "cinematic",
+            "created_at": "2026-08-01T00:00:00Z",
+        })
+        _write_json(project / "meta.json", {"version": "1.0"})
+
+        empty = client.get("/api/project/flow-layout-demo/flow-layout")
+        assert empty.status_code == 200
+        assert empty.json()["stages"] == {}
+
+        patched = client.patch(
+            "/api/project/flow-layout-demo/flow-layout",
+            json={
+                "stages": {"script": {"x": 120, "y": 40}, "assets": {"x": 420, "y": 40}},
+                "viewport": {"x": -10, "y": 5, "zoom": 0.85},
+            },
+        )
+        assert patched.status_code == 200
+        body = patched.json()
+        assert body["stages"]["script"] == {"x": 120.0, "y": 40.0}
+        assert body["viewport"]["zoom"] == 0.85
+
+        again = client.get("/api/project/flow-layout-demo/flow-layout")
+        assert again.json()["stages"]["assets"]["x"] == 420.0
 
     def test_get_project_settings_legacy_without_marker(self, client, projects_root):
         project = projects_root / "legacy-no-marker"

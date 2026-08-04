@@ -50,6 +50,7 @@ from backlot.bootstrap import (
     stage_uploaded_media,
     update_project_settings,
 )
+from backlot.flow_layout import load_flow_layout, save_flow_layout
 from backlot import API_VERSION
 from backlot.edit_preview import build_edit_preview_info, start_edit_preview
 from backlot.nle_edit import (
@@ -88,6 +89,11 @@ class UpdateProjectSettingsBody(BaseModel):
     notes: Optional[str] = Field(default=None, max_length=2000)
     inputs: Optional[dict[str, Any]] = None
     replace_media: bool = False
+
+
+class FlowLayoutBody(BaseModel):
+    stages: Optional[dict[str, dict[str, float]]] = None
+    viewport: Optional[dict[str, float]] = None
 
 
 class UpdateEnvVarsBody(BaseModel):
@@ -174,6 +180,20 @@ class StageRunBody(BaseModel):
     stage: Optional[str] = Field(default=None, min_length=1, max_length=64)
     parameters: Optional[dict[str, Any]] = None
     feedback: Optional[str] = Field(default=None, max_length=2000)
+
+
+class PipelineResetBody(BaseModel):
+    from_stage: Optional[str] = Field(default=None, min_length=1, max_length=64)
+
+
+class DecisionAppendBody(BaseModel):
+    stage: str = Field(min_length=1, max_length=64)
+    category: str = Field(min_length=1, max_length=64)
+    subject: str = Field(min_length=1, max_length=200)
+    # decision_log schema: options_considered 是对象数组(option_id/label/score/reason 必填)
+    options_considered: list[str] = Field(default_factory=list, max_length=64)
+    selected: str = Field(min_length=1, max_length=500)
+    reason: str = Field(default="", max_length=400)
 
 
 class StageApproveBody(BaseModel):
@@ -566,6 +586,21 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
+    @app.get("/api/project/{project_id}/flow-layout")
+    async def project_flow_layout(project_id: str) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        return await asyncio.to_thread(load_flow_layout, project_dir)
+
+    @app.patch("/api/project/{project_id}/flow-layout")
+    async def patch_project_flow_layout(project_id: str, payload: FlowLayoutBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        return await asyncio.to_thread(
+            save_flow_layout,
+            project_dir,
+            stages=payload.stages,
+            viewport=payload.viewport,
+        )
+
     @app.get("/api/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
@@ -651,6 +686,27 @@ def create_app() -> FastAPI:
 
     # ---- Headless-agent stage channel ----------------------------------
 
+    @app.post("/api/project/{project_id}/pipeline/reset")
+    async def pipeline_reset(project_id: str, payload: PipelineResetBody) -> dict:
+        project_dir = _safe_project_dir(project_id)
+        busy = await asyncio.to_thread(stage_runner._busy_or_none, project_dir)
+        if busy:
+            raise HTTPException(status_code=409, detail=busy)
+        from lib.pipeline_reset import PipelineResetError, reset_from_stage, reset_to_first_stage
+
+        def _do_reset() -> dict:
+            if payload.from_stage:
+                return reset_from_stage(project_id, payload.from_stage)
+            return reset_to_first_stage(project_id)
+
+        try:
+            result = await asyncio.to_thread(_do_reset)
+        except PipelineResetError as exc:
+            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return result
+
     @app.post("/api/project/{project_id}/stage/run", status_code=202)
     async def stage_run(project_id: str, payload: StageRunBody) -> dict:
         project_dir = _safe_project_dir(project_id)
@@ -675,6 +731,45 @@ def create_app() -> FastAPI:
             "started_at": task.started_at,
             "log_path": f"runs/{task.task_id}.log",
         }
+
+    @app.post("/api/project/{project_id}/decisions")
+    async def append_project_decision(project_id: str, payload: DecisionAppendBody) -> dict:
+        """Flow 节点核心信息保存:append 一条 decision_log 条目(审计 + board 展示)。"""
+        project_dir = _safe_project_dir(project_id)
+        from lib.decision_log import append_decisions, suggest_next_decision_id
+
+        decision_id = await asyncio.to_thread(suggest_next_decision_id, project_dir)
+        # schema 要求 options_considered 为对象数组(option_id/label/score/reason)
+        options = [
+            {
+                "option_id": opt,
+                "label": opt,
+                "score": 0,
+                "reason": "flow 节点选项",
+            }
+            for opt in payload.options_considered
+        ]
+        try:
+            await asyncio.to_thread(
+                append_decisions,
+                project_id,
+                [{
+                    "decision_id": decision_id,
+                    "stage": payload.stage,
+                    "category": payload.category,
+                    "subject": payload.subject,
+                    "options_considered": options,
+                    "selected": payload.selected,
+                    "reason": payload.reason,
+                    "user_visible": True,
+                    "user_approved": True,
+                }],
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _invalidate_summary(project_id)
+        hub.publish(project_id)
+        return {"ok": True, "decision_id": decision_id}
 
     @app.get("/api/project/{project_id}/stage/runs")
     async def stage_runs(project_id: str) -> dict:
@@ -719,6 +814,7 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
         _invalidate_summary(project_id)
         hub.publish(project_id)
+        asyncio.create_task(stage_runner.auto_advance_chain(project_dir, from_stage=result["stage"]))
         return result
 
     @app.post("/api/project/{project_id}/stage/reject")
@@ -842,6 +938,18 @@ def create_app() -> FastAPI:
     async def board_page_path(project_path: str) -> HTMLResponse:
         return _ui_html("board.html", ("board.css", "board.js"))
 
+    @app.get("/flow/{project_id}")
+    async def flow_page(project_id: str) -> HTMLResponse:
+        if not (UI_DIR / "flow-dist" / "flow.js").is_file():
+            raise HTTPException(
+                status_code=503,
+                detail="flow 视图未构建,请先运行: npm run build:flow",
+            )
+        return _ui_html(
+            "flow.html",
+            ("board.css", "flow-dist/flow.css", "flow-dist/flow.js"),
+        )
+
     @app.get("/pipelines")
     async def pipelines_list_page() -> HTMLResponse:
         return _ui_html("pipelines.html", ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"))
@@ -868,7 +976,13 @@ def create_app() -> FastAPI:
     async def ui_no_cache(request, call_next):
         response = await call_next(request)
         path = request.url.path
-        if path == "/" or path.startswith("/ui") or path.startswith("/p/") or path.startswith("/pipelines"):
+        if (
+            path == "/"
+            or path.startswith("/ui")
+            or path.startswith("/p/")
+            or path.startswith("/flow")
+            or path.startswith("/pipelines")
+        ):
             response.headers["Cache-Control"] = "no-cache"
         return response
 

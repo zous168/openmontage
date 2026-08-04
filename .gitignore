@@ -111,3 +111,6 @@ demos/**/.waveform-cache/
 
 # 取证分析快照(只读工具的基线数据)
 _forensics_store/
+
+# React Flow 管线图模式构建产物(可 npm run build:flow 再生成)
+/backlot/ui/flow-dist/
