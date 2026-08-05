@@ -227,7 +227,9 @@ _CHILD_ENV_DROP = frozenset({
 
 def _child_env(base: Optional[dict] = None) -> dict:
     """无头子进程环境：继承机器配置（ANTHROPIC_* 等），剥离宿主会话变量。"""
-    env = dict(os.environ if base is None else base)
+    from lib.python_runtime import openmontage_python_env
+
+    env = openmontage_python_env(base)
     for key in _CHILD_ENV_DROP:
         env.pop(key, None)
     return env
@@ -528,7 +530,7 @@ def _log_tail(log_path: Path, chars: int) -> str:
         return ""
 
 
-def _list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
+def _read_runs_from_disk(project_dir: Path, *, limit: int = 8) -> list[dict]:
     runs_dir = _runs_dir(project_dir)
     if not runs_dir.is_dir():
         return []
@@ -540,6 +542,40 @@ def _list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
         if len(entries) >= limit:
             break
     return entries
+
+
+def _reconcile_orphan_runs(project_dir: Path) -> None:
+    """磁盘上仍标 running/queued 但 pid 已死的 run —— 定终态并释放锁。
+
+    否则 Flow 会一直显示「进行中」、重试按钮被 liveRun 挡住。
+    """
+    for state in _read_runs_from_disk(project_dir, limit=KEEP_RUNS):
+        if state.get("status") not in ("queued", "running"):
+            continue
+        pid = state.get("pid")
+        if isinstance(pid, int) and pid > 0 and _pid_alive(pid):
+            continue
+        task_id = state.get("task_id", "")
+        task = _TASKS.get(project_dir.name)
+        if task and task.task_id == task_id and task.status in ("queued", "running"):
+            continue
+        _finalize_reconciled(project_dir, state, interrupted=True)
+        _patch_stuck_in_progress(
+            RunTask(
+                task_id=str(task_id),
+                project_dir=project_dir,
+                project_id=project_dir.name,
+                stage=str(state.get("stage") or ""),
+                pipeline_type="",
+                status="aborted",
+                error=state.get("error") or "agent 进程已退出（孤儿 run 回收）",
+            )
+        )
+
+
+def _list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
+    _reconcile_orphan_runs(project_dir)
+    return _read_runs_from_disk(project_dir, limit=limit)
 
 
 def list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
@@ -1119,6 +1155,10 @@ def build_stage_prompt(
     feedback_text = f"\n{feedback}\n" if feedback else "（无）"
     parameters_text = json.dumps(parameters or {}, ensure_ascii=False)
 
+    from lib.python_runtime import python_invocation_hint
+
+    om_python = python_invocation_hint()
+
     return f"""【角色】你是 OpenMontage 的无头流水线 agent，执行且只执行一个阶段。
 项目: {project_id} 「{title}」  流水线: {pipeline_type}
 本次阶段: {stage}（页面「运行下一阶段」触发）
@@ -1130,6 +1170,13 @@ def build_stage_prompt(
   写 status='failed' 的 checkpoint，error 说明原因，然后结束。
 - 只做这一个阶段。绝不串联多个阶段、绝不改写其他阶段的 checkpoint。
 - 结束时输出一行便于服务端定位: agent_run_summary: <status> — <一句话>
+
+【Python 运行时 — 强制】
+所有 registry 工具调用必须使用仓库解释器，禁止用 Cursor/宿主默认 python：
+  {om_python} -c "..."
+preflight 示例：
+  {om_python} -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
+若 video_selector 显示 unavailable 但本机已装 diffusers，先检查是否误用了其它 venv 的 python。
 
 【必读材料】
 1. 阶段导演技能（本阶段唯一执行规程，全文已粘贴）:
@@ -1152,7 +1199,7 @@ def build_stage_prompt(
 1. 进入阶段先写 in_progress checkpoint（lib.checkpoint.write_checkpoint，
    pipeline_dir=lib.paths.PROJECTS_DIR, pipeline_type='{pipeline_type}',
    status='in_progress', artifacts={{}}，可带 metadata.partial_progress）。
-2. 用注册表工具执行（registry.get(name).execute(...) 的 python -c 单行调用，
+2. 用注册表工具执行（``registry.execute(name, {{...}})`` 或 ``registry.get(name).execute(...)`` 的 {om_python} -c 单行调用，
    符合 AGENT_GUIDE「Allowed python -c」）。工具调用自动写入 events.jsonl。
    禁止写脚本串联、禁止直接编辑 projects/ 下的 checkpoint/artifacts/decision_log。
 3. 完成后:
@@ -1175,13 +1222,25 @@ def build_stage_prompt(
 
 
 def _busy_or_none(project_dir: Path) -> Optional[str]:
+    _reconcile_orphan_runs(project_dir)
     task = _TASKS.get(project_dir.name)
     if task and task.status in ("queued", "running"):
-        return f"该项目已有任务 {task.task_id} 在运行，请等待完成"
+        pid = task.pid if isinstance(task.pid, int) else 0
+        if pid > 0 and not _pid_alive(pid):
+            # 内存里仍标 running 但子进程已死 —— 视为孤儿，勿阻塞批准/驳回。
+            _TASKS.pop(project_dir.name, None)
+            _reconcile_lock(project_dir)
+        else:
+            return f"该项目已有任务 {task.task_id} 在运行，请等待完成"
     # 磁盘上的 running 状态（服务重启后 reconcile 尚未接回/标记）同样视为 busy。
     for state in _list_runs(project_dir, limit=KEEP_RUNS):
-        if state.get("status") in ("queued", "running"):
-            return "该项目已有任务在运行（服务重启后恢复中），请等待完成"
+        if state.get("status") not in ("queued", "running"):
+            continue
+        pid = state.get("pid")
+        if isinstance(pid, int) and pid > 0 and not _pid_alive(pid):
+            _finalize_reconciled(project_dir, state, interrupted=True)
+            continue
+        return "该项目已有任务在运行（服务重启后恢复中），请等待完成"
     return None
 
 

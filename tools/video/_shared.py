@@ -32,41 +32,6 @@ HEYGEN_PROVIDERS = {
     "ltx_distilled": {"name": "LTX Distilled", "quality": "low", "speed": "fastest"},
 }
 
-WAN_VARIANTS = {
-    "wan2.1-1.3b": {
-        "name": "Wan 2.1 (1.3B)",
-        "hf_id": "Wan-AI/Wan2.1-T2V-1.3B-Diffusers",
-        "hf_i2v_id": "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
-        "pipeline_class": "WanPipeline",
-        "vram_mb": 8000,
-        "quality": "high",
-        "speed": "medium",
-        "t2v": True,
-        "i2v": True,
-        "license": "Apache-2.0",
-        "default_width": 832,
-        "default_height": 480,
-        "default_num_frames": 81,
-        "fps": 16,
-    },
-    "wan2.1-14b": {
-        "name": "Wan 2.1 (14B)",
-        "hf_id": "Wan-AI/Wan2.1-T2V-14B-Diffusers",
-        "hf_i2v_id": "Wan-AI/Wan2.1-I2V-14B-480P-Diffusers",
-        "pipeline_class": "WanPipeline",
-        "vram_mb": 24000,
-        "quality": "highest",
-        "speed": "slow",
-        "t2v": True,
-        "i2v": True,
-        "license": "Apache-2.0",
-        "default_width": 1280,
-        "default_height": 720,
-        "default_num_frames": 81,
-        "fps": 16,
-    },
-}
-
 HUNYUAN_VARIANTS = {
     "hunyuan-1.5": {
         "name": "HunyuanVideo 1.5",
@@ -185,14 +150,35 @@ def local_generation_enabled() -> bool:
 
 
 def local_auto_fallback_enabled() -> bool:
-    """When true (default), use local GPU video if no remote provider is configured."""
+    """When true (default), fall back to still-image + ffmpeg/remotion if no remote video provider."""
     raw = os.environ.get("VIDEO_GEN_LOCAL_AUTO_FALLBACK", "true").lower()
     return raw not in {"false", "0", "no", "off"}
 
 
+def static_composition_fallback_active() -> bool:
+    """Zero-key path: image_selector + Ken Burns / video_compose when cloud video is unconfigured."""
+    return local_auto_fallback_enabled() and not any_remote_video_provider_available()
+
+
+def static_composition_fallback_data(inputs: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Structured guidance returned when video_selector has no generative provider."""
+    payload: dict[str, Any] = {
+        "fallback_strategy": "static_composition",
+        "recommended_tools": ["image_selector", "video_compose"],
+        "render_hints": [
+            "Generate still frame(s) with image_selector (or stock image search).",
+            "Animate with Ken Burns via remotion (render_runtime=remotion) or ffmpeg in video_compose.",
+            "Do not auto-start local diffusers (Wan/LTX) unless VIDEO_GEN_LOCAL_ENABLED=true.",
+        ],
+        "local_gpu_auto_fallback": False,
+    }
+    if inputs:
+        payload["operation"] = inputs.get("operation", "text_to_video")
+        payload["prompt"] = inputs.get("prompt")
+    return payload
+
+
 LOCAL_VIDEO_PROVIDER_ENV_MAP: dict[str, str] = {
-    "wan2.1-1.3b": "wan",
-    "wan2.1-14b": "wan",
     "hunyuan-1.5": "hunyuan",
     "ltx2-local": "ltx",
     "cogvideo-5b": "cogvideo",
@@ -229,12 +215,8 @@ def any_remote_video_provider_available() -> bool:
 
 
 def local_auto_fallback_active() -> bool:
-    """Local video should activate without VIDEO_GEN_LOCAL_ENABLED when cloud is unconfigured."""
-    return (
-        local_auto_fallback_enabled()
-        and not any_remote_video_provider_available()
-        and _local_stack_ready()
-    )
+    """Local diffusers are never auto-activated; explicit VIDEO_GEN_LOCAL_ENABLED only."""
+    return False
 
 
 def default_local_provider_id() -> str:
@@ -252,14 +234,15 @@ def local_generation_status() -> ToolStatus:
 
 def local_install_instructions() -> str:
     return (
-        "Install the local diffusers stack (auto-used when no cloud video API is configured):\n"
+        "Default when no cloud video API is configured (VIDEO_GEN_LOCAL_AUTO_FALLBACK=true):\n"
+        "  Use image_selector + Ken Burns / video_compose (ffmpeg or remotion) — zero GPU keys.\n"
+        "\n"
+        "Optional explicit local diffusers (never auto-started):\n"
+        "  export VIDEO_GEN_LOCAL_ENABLED=true\n"
+        "  export VIDEO_GEN_LOCAL_MODEL=ltx2-local   # hunyuan-1.5, cogvideo-5b, …\n"
         "  uv pip install diffusers transformers accelerate torch pillow requests\n"
         "\n"
-        "Optional explicit enable (always-on local, even if cloud keys exist):\n"
-        "  export VIDEO_GEN_LOCAL_ENABLED=true\n"
-        "  export VIDEO_GEN_LOCAL_MODEL=ltx2-local   # wan2.1-1.3b, hunyuan-1.5, …\n"
-        "\n"
-        "Disable automatic local fallback:\n"
+        "Disable static composition fallback:\n"
         "  export VIDEO_GEN_LOCAL_AUTO_FALLBACK=false\n"
         "\n"
         "GPU support — pick what matches your hardware:\n"
@@ -294,7 +277,6 @@ def load_diffusers_pipeline(pipeline_class: str, model_id: str, enable_offload: 
     import torch
 
     pipeline_map = {
-        "WanPipeline": "WanPipeline",
         "HunyuanVideoPipeline": "HunyuanVideoPipeline",
         "LTXPipeline": "LTXPipeline",
         "CogVideoXPipeline": "CogVideoXPipeline",

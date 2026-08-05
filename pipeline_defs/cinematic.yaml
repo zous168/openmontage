@@ -61,6 +61,9 @@ stages:
     skill: pipelines/cinematic/research-director
     produces:
       - research_brief
+    outputs:
+      - kind: text
+        label: research_brief
     tools_available:
       - web_search
     checkpoint_required: true
@@ -84,6 +87,9 @@ stages:
     produces:
       - proposal_packet
       - decision_log
+    outputs:
+      - kind: text
+        label: proposal_packet
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -117,6 +123,9 @@ stages:
       - proposal_packet
     produces:
       - script
+    outputs:
+      - kind: text
+        label: script
     optional_tools:
       - transcriber
       - scene_detect
@@ -141,6 +150,9 @@ stages:
       - proposal_packet
     produces:
       - scene_plan
+    outputs:
+      - kind: text
+        label: scene_plan
     optional_tools:
       - frame_sampler
       - scene_detect
@@ -166,6 +178,18 @@ stages:
       - brief
     produces:
       - asset_manifest
+    outputs:
+      - kind: text
+        label: asset_manifest
+      - kind: image
+        label: 图片
+        source: asset_manifest.assets[].path
+      - kind: video
+        label: 视频
+        source: asset_manifest.assets[].path
+      - kind: audio
+        label: 音频
+        source: asset_manifest.assets[].path
     optional_tools:
       - subtitle_gen
       - audio_enhance
@@ -202,6 +226,12 @@ stages:
       - script
     produces:
       - edit_decisions
+    outputs:
+      - kind: text
+        label: edit_decisions
+      - kind: video
+        label: 片段
+        source: edit_decisions.cuts[].source
     tools_available: []
     checkpoint_required: true
     human_approval_default: false
@@ -223,6 +253,14 @@ stages:
     produces:
       - render_report
       - final_review
+    outputs:
+      - kind: text
+        label: render_report
+      - kind: text
+        label: final_review
+      - kind: video
+        label: 成片
+        source: render_report.outputs[].path
     required_tools:
       - video_compose
       - audio_mixer
@@ -262,6 +300,15 @@ stages:
       - script
     produces:
       - publish_log
+    outputs:
+      - kind: text
+        label: publish_log
+      - kind: video
+        label: 成片
+        source: render_report.outputs[].path
+      - kind: video
+        label: 导出
+        source: publish_log.entries[].export_path
     tools_available: []
     checkpoint_required: true
     human_approval_default: true

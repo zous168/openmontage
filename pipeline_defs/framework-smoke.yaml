@@ -8,6 +8,9 @@ stages:
   - name: research
     produces:
       - research_brief
+    outputs:
+      - kind: text
+        label: research_brief
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -18,6 +21,9 @@ stages:
       - research_brief
     produces:
       - script
+    outputs:
+      - kind: text
+        label: script
     tools_available: []
     checkpoint_required: true
     human_approval_default: true

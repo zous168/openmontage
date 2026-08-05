@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, Literal
 
 from lib.video_gen_units import video_gen_unit_ranges
 
@@ -20,7 +20,6 @@ _PAREN_METRICS = re.compile(
     r"constant velocity|real-time physics|no time compression",
     re.IGNORECASE,
 )
-_BRAND_ZHUGE = re.compile(r"诸葛卧龙\s*")
 
 PROFILE_LABELS: dict[str, dict[str, str]] = {
     "ugc_native": {
@@ -112,7 +111,6 @@ def _sanitize_executable_clause(text: str) -> str:
     cleaned = str(text or "").strip()
     cleaned = _CUT_LINE.sub("", cleaned)
     cleaned = _TIMED_RANGE.sub("", cleaned)
-    cleaned = _BRAND_ZHUGE.sub("", cleaned)
     cleaned = _PAREN_METRICS.sub("", cleaned)
     cleaned = re.sub(r"\s{2,}", " ", cleaned)
     cleaned = re.sub(r"\s+([,.;])", r"\1", cleaned)
@@ -120,69 +118,78 @@ def _sanitize_executable_clause(text: str) -> str:
     return cleaned.strip(" ,.;")
 
 
-def _simplified_subject(dna_lock: dict[str, Any] | None) -> str:
+def _subject_from_brief(dna_lock: dict[str, Any] | None) -> str:
     raw = str((dna_lock or {}).get("subject") or "").strip()
-    raw = _BRAND_ZHUGE.sub("", raw)
-    if raw:
-        return _sanitize_executable_clause(raw)
-    return (
-        "Red-manicured hands, yellow and green pepper-flatbread snack bags (matte plastic), "
-        "golden crispy chips with visible pepper seasoning"
-    )
+    return _sanitize_executable_clause(raw) if raw else ""
 
 
-def _simplified_scene(gen: dict[str, Any], dna_lock: dict[str, Any] | None) -> str:
-    env = _as_dict(gen.get("environment"))
-    setting = _sanitize_executable_clause(str(env.get("setting") or "Warm indoor snack desk"))
-    lighting = _sanitize_executable_clause(
-        str(env.get("lighting") or "Warm tungsten key from upper-left")
-    )
-    clutter = _sanitize_executable_clause(str(env.get("clutter_and_props") or ""))
-    # Keep only anchor props — full prop lists overload video models.
-    if clutter:
-        anchors = []
-        for token in ("woven mat", "bamboo basket", "calendar", "festive"):
-            if token.casefold() in clutter.casefold():
-                anchors.append(token)
-        clutter = ", ".join(anchors) if anchors else "woven mat, festive desk props"
-    else:
-        scene_dna = _sanitize_executable_clause(str((dna_lock or {}).get("scene") or ""))
-        clutter = scene_dna[:120] if scene_dna else "woven mat, bamboo basket, warm desk props"
-    ambient = _sanitize_executable_clause(str(env.get("ambient_floor") or "subtle sensor grain"))
-    return f"{setting}; {clutter}; {lighting}; {ambient}"
+def _environment_from_brief(gen: dict[str, Any], dna_lock: dict[str, Any] | None) -> str:
+    env_text = _environment_text(_as_dict(gen.get("environment")))
+    if env_text:
+        return _sanitize_executable_clause(env_text)
+    scene_dna = _sanitize_executable_clause(str((dna_lock or {}).get("scene") or ""))
+    return scene_dna[:240] if scene_dna else ""
 
 
-def _shot_hint_for_window(
+def _control_tokens_from_brief(gen: dict[str, Any], dna_lock: dict[str, Any] | None) -> str:
+    control = str(gen.get("control_tokens") or (dna_lock or {}).get("control_tokens") or "").strip()
+    return _sanitize_executable_clause(control) if control else ""
+
+
+def _capture_notes_from_brief(gen: dict[str, Any]) -> str:
+    notes = str(_as_dict(gen.get("capture_character")).get("notes") or "").strip()
+    return _sanitize_executable_clause(notes) if notes else ""
+
+
+def _ref_scene_for_window(
     brief: dict[str, Any],
     start_seconds: float,
     end_seconds: float,
-) -> tuple[str, str]:
-    """Return (shot_size_phrase, camera_phrase) for a time window."""
+) -> dict[str, Any]:
     ref_scenes = ((brief.get("structure_analysis") or {}).get("scenes") or [])
     mid = (start_seconds + end_seconds) / 2
-    match = None
     for scene in ref_scenes:
         if not isinstance(scene, dict):
             continue
         s0 = float(scene.get("start_time", scene.get("start_seconds", 0)))
         s1 = float(scene.get("end_time", scene.get("end_seconds", s0)))
         if s0 <= mid < s1:
-            match = scene
-            break
-    sl = _as_dict((match or {}).get("shot_language"))
-    shot = str(sl.get("shot_size") or "close_up").replace("_", " ")
-    if "extreme" in shot:
-        shot = "extreme close-up"
-    elif shot == "close up":
-        shot = "close-up"
-    movement = str(sl.get("camera_movement") or "handheld_static").replace("_", " ")
-    if movement in {"handheld static", "handheld"}:
-        camera = "Handheld smartphone POV with slight micro-shake"
-    elif "dolly" in movement:
-        camera = "Slow handheld push-in, top-down product framing"
-    else:
-        camera = f"Handheld {movement} smartphone POV"
-    return shot, camera
+            return scene
+    return {}
+
+
+def _camera_from_ref_scene(scene: dict[str, Any]) -> str:
+    sl = _as_dict(scene.get("shot_language"))
+    parts: list[str] = []
+    shot = str(sl.get("shot_size") or "").strip().replace("_", " ")
+    if shot:
+        if "extreme" in shot and "close" in shot:
+            shot = "extreme close-up"
+        elif shot == "close up":
+            shot = "close-up"
+        parts.append(shot)
+    movement = str(sl.get("camera_movement") or "").strip().replace("_", " ")
+    if movement:
+        parts.append(movement)
+    dof = str(sl.get("depth_of_field") or "").strip().replace("_", " ")
+    if dof:
+        parts.append(f"{dof} depth of field")
+    lens = sl.get("lens_mm")
+    if lens:
+        parts.append(f"{lens}mm lens")
+    return "; ".join(parts)
+
+
+def _continuity_line(*, inherit_dna: bool, establish_dna: bool) -> str:
+    if inherit_dna and not establish_dna:
+        return "Continuity: inherit global DNA lock from the prior unit."
+    return ""
+
+
+def _append_non_empty(lines: list[str], line: str) -> None:
+    text = str(line or "").strip()
+    if text:
+        lines.append(text)
 
 
 def _rank_action_beats(beats: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -203,12 +210,12 @@ def _rank_action_beats(beats: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _motion_from_beats(beats: list[dict[str, Any]]) -> str:
     ranked = _rank_action_beats(beats)
     if not ranked:
-        return "Single continuous product action with natural hand movement."
+        return ""
     desc = _sanitize_executable_clause(str(ranked[0].get("description") or ""))
     desc = re.sub(r"\s+with\s*;\s*", "; ", desc)
     desc = re.sub(r"\s+with\s*$", "", desc, flags=re.IGNORECASE)
     if not desc:
-        return "Single continuous product action with natural hand movement."
+        return ""
     return desc.rstrip(".") + "."
 
 
@@ -227,10 +234,10 @@ def _motion_montage_from_beats(
         if desc:
             clauses.append(desc.rstrip("."))
     if not clauses:
-        return "Single continuous product action with natural hand movement."
+        return ""
     if len(clauses) == 1:
         return clauses[0] + "."
-    return "Fast-paced UGC montage: " + "; ".join(clauses) + "."
+    return "Montage: " + "; ".join(clauses) + "."
 
 
 def compile_executable_prompt(
@@ -238,52 +245,75 @@ def compile_executable_prompt(
     start_seconds: float,
     end_seconds: float,
     *,
+    asset_type: Literal["video", "image"] = "video",
     establish_dna: bool = False,
     inherit_dna: bool = False,
     beats: list[dict[str, Any]] | None = None,
 ) -> str:
-    """Compile a single-action, provider-ready prompt (~80–120 words).
+    """Compile a provider-ready unit prompt from ``video_analysis_brief`` beats.
 
-    Full reverse-engineered timelines belong in ``prompt_for_time_range`` /
-    ``analysis_prompt`` — not in video_selector payloads.
+    ``asset_type`` selects the delivery contract — still keyframe vs motion clip —
+    not a post-hoc rewrite of the other format. Full reverse-engineered timelines
+    belong in ``prompt_for_time_range`` / ``analysis_prompt``.
     """
     gen = _as_dict(brief.get("generation"))
     lock = get_dna_lock(brief)
     delivery = _as_dict(gen.get("delivery"))
-    aspect = str(delivery.get("aspect_ratio") or "9:16").strip()
-    orient = str(delivery.get("orientation") or "vertical").strip()
-    capture_mode = str(delivery.get("capture_mode") or "").strip()
-    if not capture_mode:
-        capture_mode = "One-hand smartphone POV, native snack UGC demo"
 
     window_beats = beats if beats is not None else _beats_in_range(
         _collect_scene_beats(brief), start_seconds, end_seconds
     )
     action_beats = _rank_action_beats(window_beats)
+    ref_scene = _ref_scene_for_window(brief, start_seconds, end_seconds)
+    subject = _subject_from_brief(lock)
+    environment = _environment_from_brief(gen, lock)
+    camera = _camera_from_ref_scene(ref_scene)
+    capture_mode = str(delivery.get("capture_mode") or "").strip()
+    capture_notes = _capture_notes_from_brief(gen)
+    control = _control_tokens_from_brief(gen, lock)
+    aspect = str(delivery.get("aspect_ratio") or "9:16").strip()
+    orient = str(delivery.get("orientation") or "vertical").strip()
+    continuity = _continuity_line(inherit_dna=inherit_dna, establish_dna=establish_dna)
+
+    if asset_type == "image":
+        keyframe = _motion_from_beats(action_beats).rstrip(".")
+        lines: list[str] = [f"Aspect ratio: {aspect} {orient} still photograph."]
+        _append_non_empty(lines, continuity)
+        if subject:
+            _append_non_empty(lines, f"Subject: {subject}.")
+        if keyframe:
+            _append_non_empty(lines, f"Composition: {keyframe}")
+        if environment:
+            _append_non_empty(lines, f"Scene: {environment}.")
+        if camera:
+            _append_non_empty(lines, f"Camera: {camera}.")
+        if capture_notes:
+            _append_non_empty(lines, capture_notes)
+        if control:
+            _append_non_empty(lines, f"Control: {control}.")
+        return "\n\n".join(lines)
+
     window_seconds = max(0.0, float(end_seconds) - float(start_seconds))
-    shot, camera = _shot_hint_for_window(brief, start_seconds, end_seconds)
     if window_seconds > 4.0 and len(action_beats) > 1:
         motion = _motion_montage_from_beats(action_beats)
     else:
         motion = _motion_from_beats(action_beats)
-    subject = _simplified_subject(lock)
-    scene = _simplified_scene(gen, lock)
 
-    lines = [
-        f"Aspect ratio: {aspect} {orient}.",
-        f"Capture: {_sanitize_executable_clause(capture_mode)}.",
-        f"Subject: {subject}.",
-        f"Motion: {motion}",
-        f"Scene: {scene}.",
-        f"Camera: {camera}; {shot}; shallow depth of field.",
-    ]
-    if inherit_dna and not establish_dna:
-        lines.append(
-            "Continuity: match prior clip — same hands, packaging colors, desk props, and warm grade."
-        )
-    lines.append(
-        "Real-time physics, constant speed, no burned-in subtitles or logos, natural sensor grain."
-    )
+    lines = [f"Aspect ratio: {aspect} {orient}."]
+    if capture_mode:
+        _append_non_empty(lines, f"Capture: {_sanitize_executable_clause(capture_mode)}.")
+    if subject:
+        _append_non_empty(lines, f"Subject: {subject}.")
+    if motion:
+        _append_non_empty(lines, f"Motion: {motion}")
+    if environment:
+        _append_non_empty(lines, f"Scene: {environment}.")
+    if camera:
+        _append_non_empty(lines, f"Camera: {camera}.")
+    _append_non_empty(lines, continuity)
+    tail = ". ".join(p for p in (capture_notes, control) if p)
+    if tail:
+        _append_non_empty(lines, tail if tail.endswith(".") else f"{tail}.")
     prompt = "\n\n".join(lines)
     words = _word_count(prompt)
     if words > EXECUTABLE_MAX_WORDS:
@@ -595,8 +625,8 @@ def prompt_for_time_range(
                 "end_seconds": round(end, 3),
                 "kind": "hold",
                 "description": (
-                    "Continue prior hero composition with subtle handheld micro-shake; "
-                    "maintain exact product, desk props, and lighting; real-time physics, no dead frames."
+                    "Continue prior composition with matching subject and lighting continuity; "
+                    "real-time physics, no dead frames."
                 ),
             })
 
@@ -637,7 +667,7 @@ def prompt_for_time_range(
 
     if not inherit:
         segment["audio"] = {
-            "lip_sync_declaration": "lip-sync N/A (product-only, no face)",
+            "lip_sync_declaration": "lip-sync N/A when no on-screen dialogue",
             "continuity_note": "room tone continues seamlessly",
             "notes": "No burned-in subtitles in generated picture; narration added at edit.",
         }
@@ -694,7 +724,7 @@ def build_persisted_generation_spec(
     duration = float((brief.get("source") or {}).get("duration_seconds") or 0)
     if duration <= 0:
         return None
-    profile = str(gen.get("prompt_profile") or "ugc_native").strip()
+    profile = str(gen.get("prompt_profile") or "default").strip()
     lock = get_dna_lock(brief) or {}
     control = str(gen.get("control_tokens") or lock.get("control_tokens") or "").strip()
     all_beats = _collect_scene_beats(brief)
@@ -712,7 +742,7 @@ def build_persisted_generation_spec(
                     "end_seconds": round(end, 3),
                     "kind": "hold",
                     "description": (
-                        "Continue prior composition; subtle handheld micro-shake; "
+                        "Continue prior composition with matching subject and lighting continuity; "
                         "real-time physics, no dead frames."
                     ),
                 })
@@ -743,7 +773,7 @@ def build_persisted_generation_spec(
             segment["consistency"] = consistency
         if not inherit:
             segment["audio"] = {
-                "lip_sync_declaration": "lip-sync N/A (product-only, no face)",
+                "lip_sync_declaration": "lip-sync N/A when no on-screen dialogue",
                 "continuity_note": "room tone continues seamlessly",
                 "notes": "Pure picture reverse-engineering; exclude burn-in subtitles/watermarks.",
             }

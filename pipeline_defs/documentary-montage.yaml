@@ -47,6 +47,9 @@ stages:
     skill: pipelines/documentary-montage/idea-director
     produces:
       - brief
+    outputs:
+      - kind: text
+        label: brief
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -69,6 +72,9 @@ stages:
       - brief
     produces:
       - scene_plan
+    outputs:
+      - kind: text
+        label: scene_plan
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -90,6 +96,18 @@ stages:
       - brief
     produces:
       - asset_manifest
+    outputs:
+      - kind: text
+        label: asset_manifest
+      - kind: image
+        label: 图片
+        source: asset_manifest.assets[].path
+      - kind: video
+        label: 视频
+        source: asset_manifest.assets[].path
+      - kind: audio
+        label: 音频
+        source: asset_manifest.assets[].path
     required_tools: []  # fast path needs only direct_clip_search; standard path needs corpus_builder + clip_search
     optional_tools:
       - direct_clip_search
@@ -122,6 +140,12 @@ stages:
       - asset_manifest
     produces:
       - edit_decisions
+    outputs:
+      - kind: text
+        label: edit_decisions
+      - kind: video
+        label: 片段
+        source: edit_decisions.cuts[].source
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -146,6 +170,12 @@ stages:
       - brief
     produces:
       - render_report
+    outputs:
+      - kind: text
+        label: render_report
+      - kind: video
+        label: 成片
+        source: render_report.outputs[].path
     required_tools:
       - video_compose
     optional_tools:

@@ -28,8 +28,14 @@ export const ARTIFACT_NAMES: Record<string, string> = {
   asset_manifest: "资产清单",
   edit_decisions: "剪辑决策",
   render_report: "渲染报告",
-  publish_log: "发布日志",
+  final_review: "终检",
+  publish_log: "发布计划",
   decision_log: "决策日志",
+  video_analysis_brief: "视频分析简报",
+  source_media_review: "源素材审阅",
+  character_design: "角色设计",
+  rig_plan: "绑骨方案",
+  pose_library: "姿势库",
 };
 
 export const STATUS_LABELS: Record<string, string> = {
@@ -81,6 +87,7 @@ export const STRINGS = {
   viewFailureDetails: "查看失败详情",
   unknownFailure: "未知错误（请查看运行日志）",
   loadFailed: "加载项目状态失败",
+  loadingProject: "正在加载项目…",
   projectNotFound: "项目不存在",
   fitView: "适应视图",
 } as const;
@@ -102,8 +109,15 @@ export function railStatusLabel(st: {
   status?: string;
   stalled?: boolean;
   is_next?: boolean;
+  active_run_id?: string | null;
+  superseded_by_downstream?: boolean;
+  versions?: number;
 }): string {
+  if (st.status === "in_progress") return statusLabel("in_progress");
   if (st.stalled) return STRINGS.stalledRail;
+  if (st.superseded_by_downstream) {
+    return (st.versions ?? 0) > 1 ? "已重置" : "已跳过";
+  }
   if (st.is_next && (st.status === "pending" || !st.status)) return statusLabel("pendingNext");
   return statusLabel(st.status || "pending");
 }

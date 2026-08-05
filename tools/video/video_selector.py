@@ -265,6 +265,13 @@ class VideoSelector(BaseTool):
     def get_status(self) -> ToolStatus:
         if any(tool.get_status() == ToolStatus.AVAILABLE for tool in self._providers()):
             return ToolStatus.AVAILABLE
+        from tools.video._shared import static_composition_fallback_active
+        if static_composition_fallback_active():
+            from tools.tool_registry import registry
+            registry.ensure_discovered()
+            image_tool = registry.get("image_selector")
+            if image_tool and image_tool.get_status() == ToolStatus.AVAILABLE:
+                return ToolStatus.AVAILABLE
         return ToolStatus.UNAVAILABLE
 
     def estimate_cost(self, inputs: dict[str, object]) -> float:
@@ -335,6 +342,23 @@ class VideoSelector(BaseTool):
         task_context = self._prepare_task_context(inputs)
         tool, score = self._select_best_tool(inputs, candidates, task_context)
         if tool is None:
+            from tools.video._shared import (
+                static_composition_fallback_active,
+                static_composition_fallback_data,
+            )
+            if static_composition_fallback_active():
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "No cloud/stock video provider available. "
+                        "Use static composition fallback: image_selector → Ken Burns / video_compose "
+                        "(ffmpeg or remotion). Local diffusers require VIDEO_GEN_LOCAL_ENABLED=true."
+                    ),
+                    data={
+                        **static_composition_fallback_data(inputs),
+                        "fallback_tools": self.fallback_tools_for(inputs),
+                    },
+                )
             return ToolResult(success=False, error="No video generation provider available.")
 
         # Adapt input keys: stock tools use 'query' while generators use 'prompt'
@@ -383,11 +407,7 @@ class VideoSelector(BaseTool):
         but the scoring engine drives the primary selection.
         """
         from lib.scoring import rank_providers, ProviderScore
-        from tools.video._shared import (
-            LOCAL_VIDEO_PROVIDER_ENV_MAP,
-            default_local_provider_id,
-            local_auto_fallback_active,
-        )
+        from tools.video._shared import LOCAL_VIDEO_PROVIDER_ENV_MAP
 
         preferred = inputs.get("preferred_provider", "auto")
         allowed = set(inputs.get("allowed_providers") or [])
@@ -396,11 +416,8 @@ class VideoSelector(BaseTool):
         candidates = self._filter_candidates(inputs, candidates)
 
         env_hint = os.environ.get("VIDEO_GEN_LOCAL_MODEL", "").lower()
-        if preferred == "auto":
-            if env_hint in LOCAL_VIDEO_PROVIDER_ENV_MAP:
-                preferred = LOCAL_VIDEO_PROVIDER_ENV_MAP[env_hint]
-            elif local_auto_fallback_active():
-                preferred = default_local_provider_id()
+        if preferred == "auto" and env_hint in LOCAL_VIDEO_PROVIDER_ENV_MAP:
+            preferred = LOCAL_VIDEO_PROVIDER_ENV_MAP[env_hint]
 
         rankings = rank_providers(candidates, task_context)
 

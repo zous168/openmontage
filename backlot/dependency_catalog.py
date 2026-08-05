@@ -222,7 +222,6 @@ TOOL_LABELS_ZH: dict[str, str] = {
     "video_trimmer": "视频裁剪",
     "video_understand": "视频内容理解",
     "visual_qa": "画面质量检测",
-    "wan_video": "万相视频生成",
 }
 
 TOOL_INSTALL_HINTS_ZH: dict[str, str] = {

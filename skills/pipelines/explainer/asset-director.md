@@ -137,6 +137,18 @@ Asset Task:
 > **视频生成（`video_selector`）** 与**附录 A** —— 不要把商业讲解插画的默认做法
 > 套到那些镜头上。
 
+**静态合成路由（`static_composition` — 优先于 `video_selector`）：**
+
+- 当 `scene_plan.metadata.assets_composition_strategy == "static_composition"`，或
+  `meta.json` → `production_inputs.assets_video_strategy` 为 `ffmpeg_still_loop` /
+  `static_composition`，或 `forbid_video_selector: true` 时：
+  - **禁止**调用 `video_selector` 及任何本地/云端 AI 视频模型
+  - 对每个 `required_assets[].type == "image"` 单元：用 `image_selector`（或 proposal 指定的图片工具）生成静图
+  - assets 阶段用 **ffmpeg still loop**（`compose_strategy: ffmpeg_still_loop`）或把运动留给 compose 的 Ken Burns
+  - manifest 中如实记录 `source_tool`（`image_selector` / `ffmpeg`），不得伪造 `video_selector`
+- **仅有**当 `assets_composition_strategy == "ugc_native"` 且未被 proposal/manifest 禁止时，才适用下文 `video_selector` 整节。
+- `video_selector` 返回 `fallback_strategy: static_composition` 时：**不要重试视频** —— 立即改走静图路径。
+
 **视频生成（`video_selector`）** —— reference-driven / UGC 原生保真度：
 
 > **这就是执行门禁。** 最终的逐镜头提示词在**这里**、在
@@ -151,9 +163,10 @@ Asset Task:
 
 **本节何时适用（强制 `prompt_profile: ugc_native`）：**
 
-- 场景的 `required_assets` 指定了 `tool: video_selector`，或者 `motion_type` /
+- `scene_plan.metadata.assets_composition_strategy` **不是** `static_composition`
+- 场景的 `required_assets` 指定了 `type: video` 或 `tool: video_selector`，或者 `motion_type` /
   场景类型是 `generated` / `broll` / `image_animation` 且要求有运动
-- 或者存在 `video_analysis_brief`（reference-driven 管线）
+- 或者存在 `video_analysis_brief` **且** proposal/manifest 未锁定静图路径
 - **不适用于** `diagram_gen`、Remotion `.tsx` 动画、TTS，或扁平
   动效类的 `image_selector` 任务（用 `"prompt_profile": "default"` 或省略）
 

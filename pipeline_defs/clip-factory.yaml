@@ -50,6 +50,9 @@ stages:
     produces:
       - brief
       - decision_log
+    outputs:
+      - kind: text
+        label: brief
     tools_available: []
     checkpoint_required: true
     human_approval_default: true
@@ -67,6 +70,9 @@ stages:
       - brief
     produces:
       - script
+    outputs:
+      - kind: text
+        label: script
     required_tools:
       - transcriber
     optional_tools:
@@ -92,6 +98,9 @@ stages:
       - brief
     produces:
       - scene_plan
+    outputs:
+      - kind: text
+        label: scene_plan
     required_tools: []
     optional_tools:
       - frame_sampler
@@ -115,6 +124,18 @@ stages:
       - script
     produces:
       - asset_manifest
+    outputs:
+      - kind: text
+        label: asset_manifest
+      - kind: image
+        label: 图片
+        source: asset_manifest.assets[].path
+      - kind: video
+        label: 视频
+        source: asset_manifest.assets[].path
+      - kind: audio
+        label: 音频
+        source: asset_manifest.assets[].path
     required_tools:
       - subtitle_gen
     optional_tools:
@@ -141,6 +162,12 @@ stages:
       - script
     produces:
       - edit_decisions
+    outputs:
+      - kind: text
+        label: edit_decisions
+      - kind: video
+        label: 片段
+        source: edit_decisions.cuts[].source
     tools_available: []
     checkpoint_required: true
     human_approval_default: false
@@ -162,6 +189,14 @@ stages:
     produces:
       - render_report
       - final_review
+    outputs:
+      - kind: text
+        label: render_report
+      - kind: text
+        label: final_review
+      - kind: video
+        label: 成片
+        source: render_report.outputs[].path
     required_tools:
       - video_compose
       - video_trimmer
@@ -194,6 +229,15 @@ stages:
       - brief
     produces:
       - publish_log
+    outputs:
+      - kind: text
+        label: publish_log
+      - kind: video
+        label: 成片
+        source: render_report.outputs[].path
+      - kind: video
+        label: 导出
+        source: publish_log.entries[].export_path
     tools_available: []
     checkpoint_required: true
     human_approval_default: true

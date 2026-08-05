@@ -55,7 +55,7 @@ class KlingVideo(BaseTool):
         "professional video clips",
     ]
     not_good_for = ["budget-constrained projects", "offline generation", "quick iteration"]
-    fallback_tools = ["minimax_video", "veo_video", "wan_video"]
+    fallback_tools = ["minimax_video", "veo_video", "image_selector"]
 
     input_schema = {
         "type": "object",

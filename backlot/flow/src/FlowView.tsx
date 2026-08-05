@@ -21,6 +21,7 @@ import {StageNode} from "./StageNode";
 import {InputNode} from "./InputNode";
 import {StageDrawer} from "./StageDrawer";
 import {FlowProgressBar} from "./FlowProgressBar";
+import {FlowEdgeLegend} from "./FlowEdgeLegend";
 import {maybeAutoRunNextStage} from "./runControl";
 import {STRINGS} from "./labels";
 
@@ -49,6 +50,7 @@ function applySavedLayout(
 export function FlowView() {
   const projectId = useMemo(projectIdFromPath, []);
   const [state, setState] = useState<BoardState | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [didInit, setDidInit] = useState(false);
@@ -65,6 +67,7 @@ export function FlowView() {
     const s = await getJSON(`/api/project/${encodeURIComponent(projectId)}/state`);
     setState(s);
     setError(null);
+    setLoading(false);
   }, [projectId]);
 
   const persistLayout = useCallback(async () => {
@@ -90,21 +93,29 @@ export function FlowView() {
     }, LAYOUT_SAVE_MS);
   }, [persistLayout]);
 
+  const persistLayoutRef = useRef(persistLayout);
+  persistLayoutRef.current = persistLayout;
+
   useEffect(() => {
     if (!projectId) {
+      setLoading(false);
       setError("URL 缺少项目 ID: /flow/{project_id}");
       return;
     }
+    let cancelled = false;
     let es: EventSource | null = null;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const staticMode = new URLSearchParams(window.location.search).has("static");
 
     const boot = async () => {
+      setLoading(true);
+      setError(null);
       const [s, layout, ps] = await Promise.all([
         getJSON(`/api/project/${encodeURIComponent(projectId)}/state`),
         getJSON(`/api/project/${encodeURIComponent(projectId)}/flow-layout`).catch(() => ({stages: {}})),
         getJSON(`/api/project/${encodeURIComponent(projectId)}/settings`).catch(() => null),
       ]);
+      if (cancelled) return;
       if (ps) {
         setProjectSettings(ps);
         const pi = ps.production_inputs ?? {};
@@ -129,9 +140,14 @@ export function FlowView() {
       layoutLoadedRef.current = true;
       setState(s);
       setError(null);
+      setLoading(false);
     };
 
-    boot().catch((e) => setError(String((e as Error).message || e)));
+    boot().catch((e) => {
+      if (cancelled) return;
+      setLoading(false);
+      setError(String((e as Error).message || e));
+    });
 
     if (!staticMode) {
       es = new EventSource(`/api/project/${encodeURIComponent(projectId)}/events`);
@@ -143,17 +159,23 @@ export function FlowView() {
           return;
         }
         if (timer) clearTimeout(timer);
-        timer = setTimeout(() => refresh().catch((e) => setError(String((e as Error).message || e))), 250);
+        timer = setTimeout(() => {
+          refresh().catch((e) => setError(String((e as Error).message || e)));
+        }, 250);
+      };
+      es.onerror = () => {
+        /* SSE 断开不影响已加载状态；下次 refresh 会重试 */
       };
     }
 
     return () => {
+      cancelled = true;
       es?.close();
       if (timer) clearTimeout(timer);
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-      void persistLayout();
+      void persistLayoutRef.current();
     };
-  }, [projectId, refresh, persistLayout]);
+  }, [projectId, refresh]);
 
   const onOpen = useCallback((name: string) => setSelected(name), []);
 
@@ -261,8 +283,24 @@ export function FlowView() {
     );
   }
 
+  if (loading && !state) {
+    return <div className="fs-page fs-empty">{STRINGS.loadingProject}</div>;
+  }
+
   if (!state) {
-    return <div className="fs-page fs-empty">{STRINGS.loadFailed}…</div>;
+    return (
+      <div className="fs-page fs-empty">
+        <div className="fs-empty-title">{STRINGS.loadFailed}</div>
+        {error && <div className="fs-muted">{error}</div>}
+        <div className="fs-empty-actions">
+          <a className="fs-link" href="/">← {STRINGS.back}项目库</a>
+          {projectId && <a className="fs-link" href={`/p/${encodeURIComponent(projectId)}`}>{STRINGS.openBoard}</a>}
+          <button className="fs-btn" onClick={() => { setLoading(true); setError(null); refresh().catch((e) => setError(String((e as Error).message || e))); }}>
+            {STRINGS.retry}
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -275,6 +313,7 @@ export function FlowView() {
         {state.pipeline?.label_zh && <span className="fs-chip">{state.pipeline.label_zh}</span>}
         <span className={`fs-live${state.live ? " live" : ""}`}>{state.live ? "● live" : "○ idle"}</span>
         <FlowProgressBar state={state} />
+        <FlowEdgeLegend />
         <span className="fs-spacer" />
         <button className="fs-btn fs-btn--danger" onClick={resetPipeline}>{STRINGS.resetPipeline}</button>
       </div>

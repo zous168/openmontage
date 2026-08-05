@@ -1518,6 +1518,13 @@ class VideoCompose(BaseTool):
                 render_result.data = {}
             render_result.data["final_review"] = final_review
             render_result.data["final_review_status"] = final_review["status"]
+            hints = self._build_render_report_hints(
+                output_path,
+                edit_decisions,
+                final_review.get("checks", {}).get("technical_probe") or {},
+                render_runtime=render_runtime,
+            )
+            render_result.data.update(hints)
 
             # If the self-review says fail, downgrade the ToolResult
             if final_review["status"] == "fail":
@@ -2727,6 +2734,47 @@ class VideoCompose(BaseTool):
         )
 
         return final_review
+
+    @staticmethod
+    def _build_render_report_hints(
+        output_path: Path,
+        edit_decisions: dict[str, Any],
+        technical_probe: dict[str, Any],
+        *,
+        render_runtime: str,
+    ) -> dict[str, Any]:
+        """Shape compose-director-friendly outputs/render_summary from ffprobe."""
+        size_bytes = int(technical_probe.get("file_size_bytes") or 0)
+        if not size_bytes and output_path.is_file():
+            size_bytes = output_path.stat().st_size
+        duration = float(technical_probe.get("duration_seconds") or 0)
+        target = (
+            edit_decisions.get("total_duration_seconds")
+            or edit_decisions.get("metadata", {}).get("target_duration_seconds")
+        )
+        subs = edit_decisions.get("subtitles") or {}
+        return {
+            "output": str(output_path),
+            "outputs": [
+                {
+                    "path": str(output_path),
+                    "format": output_path.suffix.lstrip(".") or "mp4",
+                    "codec": technical_probe.get("codec") or "unknown",
+                    "resolution": technical_probe.get("resolution") or "",
+                    "fps": technical_probe.get("fps") or 0,
+                    "duration_seconds": duration,
+                    "file_size_mb": round(size_bytes / (1024 * 1024), 2) if size_bytes else 0,
+                    "audio_codec": "aac" if technical_probe.get("has_audio") else None,
+                    "render_strategy": render_runtime,
+                }
+            ],
+            "render_summary": {
+                "total_cuts_rendered": len(edit_decisions.get("cuts") or []),
+                "subtitles_burned": bool(subs.get("enabled")),
+                "target_duration_seconds": target,
+                "actual_duration_seconds": duration,
+            },
+        }
 
     @staticmethod
     def _parse_probe_fps(fps_str: str) -> float:

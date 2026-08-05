@@ -36,7 +36,7 @@ class LTXVideoModal(BaseTool):
         "  set MODAL_LTX2_ENDPOINT_URL=https://<your-modal-endpoint>"
     )
     fallback = "ltx_video_local"
-    fallback_tools = ["ltx_video_local", "wan_video", "hunyuan_video", "cogvideo_video", "image_selector"]
+    fallback_tools = ["ltx_video_local", "hunyuan_video", "cogvideo_video", "image_selector"]
     agent_skills = ["ltx2"]
 
     capabilities = ["text_to_video", "image_to_video"]

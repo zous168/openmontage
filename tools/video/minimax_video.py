@@ -54,7 +54,7 @@ class MiniMaxVideo(BaseTool):
         "cost-effective video generation",
     ]
     not_good_for = ["offline generation", "very long clips"]
-    fallback_tools = ["kling_video", "veo_video", "wan_video"]
+    fallback_tools = ["kling_video", "veo_video", "image_selector"]
 
     input_schema = {
         "type": "object",

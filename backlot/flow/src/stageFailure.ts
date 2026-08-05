@@ -26,9 +26,6 @@ export function failureMessage(stage: StageState, state: BoardState): string | n
     if (summary) return summary;
   }
 
-  const partial = stage.partial_progress;
-  if (typeof partial === "string" && partial.trim()) return partial.trim();
-
   if (run?.log_tail?.trim()) return run.log_tail.trim().slice(-400);
   if (run?.exit_code != null && run.exit_code !== 0) return `agent 退出码 ${run.exit_code}`;
   return null;

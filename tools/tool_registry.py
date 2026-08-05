@@ -12,7 +12,7 @@ import pkgutil
 from types import ModuleType
 from typing import Any, Optional
 
-from tools.base_tool import BaseTool, ToolStatus, ToolTier, ToolStability
+from tools.base_tool import BaseTool, ToolStatus, ToolTier, ToolStability, ToolResult
 
 
 # Unicode punctuation that breaks on Windows cp1252 stdout. Map each to an
@@ -141,6 +141,24 @@ class ToolRegistry:
     def get(self, name: str) -> Optional[BaseTool]:
         """Get a tool by name."""
         return self._tools.get(name)
+
+    def execute(self, tool_name: str, inputs: dict[str, Any]) -> ToolResult:
+        """Run a registered tool by name.
+
+        Equivalent to ``registry.get(tool_name).execute(inputs)``. Selectors
+        (``video_selector``, ``image_selector``, ``tts_selector``) accept
+        provider-specific passthrough fields and route to the best backend.
+        """
+        self.ensure_discovered()
+        tool = self.get(tool_name)
+        if tool is None:
+            known = ", ".join(sorted(self.list_all())[:12])
+            suffix = "…" if len(self.list_all()) > 12 else ""
+            return ToolResult(
+                success=False,
+                error=f"Unknown tool {tool_name!r}. Registered: {known}{suffix}",
+            )
+        return tool.execute(inputs)
 
     def list_all(self) -> list[str]:
         """List all registered tool names."""

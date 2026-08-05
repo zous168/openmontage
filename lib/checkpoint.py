@@ -101,6 +101,36 @@ def _load_checkpoint_schema() -> dict[str, Any]:
         return json.load(f)
 
 
+def _validate_render_outputs_unique(artifact_data: dict[str, Any]) -> None:
+    """render_report.outputs 不得包含重复产物。
+
+    同一路径,或相同内容(相同 file_size_bytes + duration_seconds + resolution,
+    视为同一产物的重复记录——典型场景:重渲染时追加新输出而旧条目未清理)
+    只允许记录一次。重复即拦截,要求替换而非追加。
+    """
+    outputs = artifact_data.get("outputs")
+    if not isinstance(outputs, list):
+        return
+    seen: dict[str, str] = {}
+    for out in outputs:
+        if not isinstance(out, dict) or "path" not in out:
+            continue
+        path = str(out["path"])
+        size = out.get("file_size_bytes")
+        sig = (
+            f"size:{size}|dur:{out.get('duration_seconds')}|res:{out.get('resolution')}"
+            if size is not None
+            else f"path:{path}"
+        )
+        if sig in seen and seen[sig] != path:
+            raise CheckpointValidationError(
+                f"render_report.outputs 包含重复产物: {path!r} 与 {seen[sig]!r} "
+                f"(相同文件大小/时长/分辨率,视为同一产物的重复记录)。"
+                f"重渲染时请替换旧输出条目,不要追加。"
+            )
+        seen[sig] = path
+
+
 def _validate_artifacts_for_stage(
     stage: str,
     status: str,
@@ -129,6 +159,8 @@ def _validate_artifacts_for_stage(
             raise CheckpointValidationError(
                 f"Artifact {artifact_name!r} must be a JSON object matching its schema"
             )
+        if artifact_name == "render_report":
+            _validate_render_outputs_unique(artifact_data)
         try:
             validate_artifact(artifact_name, artifact_data)
         except Exception as exc:
@@ -343,7 +375,7 @@ def _merge_decision_log(
 
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(existing, f, indent=2)
+        json.dump(existing, f, indent=2, ensure_ascii=False)
 
 
 def write_checkpoint(
@@ -477,7 +509,7 @@ def write_checkpoint(
     # new one atomically.
     tmp_path = path.with_suffix(".json.tmp")
     with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(checkpoint, f, indent=2)
+        json.dump(checkpoint, f, indent=2, ensure_ascii=False)
     # Preserve run history: a superseded completed/awaiting_human checkpoint
     # is copied to history/ (stage versioning, gate audit trail, replay).
     _archive_superseded_checkpoint(path, stage)
@@ -485,6 +517,17 @@ def write_checkpoint(
     os.replace(tmp_path, path)
 
     return path
+
+
+def _read_checkpoint_unvalidated(
+    pipeline_dir: Path, project_id: str, stage: str
+) -> Optional[dict[str, Any]]:
+    """Read a checkpoint file without validation (容错读取,供状态推导)。"""
+    path = _checkpoint_path(pipeline_dir, project_id, stage)
+    if not path.exists():
+        return None
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 def read_checkpoint(
@@ -534,7 +577,17 @@ def get_completed_stages(
     stages_to_check = get_pipeline_stages(pipeline_type)
     completed = []
     for stage in stages_to_check:
-        cp = read_checkpoint(pipeline_dir, project_id, stage)
+        try:
+            cp = read_checkpoint(pipeline_dir, project_id, stage)
+        except CheckpointValidationError:
+            # 存量坏数据(如历史 run 的重复输出):状态推导必须容错,
+            # 校验仍在写入时严格拦截(write_checkpoint)。"never block, never break"。
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "checkpoint 校验失败,按原始状态继续: %s/%s", project_id, stage
+            )
+            cp = _read_checkpoint_unvalidated(pipeline_dir, project_id, stage)
         if cp and cp.get("status") == "completed":
             completed.append(stage)
     return completed

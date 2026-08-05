@@ -31,8 +31,8 @@ class LTXVideoLocal(BaseTool):
     runtime = ToolRuntime.LOCAL_GPU
 
     install_instructions = local_install_instructions()
-    fallback = "wan_video"
-    fallback_tools = ["wan_video", "hunyuan_video", "cogvideo_video", "ltx_video_modal", "image_selector"]
+    fallback = "hunyuan_video"
+    fallback_tools = ["hunyuan_video", "cogvideo_video", "ltx_video_modal", "image_selector"]
     agent_skills = ["ltx2"]
 
     capabilities = ["text_to_video", "image_to_video"]

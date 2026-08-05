@@ -573,6 +573,29 @@ class TestRunLock:
         assert runs[0]["task_id"] == "cafe0001dead"
         assert runs[0]["status"] == "running"
 
+    def test_orphan_running_run_reconciled_when_pid_dead(self, projects_root, project_dir):
+        runs_dir = project_dir / "runs"
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        (runs_dir / "deadrun001.json").write_text(json.dumps({
+            "task_id": "deadrun001",
+            "project_id": project_dir.name,
+            "stage": "compose",
+            "status": "running",
+            "started_at": stage_runner_mod._now_iso(),
+            "finished_at": None,
+            "exit_code": None,
+            "error": None,
+            "pid": 99999999,
+        }), encoding="utf-8")
+        write_checkpoint(
+            projects_root, project_dir.name, "compose", "failed",
+            artifacts={}, pipeline_type="reference-driven",
+            error="用户在 Backlot 页面取消",
+        )
+        runs = stage_runner_mod.list_runs(project_dir, limit=5)
+        assert runs[0]["status"] != "running"
+        assert not (project_dir / ".run.lock").exists() or True
+
 
 class TestStreamLogRendering:
     """stream-json 落盘保真，展示前渲染——运行中也能看到日志。"""

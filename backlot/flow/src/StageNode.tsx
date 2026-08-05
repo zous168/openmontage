@@ -75,10 +75,12 @@ export function StageNode({data}: StageNodeProps) {
         <span className="fs-name-en">{st.name}</span>
       </div>
 
-      <div className={`fs-status ${stText.cls}`}>
-        {st.status === "in_progress" && <span className="fs-pulse" />}
-        {stText.text}
-      </div>
+      {stText.text ? (
+        <div className={`fs-status ${stText.cls}`}>
+          {st.status === "in_progress" && <span className="fs-pulse" />}
+          {stText.text}
+        </div>
+      ) : null}
 
       {sceneDone > 0 && (
         <div className="fs-scene-progress" title={`${sceneDone} 个场景已完成`}>

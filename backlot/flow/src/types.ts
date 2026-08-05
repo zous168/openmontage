@@ -12,6 +12,17 @@ export interface HistoryEntry {
   timestamp: string;
 }
 
+// 前端展示用的输出卡(媒体/数据),由产物(artifacts)在展示层推导,不再持久化
+export interface StageOutputItem {
+  kind: "video" | "image" | "audio" | "text" | "data";
+  label: string;
+  path?: string;
+  text?: string;
+  data?: Record<string, unknown>;
+  model?: string;
+  cost_usd?: number;
+}
+
 export interface StageState {
   name: string;
   gated?: boolean;
@@ -20,14 +31,17 @@ export interface StageState {
   timestamp?: string | null;
   human_approved?: boolean | null;
   error?: string | null;
-  partial_progress?: string | {completed_scene_ids?: string[]} | null;
+  partial_progress?: {completed_scene_ids?: string[]} | null;
   versions?: number;
   history_entries?: HistoryEntry[];
   gate_skipped?: boolean;
   blocked_by_upstream?: boolean;
+  /** 下游已有 checkpoint，本阶段仍为 pending（常见于上游重置） */
+  superseded_by_downstream?: boolean;
   inferred_from_events?: boolean;
   inferred_from_run?: boolean;
   active_run_id?: string | null;
+  activity_hint?: string | null;
   is_next?: boolean;
   stalled?: boolean;
   stalled_minutes?: number;
@@ -39,6 +53,11 @@ export interface PipelineStageMeta {
   name: string;
   gated?: boolean;
   produces?: string[];
+  // 本阶段输出声明(manifest stage.outputs):kind=data 时 label=产物名,
+  // media/text 项带 source 提取表达式(如 assets[].path),展示层按此推导输出卡
+  outputs?: {kind: string; label: string; source?: string}[];
+  /** 本阶段必需的上游产物(manifest required_artifacts_in) — 输入区只展示这些 */
+  required_artifacts_in?: string[];
 }
 
 export interface RunState {
@@ -73,6 +92,21 @@ export interface BoardState {
   source_media?: SourceMedia | null;
   deliverable?: Deliverable | null;
   poster?: string | null;
+  media?: {
+    renders?: {path: string; size?: number; mtime?: number; at_root?: boolean}[];
+    snapshots?: {path: string}[];
+    music?: {path: string; at_root?: boolean}[];
+  };
+  project_summary?: {
+    media?: {
+      path: string;
+      type?: string;
+      exists?: boolean;
+      renderable?: boolean;
+      label?: string;
+      source_artifact?: string;
+    }[];
+  };
 }
 
 // ---- 输入节点数据(来自 /state 与 /settings) ----

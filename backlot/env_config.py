@@ -184,11 +184,11 @@ ENV_PURPOSE_GROUPS: list[dict[str, Any]] = [
             },
             "VIDEO_GEN_LOCAL_ENABLED": {
                 "purpose": "启用本地视频生成",
-                "hint": "设为 true 时开启 Wan / Hunyuan / LTX 等本地 diffusers 路径（需 GPU）。",
+                "hint": "设为 true 时开启 Hunyuan / LTX / CogVideo 等本地 diffusers 路径（需 GPU）。",
             },
             "VIDEO_GEN_LOCAL_MODEL": {
                 "purpose": "本地视频模型 ID",
-                "hint": "如 wan2.1-1.3b、wan2.1-14b、hunyuan-1.5、ltx2-local。",
+                "hint": "如 hunyuan-1.5、ltx2-local、cogvideo-5b。",
             },
             "MODAL_LTX2_ENDPOINT_URL": {
                 "purpose": "Modal 自托管 LTX-2 端点",

@@ -2,9 +2,10 @@
 // 看:本节点内容预览 + 参考槽 | 改:核心信息表单
 // 批准/运行/日志等操作在标题栏右侧(无「做」Tab)
 import {useEffect, useMemo, useState} from "react";
-import type {BoardState, ProjectSettings, RunState, StageState} from "./types";
+import type {BoardState, ProjectSettings, RunState, StageOutputItem, StageState} from "./types";
 import {artifactLabel, railStatusLabel, stageLabel, STRINGS} from "./labels";
-import {stageOutputs, upstreamArtifacts, statusCls} from "./graph";
+import {stageOutputs, statusCls, upstreamOutputDecl} from "./graph";
+import {kindOfPath, mediaURL, thumbURL} from "./media";
 import {getJSON, patchJSON, postJSON} from "./api";
 import {getCoreFields, type CoreField} from "./coreFields";
 import {optionLabel} from "./fieldLabels";
@@ -124,6 +125,15 @@ function runTargetForStage(
   state: BoardState,
   stage: StageState,
 ): {name: string; label: string; retry: boolean} | null {
+  const liveRun = state.runs?.find((r) => r.status === "queued" || r.status === "running");
+  if (liveRun) return null;
+  if (state.stages?.some((s) => s.status === "awaiting_human")) return null;
+
+  // failed 且为 get_next_stage 指向的阶段 → 始终显示重试（不依赖 nextRunTarget 启发式）
+  if (stage.status === "failed" && stage.name === state.next_stage) {
+    return {name: stage.name, label: stageLabel(stage.name), retry: true};
+  }
+
   const target = nextRunTarget(state);
   if (!target || target.name !== stage.name) return null;
   return {...target, retry: stage.status === "failed"};
@@ -184,15 +194,15 @@ function PreviewPane({
     );
   }
   if (stName === "compose" && art && typeof art === "object" && "outputs" in art) {
-    const outs = (art as {outputs?: {path?: string; format?: string; resolution?: string}[]}).outputs ?? [];
+    const outs = (art as {outputs?: {path?: string; format?: string; resolution?: string; duration_seconds?: number}[]}).outputs ?? [];
+    if (outs.length === 0) return null;
     return (
       <div className="fs-preview">
         {outs.map((o, i) => (
           <div key={i} className="fs-preview-row">
-            <b>输出 {i + 1}</b> {String(o.format ?? "")} · {String(o.resolution ?? "")} —{" "}
-            <a className="fs-link" href={`/media/${encodeURIComponent(state.project_id)}/${String(o.path ?? "").replace(/^projects\/[^/]+\//, "")}`} target="_blank" rel="noreferrer">
-              {String(o.path ?? "").split("/").pop()}
-            </a>
+            <b>输出 {i + 1}</b> {String(o.format ?? "")} · {String(o.resolution ?? "")}
+            {o.duration_seconds != null ? ` · ${o.duration_seconds.toFixed(1)}s` : ""}
+            {o.path ? ` · ${String(o.path).split("/").pop()}` : null}
           </div>
         ))}
       </div>
@@ -205,37 +215,182 @@ function PreviewPane({
   );
 }
 
-// ---- 看区:参考槽(上游产物卡片 + 会话级追加) ----
+// ---- 按 manifest outputs 声明(source 表达式)从产物提取输出卡 ----
+// 语法:点路径 + [] 展开数组,如 "assets[].path" / "render_report.outputs[].path"。
+// 根默认是 artifacts 顶层;第一段不在顶层且唯一产物含该键时剥壳。
+
+function extractSource(source: string, artifacts: Record<string, unknown>): unknown[] {
+  const segs = source.split(".").map((p) =>
+    p.endsWith("[]")
+      ? {kind: "list" as const, key: p.slice(0, -2)}
+      : {kind: "key" as const, key: p},
+  );
+  if (segs.some((s) => !s.key)) return [];
+  let root: unknown = artifacts;
+  const first = segs[0].key;
+  if (typeof root === "object" && root !== null && !(first in (root as Record<string, unknown>))) {
+    const cands = Object.values(root as Record<string, unknown>).filter(
+      (v) => typeof v === "object" && v !== null && first in (v as Record<string, unknown>),
+    );
+    if (cands.length === 1) root = cands[0];
+  }
+  const results: unknown[] = [];
+  const walk = (obj: unknown, idx: number, depth: number) => {
+    if (idx >= segs.length) { results.push(obj); return; }
+    if (depth > 8 || results.length >= 12) return;
+    const {kind, key} = segs[idx];
+    if (kind === "list") {
+      const items = typeof obj === "object" && obj !== null ? (obj as Record<string, unknown>)[key] : undefined;
+      if (Array.isArray(items)) for (const it of items) walk(it, idx + 1, depth + 1);
+    } else if (typeof obj === "object" && obj !== null && key in (obj as Record<string, unknown>)) {
+      walk((obj as Record<string, unknown>)[key], idx + 1, depth + 1);
+    }
+  };
+  walk(root, 0, 0);
+  return results;
+}
+
+type ManifestIODecl = {kind: string; label: string; source?: string | null};
+
+function declaredFromManifest(
+  decl: ManifestIODecl[],
+  arts: Record<string, unknown>,
+): StageOutputItem[] {
+  const cards: StageOutputItem[] = [];
+  const seen = new Set<string>();
+  for (const d of decl) {
+    if (d.kind === "data") {
+      const v = arts[d.label];
+      if (v != null) cards.push({kind: "data", label: d.label, data: v as Record<string, unknown>});
+      continue;
+    }
+    // text 无 source：整份产物 JSON（label = artifact 名）
+    if (d.kind === "text" && !d.source) {
+      const v = arts[d.label];
+      if (v != null && typeof v === "object") {
+        cards.push({
+          kind: "data",
+          label: artifactLabel(d.label),
+          data: v as Record<string, unknown>,
+        });
+      }
+      continue;
+    }
+    if (!d.source) continue;
+    for (const val of extractSource(d.source, arts)) {
+      if (cards.length >= 12) break;
+      if (d.kind === "text") {
+        let text: string;
+        if (typeof val === "string") text = val;
+        else if (val != null && typeof val === "object") text = JSON.stringify(val);
+        else if (val != null) text = String(val);
+        else text = "";
+        if (text.trim() && !seen.has(text)) {
+          seen.add(text);
+          cards.push({kind: "text", label: d.label, text: text.trim()});
+        }
+      } else if (typeof val === "string") {
+        const k = kindOfPath(val);
+        if (k !== "text" && !seen.has(val)) {
+          seen.add(val);
+          cards.push({kind: k, label: d.label, path: val});
+        }
+      }
+    }
+  }
+  return cards;
+}
+
+// 按 stage 的 outputs 声明推导输出卡
+function declaredOutputs(state: BoardState, stage: StageState): StageOutputItem[] {
+  const decl = state.pipeline?.stages?.find((s) => s.name === stage.name)?.outputs ?? [];
+  return declaredFromManifest(decl, state.artifacts ?? {});
+}
+
+// 输入 = 上游 stage 的 outputs 声明
+function declaredInputs(state: BoardState, stage: StageState): StageOutputItem[] {
+  return declaredFromManifest(upstreamOutputDecl(state, stage), state.artifacts ?? {});
+}
+
+// 声明缺失时的兜底:产物原样 JSON(媒体嵌在树里)
+function fallbackViews(state: BoardState, stage: StageState): {label: string; value: unknown}[] {
+  const arts = state.artifacts ?? {};
+  return stageOutputs(stage)
+    .filter((n) => arts[n] != null)
+    .map((n) => ({label: artifactLabel(n), value: arts[n]}));
+}
+
+// ---- 输入区:上游 stage outputs(上游输出 = 下游输入) ----
+function InputSlot({state, stage}: {state: BoardState; stage: StageState}) {
+  const cards = useMemo(() => declaredInputs(state, stage), [state, stage]);
+  const media = cards.filter((c) => c.kind !== "data" && c.kind !== "text");
+  const textItems = cards
+    .filter((c) => c.kind === "data")
+    .map((o, i) => ({id: `in-${o.label}-${i}`, label: o.label, artifact: o.data}));
+  return (
+    <div className="fs-refs">
+      <div className="fs-refs-label">输入 · 上游产物</div>
+      {cards.length > 0 ? (
+        <ArtifactStrip
+          projectId={state.project_id}
+          mediaItems={media}
+          textItems={textItems}
+        />
+      ) : (
+        <div className="fs-muted">暂无输入 · 等待上游完成</div>
+      )}
+    </div>
+  );
+}
+
+// 参考区:参考素材(项目的参考视频/图/URL)+ 可追加的产物(辅助参考,非必需)
 function ReferenceSlot({
-  state, stage, extraRefs, onAddRef, onRemoveRef,
+  state, extraRefs, onAddRef, onRemoveRef,
 }: {
   state: BoardState;
-  stage: StageState;
   extraRefs: string[];
   onAddRef: (name: string) => void;
   onRemoveRef: (name: string) => void;
 }) {
-  const upstream = upstreamArtifacts(state, stage);
   const arts = state.artifacts ?? {};
   const [picking, setPicking] = useState(false);
   const available = Object.keys(arts).filter(
-    (n) => !upstream.some((u) => u.name === n) && !extraRefs.includes(n) && n !== "decision_log",
+    (n) => !extraRefs.includes(n) && n !== "decision_log",
   );
+  // 项目参考素材(source_media:参考视频/图/URL)
+  const sourceRefs = useMemo(() => {
+    const sm = state.source_media;
+    const out: StageOutputItem[] = [];
+    if (sm?.path) {
+      out.push({
+        kind: sm.playable ? "video" : "image",
+        label: "参考素材",
+        path: sm.path,
+      });
+    }
+    if (sm?.poster) {
+      out.push({kind: "image", label: "参考帧", path: sm.poster});
+    }
+    return out;
+  }, [state.source_media]);
 
   return (
     <div className="fs-refs">
-      <div className="fs-refs-label">参考槽 · 上游已绑定</div>
-      <div className="fs-refs-grid">
-        {upstream.map((u) => (
-          <RefCard key={u.name} name={u.name} value={u.value} projectId={state.project_id} removable={false} onRemove={() => {}} />
-        ))}
-        {extraRefs.map((n) => (
-          <RefCard key={n} name={n} value={arts[n]} projectId={state.project_id} removable onRemove={() => onRemoveRef(n)} />
-        ))}
-        {upstream.length === 0 && extraRefs.length === 0 && (
-          <div className="fs-muted">暂无上游产物(前置阶段完成后自动出现)</div>
-        )}
-      </div>
+      <div className="fs-refs-label">参考素材(辅助)</div>
+      <ArtifactStrip
+        projectId={state.project_id}
+        mediaItems={sourceRefs}
+        textItems={extraRefs.map((n) => ({
+          id: n,
+          label: artifactLabel(n),
+          artifact: arts[n],
+          removable: true,
+        }))}
+        onRemoveText={onRemoveRef}
+      />
+      {sourceRefs.length === 0 && extraRefs.length === 0 && (
+        <div className="fs-muted">暂无参考素材(可追加产物)</div>
+      )}
       <div className="fs-refs-add">
         <button className="fs-btn" onClick={() => setPicking(!picking)}>＋ 追加参考</button>
         {picking && available.length > 0 && (
@@ -259,58 +414,246 @@ function ReferenceSlot({
   );
 }
 
-function RefCard({
-  name, value, projectId, removable, onRemove,
+// compose / publish:成片优先内嵌播放器,避免只看见 JSON 卡
+function OutputHeroVideos({
+  projectId,
+  videos,
 }: {
-  name: string;
-  value: unknown;
   projectId: string;
-  removable: boolean;
-  onRemove: () => void;
+  videos: StageOutputItem[];
 }) {
-  const [thumb, setThumb] = useState<string | null>(null);
-  const path = useMemo(() => {
-    if (value && typeof value === "object" && "path" in (value as Record<string, unknown>)) {
-      return String((value as Record<string, unknown>).path).replace(/^projects\/[^/]+\//, "");
-    }
-    if (Array.isArray(value) && value.length > 0 && value[0] && typeof value[0] === "object" && "path" in value[0]) {
-      return String((value[0] as Record<string, unknown>).path).replace(/^projects\/[^/]+\//, "");
-    }
-    return null;
-  }, [value]);
+  if (videos.length === 0) return null;
+  return (
+    <div className="fs-output-hero">
+      {videos.map((o, i) => {
+        const url = o.path ? mediaURL(projectId, o.path) : null;
+        if (!url || o.kind !== "video") return null;
+        return (
+          <div key={`hero-${o.path ?? i}`} className="fs-output-hero-item">
+            <div className="fs-output-hero-label">{o.label}</div>
+            <video className="fs-preview-video" src={url} controls preload="metadata" />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
-  useEffect(() => {
-    if (!path) return;
-    const lower = path.toLowerCase();
-    if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
-      setThumb(`/thumb/${encodeURIComponent(projectId)}/${encodeURIComponent(path)}?w=240`);
-    } else {
-      setThumb(null);
-    }
-  }, [path, projectId]);
+// 本节点输出 = 按 manifest outputs 声明推导:媒体文件(资产/渲染视频)平铺 + 产物 JSON
+function OutputGrid({state, stage}: {state: BoardState; stage: StageState}) {
+  const cards = declaredOutputs(state, stage);
+  const fallback = cards.length === 0 ? fallbackViews(state, stage) : [];
+  if (cards.length === 0 && fallback.length === 0) return null;
 
-  const summary = useMemo(() => {
-    if (typeof value === "string") return value.slice(0, 120);
-    if (value && typeof value === "object") {
-      const text = JSON.stringify(value);
-      return text.length > 120 ? text.slice(0, 120) + "…" : text;
-    }
-    return String(value ?? "");
-  }, [value]);
+  const media = cards.filter((c) => c.kind !== "data" && c.kind !== "text");
+  const videos = media.filter((c) => c.kind === "video");
+  const showHero = (stage.name === "compose" || stage.name === "publish") && videos.length > 0;
+  const textItems = [
+    ...cards
+      .filter((c) => c.kind === "data")
+      .map((o, i) => ({id: `data-${o.label}-${i}`, label: o.label, artifact: o.data})),
+    ...cards
+      .filter((c) => c.kind === "text")
+      .map((o, i) => ({id: `text-${o.label}-${i}`, label: o.label, artifact: o.text ?? ""})),
+    ...fallback.map(({label, value}) => ({id: `fb-${label}`, label, artifact: value})),
+  ];
 
   return (
-    <div className="fs-ref-card">
-      {thumb && <img className="fs-ref-thumb" src={thumb} alt={name} />}
-      <div className="fs-ref-body">
-        <div className="fs-ref-name">{artifactLabel(name)}</div>
-        <div className="fs-ref-summary">{thumb ? "" : summary}</div>
-        {path && (
-          <a className="fs-link fs-ref-link" href={`/media/${encodeURIComponent(projectId)}/${encodeURIComponent(path)}`} target="_blank" rel="noreferrer">
-            打开
-          </a>
+    <>
+      {showHero && <OutputHeroVideos projectId={state.project_id} videos={videos} />}
+      <ArtifactStrip
+        projectId={state.project_id}
+        mediaItems={media}
+        textItems={textItems}
+      />
+    </>
+  );
+}
+
+function artifactFieldCount(artifact: unknown): number {
+  if (artifact && typeof artifact === "object" && !Array.isArray(artifact)) {
+    return Object.keys(artifact as Record<string, unknown>).length;
+  }
+  if (Array.isArray(artifact)) return artifact.length;
+  return 0;
+}
+
+function artifactToJson(artifact: unknown): string {
+  if (typeof artifact === "string") return artifact;
+  try {
+    return JSON.stringify(artifact ?? null, null, 2);
+  } catch {
+    return String(artifact ?? "");
+  }
+}
+
+// JSON 产物模态框
+function ArtifactModal({
+  label,
+  artifact,
+  onClose,
+}: {
+  label: string;
+  artifact: unknown;
+  onClose: () => void;
+}) {
+  const json = useMemo(() => artifactToJson(artifact), [artifact]);
+  const fieldCount = useMemo(() => artifactFieldCount(artifact), [artifact]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fs-modal" onClick={onClose}>
+      <div className="fs-modal-body fs-modal-body--json" onClick={(e) => e.stopPropagation()}>
+        <button type="button" className="fs-modal-close" onClick={onClose} aria-label="关闭">✕</button>
+        <div className="fs-modal-title">
+          {label}
+          {fieldCount > 0 ? ` · ${fieldCount} 字段` : ""}
+        </div>
+        <pre className="fs-modal-json">{json}</pre>
+      </div>
+    </div>
+  );
+}
+
+// 产物条:图2式 — 图片缩略卡 + 文本卡,同一行,点击模态框查看
+function MediaTile({
+  output,
+  projectId,
+  onOpen,
+}: {
+  output: StageOutputItem;
+  projectId: string;
+  onOpen: () => void;
+}) {
+  const url = output.path ? mediaURL(projectId, output.path) : null;
+
+  if (output.kind === "audio" && url) {
+    return (
+      <div className="fs-artifact-tile fs-artifact-tile--audio" title={output.label}>
+        <span className="fs-artifact-tile-kind">音频</span>
+        <span className="fs-artifact-tile-label">{output.label}</span>
+        <audio className="fs-artifact-tile-audio" src={url} controls preload="none" />
+      </div>
+    );
+  }
+
+  if (!url) return null;
+
+  return (
+    <button
+      type="button"
+      className="fs-artifact-tile fs-artifact-tile--media"
+      onClick={onOpen}
+      title={`查看 ${output.label}`}
+    >
+      <img
+        className="fs-artifact-tile-thumb"
+        src={thumbURL(projectId, output.path!, 240)}
+        alt={output.label}
+        loading="lazy"
+      />
+      <span className="fs-artifact-tile-label">
+        {output.kind === "video" ? "▶ " : ""}
+        {output.label}
+      </span>
+    </button>
+  );
+}
+
+function ArtifactStrip({
+  projectId,
+  textItems = [],
+  mediaItems = [],
+  onRemoveText,
+}: {
+  projectId: string;
+  textItems?: {id: string; label: string; artifact: unknown; removable?: boolean}[];
+  mediaItems?: StageOutputItem[];
+  onRemoveText?: (id: string) => void;
+}) {
+  const [openTextId, setOpenTextId] = useState<string | null>(null);
+  const [openMedia, setOpenMedia] = useState<StageOutputItem | null>(null);
+  const openText = textItems.find((it) => it.id === openTextId) ?? null;
+
+  if (!textItems.length && !mediaItems.length) return null;
+
+  return (
+    <>
+      <div className="fs-artifact-strip">
+        {mediaItems.map((o, i) => (
+          <MediaTile
+            key={`m-${o.path ?? o.label}-${i}`}
+            output={o}
+            projectId={projectId}
+            onOpen={() => setOpenMedia(o)}
+          />
+        ))}
+        {textItems.map((it) => (
+          <div key={it.id} className="fs-artifact-tile-wrap">
+            <button
+              type="button"
+              className="fs-artifact-tile fs-artifact-tile--text"
+              onClick={() => setOpenTextId(it.id)}
+              title={`查看 ${it.label}`}
+            >
+              <span className="fs-artifact-tile-kind">文本</span>
+              <span className="fs-artifact-tile-label">{it.label}</span>
+            </button>
+            {it.removable && onRemoveText && (
+              <button
+                type="button"
+                className="fs-artifact-tile-x"
+                onClick={() => onRemoveText(it.id)}
+                title="移除参考"
+                aria-label="移除参考"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {openText && (
+        <ArtifactModal
+          label={openText.label}
+          artifact={openText.artifact}
+          onClose={() => setOpenTextId(null)}
+        />
+      )}
+      {openMedia && (
+        <MediaModal output={openMedia} projectId={projectId} onClose={() => setOpenMedia(null)} />
+      )}
+    </>
+  );
+}
+
+// 媒体弹框:全屏模态显示视频/图片(点击遮罩或 Esc 关闭)
+function MediaModal({output, projectId, onClose}: {output: StageOutputItem; projectId: string; onClose: () => void}) {
+  const url = output.path ? mediaURL(projectId, output.path) : null;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (!url) return null;
+  return (
+    <div className="fs-modal" onClick={onClose}>
+      <div className="fs-modal-body" onClick={(e) => e.stopPropagation()}>
+        <button className="fs-modal-close" onClick={onClose} aria-label="关闭">✕</button>
+        <div className="fs-modal-title">{output.label}</div>
+        {output.kind === "video" ? (
+          <video className="fs-modal-media" src={url} controls autoPlay />
+        ) : (
+          <img className="fs-modal-media" src={url} alt={output.label} />
         )}
       </div>
-      {removable && <button className="fs-ref-x" onClick={onRemove} title="移除参考">✕</button>}
     </div>
   );
 }
@@ -355,7 +698,11 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
   const productionInputs = projectSettings?.production_inputs ?? {};
   const st = stage!;
   const artifacts = state.artifacts ?? {};
-  const activeRun = state.runs?.find((r) => r.task_id === st.active_run_id);
+  const activeRun =
+    state.runs?.find((r) => r.task_id === st.active_run_id)
+    ?? state.runs?.find(
+      (r) => r.stage === st.name && (r.status === "queued" || r.status === "running"),
+    );
   const failedRun = failedRunForStage(state, st.name);
   const logRun = latestRunForStage(state, st.name) ?? failedRun;
   const failureMsg = failureMessage(st, state);
@@ -548,8 +895,13 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
     <div className="fs-ops" onClick={(e) => e.stopPropagation()}>
       <div className="fs-ops-head">
         <div className="fs-ops-title">
-          {stageLabel(st.name)}
-          <span className={`fs-badge fs-badge--${scls}`}>{railStatusLabel(st)}</span>
+          <div className="fs-ops-title-row">
+            {stageLabel(st.name)}
+            <span className={`fs-badge fs-badge--${scls}`}>{railStatusLabel(st)}</span>
+          </div>
+          {st.status === "in_progress" && st.activity_hint && (
+            <div className="fs-ops-activity">{st.activity_hint}</div>
+          )}
         </div>
 
         <div className="fs-ops-actions">
@@ -612,6 +964,12 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
 
       {err && <div className="fs-error">{err}</div>}
 
+      <div className="fs-ops-content">
+      {/* 输入(常驻顶部,不随 tab 切换):上个节点的输出 — 必需数据流 */}
+      <div className="fs-input-top">
+        <InputSlot state={state} stage={st} />
+      </div>
+
       <div className="fs-ops-tabs">
         <button className={`fs-tab${tab === "see" ? " active" : ""}`} onClick={() => setTab("see")}>看</button>
         <button className={`fs-tab${tab === "edit" ? " active" : ""}`} onClick={() => setTab("edit")}>改</button>
@@ -620,19 +978,19 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
       <div className="fs-ops-body">
         {tab === "see" && (
           <div className="fs-see">
+            {/* 本节点内容 */}
             <div className="fs-see-col">
-              <div className="fs-section-title">本节点内容</div>
+              <div className="fs-section-title">{st.name === "compose" ? "合成输出" : "本节点内容"}</div>
+              <OutputGrid state={state} stage={st} />
               <PreviewPane state={state} stage={st} playbookLabels={playbookLabels} />
             </div>
-            <div className="fs-see-col">
-              <ReferenceSlot
-                state={state}
-                stage={st}
-                extraRefs={extraRefs}
-                onAddRef={(n) => setExtraRefs((r) => [...r, n])}
-                onRemoveRef={(n) => setExtraRefs((r) => r.filter((x) => x !== n))}
-              />
-            </div>
+            {/* 参考素材:辅助参考,可追加 */}
+            <ReferenceSlot
+              state={state}
+              extraRefs={extraRefs}
+              onAddRef={(n) => setExtraRefs((r) => [...r, n])}
+              onRemoveRef={(n) => setExtraRefs((r) => r.filter((x) => x !== n))}
+            />
           </div>
         )}
 
@@ -668,6 +1026,7 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
             )}
           </div>
         )}
+      </div>
       </div>
 
       {hasProviderBar && (

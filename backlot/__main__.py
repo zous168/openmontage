@@ -20,6 +20,7 @@ import urllib.request
 import webbrowser
 
 from backlot import API_VERSION, DEFAULT_PORT
+from lib.python_runtime import ensure_repo_interpreter, openmontage_python_env, resolve_openmontage_python
 
 
 def _port() -> int:
@@ -103,8 +104,10 @@ def _stop_listener(port: int) -> None:
 
 def _spawn_server(port: int) -> None:
     """Start the server as a detached background process."""
-    cmd = [sys.executable, "-m", "backlot", "serve", "--port", str(port)]
+    py = str(resolve_openmontage_python())
+    cmd = [py, "-m", "backlot", "serve", "--port", str(port)]
     kwargs: dict = {
+        "env": openmontage_python_env(),
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
         "stdin": subprocess.DEVNULL,
@@ -157,6 +160,7 @@ def cmd_serve(port: int) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    ensure_repo_interpreter()
     parser = argparse.ArgumentParser(prog="backlot", description=__doc__)
     sub = parser.add_subparsers(dest="command")
 

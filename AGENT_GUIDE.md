@@ -376,8 +376,10 @@ If the folder has tracks, the proposal and asset stages should present them as o
 
 Do this before any creative work. **Use `provider_menu_summary()` first — it's the human-ready rollup.** The raw `support_envelope()` dump is a firehose (megabytes of JSON on a well-configured machine); pasting it into chat will bury the user.
 
+**Use the repo interpreter** (not Cursor/host `python`). On Windows: `.venv/Scripts/python.exe`. macOS/Linux: `.venv/bin/python`. Or set `OPENMONTAGE_PYTHON` in `.env`. Host venvs without torch/diffusers will falsely report `video_selector` unavailable even when local LTX is installed in the repo venv.
+
 ```bash
-python -c "
+.venv/Scripts/python.exe -c "
 from tools.tool_registry import registry
 import json
 registry.discover()
@@ -396,10 +398,10 @@ Then, for deeper inspection (only when the summary isn't enough):
 
 ```bash
 # Full menu — grouped available/unavailable per capability.
-python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
+.venv/Scripts/python.exe -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
 
 # Raw envelope — every tool's full contract. Slow/firehose; use for debugging only.
-python -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.support_envelope(), indent=2))"
+.venv/Scripts/python.exe -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.support_envelope(), indent=2))"
 ```
 
 Then:
@@ -599,13 +601,16 @@ All tool classes use **PascalCase without a "Tool" suffix**. When importing tool
 | `tools.audio.music_gen` | `MusicGen` | ~~MusicGenTool~~ |
 | `tools.video.video_compose` | `VideoCompose` | ~~VideoComposeTool~~ |
 | `tools.audio.audio_mixer` | `AudioMixer` | ~~AudioMixerTool~~ |
-| `tools.tts.elevenlabs_tts` | `ElevenLabsTTS` | ~~ElevenLabsTTSTool~~ |
+| `tools.audio.elevenlabs_tts` | `ElevenLabsTTS` | ~~ElevenLabsTTSTool~~ |
 | `tools.analysis.transcriber` | `Transcriber` | ~~TranscriberTool~~ |
 | `tools.subtitle.subtitle_gen` | `SubtitleGen` | ~~SubtitleGenTool~~ |
 
 When in doubt, check: `grep "^class " tools/<path>.py`
 
 All tools call via `.execute(params_dict)` (returns `ToolResult` with `.success`, `.data`, `.error`), NOT `.run()`.
+
+Call pattern: `registry.get("video_selector").execute({...})` or `registry.execute("video_selector", {...})`.
+Do **not** import provider modules via stale paths like `tools.tts` — use the registry or `tools.audio.*` / `tools.video.*` paths from `grep "^class "`.
 
 ### Selector Pattern
 

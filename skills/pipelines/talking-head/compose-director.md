@@ -475,3 +475,9 @@ visual_qa.execute({
 ### 第 10 步：提交
 
 对照 schema 校验 render_report，并通过检查点持久化。
+
+**输出唯一性(硬性)**:
+- `render_report.outputs` 不得包含重复产物:同一路径,或相同内容(相同 file_size_bytes + duration_seconds + resolution)只记录一次。
+- 重渲染时:用新输出**替换**旧条目,绝不追加(追加会产生重复输出,校验会拦截)。
+- 不同运行时/不同内容的变体(如 FFmpeg 版与 Remotion 字幕版**内容确实不同**)可并列记录,但必须内容真实不同。
+

@@ -3,7 +3,7 @@
 ## 何时使用
 
 为视频生成家族（`video_selector`、`seedance_video`、
-`heygen_video`、`wan_video`、`hunyuan_video`、`ltx_video_local`、`ltx_video_modal`、
+`heygen_video`、`hunyuan_video`、`ltx_video_local`、`ltx_video_modal`、
 `cogvideo_video`）撰写提示词时。本技能涵盖在所有视频生成模型上
 都适用的通用提示词词汇表。关于**首选的高端默认项**，见下表中的 Seedance 2.0
 一行。

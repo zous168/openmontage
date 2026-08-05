@@ -114,3 +114,6 @@ _forensics_store/
 
 # React Flow 管线图模式构建产物(可 npm run build:flow 再生成)
 /backlot/ui/flow-dist/
+
+# uv 本地 pip 缓存（Windows 上 F: 盘 cache 可能无写权限）
+.uv-cache/

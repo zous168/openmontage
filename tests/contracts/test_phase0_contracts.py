@@ -490,6 +490,19 @@ class TestToolRegistry:
         assert len(reg.get_by_tier(ToolTier.CORE)) == 1
         assert len(reg.find_by_capability("test")) == 1
 
+    def test_execute_delegates_to_tool(self):
+        reg = ToolRegistry()
+        reg.register(DummyTool())
+        result = reg.execute("dummy", {"x": 1})
+        assert result.success is True
+        assert result.data == {"x": 1}
+
+    def test_execute_unknown_tool(self):
+        reg = ToolRegistry()
+        result = reg.execute("missing_tool", {})
+        assert result.success is False
+        assert "Unknown tool" in (result.error or "")
+
     def test_support_envelope(self):
         reg = ToolRegistry()
         reg.register(DummyTool())

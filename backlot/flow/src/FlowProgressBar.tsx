@@ -26,8 +26,11 @@ export function pipelineProgress(state: BoardState): PipelineProgress {
   const next = nextSt ? {name: nextSt.name, label: stageLabel(nextSt.name)} : null;
 
   let summary = `${completed}/${total} ${statusLabel("completed")}`;
-  if (running) summary += ` · ${running.label} ${statusLabel("in_progress")}`;
-  else if (awaiting) summary += ` · ${awaiting.label} ${statusLabel("awaiting_human")}`;
+  if (running) {
+    summary += ` · ${running.label} ${statusLabel("in_progress")}`;
+    const hint = runningSt?.activity_hint;
+    if (hint) summary += ` · ${hint.length > 48 ? `${hint.slice(0, 45)}…` : hint}`;
+  } else if (awaiting) summary += ` · ${awaiting.label} ${statusLabel("awaiting_human")}`;
   else if (next) summary += ` · ${next.label} ${statusLabel("pendingNext")}`;
   else if (failed > 0) summary += ` · ${failed} ${statusLabel("failed")}`;
 

@@ -1,12 +1,14 @@
 import {BaseEdge, getBezierPath, type EdgeProps} from "@xyflow/react";
+import type {EdgeLineStyle, EdgeVariant} from "./edgeStyle";
 
 export interface FlowEdgeData {
-  variant?: "done" | "active" | "await" | "failed" | "pending";
+  variant?: EdgeVariant;
+  lineStyle?: EdgeLineStyle;
   flowing?: boolean;
   [key: string]: unknown;
 }
 
-const STROKE: Record<string, string> = {
+const STROKE: Record<EdgeVariant, string> = {
   done: "var(--green, #3ddc84)",
   active: "var(--accent, #4da3ff)",
   await: "var(--amber, #f0b429)",
@@ -16,7 +18,12 @@ const STROKE: Record<string, string> = {
 
 const DASH = "7 9";
 
-/** 流水线边：流动态为虚线沿路径滑向目标节点 */
+/**
+ * 流水线边渲染：
+ * - 实线：done / active / await
+ * - 虚线：pending / failed
+ * - 进行中进度：蓝色实线 + 沿路径流动光点（不用虚线表示进行中）
+ */
 export function FlowEdge(props: EdgeProps) {
   const {
     id,
@@ -33,8 +40,11 @@ export function FlowEdge(props: EdgeProps) {
 
   const edgeData = (data ?? {}) as FlowEdgeData;
   const variant = edgeData.variant ?? "pending";
-  const flowing = edgeData.flowing === true;
+  const lineStyle: EdgeLineStyle =
+    edgeData.lineStyle ?? (variant === "pending" || variant === "failed" ? "dashed" : "solid");
+  const flowing = edgeData.flowing === true && lineStyle === "solid" && variant === "active";
   const stroke = STROKE[variant] ?? STROKE.pending;
+  const dashed = lineStyle === "dashed";
 
   const [edgePath] = getBezierPath({
     sourceX,
@@ -45,40 +55,20 @@ export function FlowEdge(props: EdgeProps) {
     targetPosition,
   });
 
-  if (flowing) {
-    return (
-      <>
-        {/* 虚线底轨 */}
+  return (
+    <>
+      {flowing && (
         <BaseEdge
-          id={id}
+          id={`${id}-track`}
           path={edgePath}
-          markerEnd={markerEnd}
           style={{
             ...style,
             stroke,
             strokeWidth: 2,
-            strokeDasharray: DASH,
-            opacity: 0.28,
+            opacity: 0.22,
           }}
         />
-        {/* 虚线流动层 */}
-        <path
-          className="fs-edge-flow-dash"
-          d={edgePath}
-          fill="none"
-          stroke={stroke}
-          strokeWidth={2.5}
-          strokeLinecap="round"
-          strokeDasharray={DASH}
-        />
-      </>
-    );
-  }
-
-  const dashed = variant === "pending" || variant === "failed";
-
-  return (
-    <>
+      )}
       <BaseEdge
         id={id}
         path={edgePath}
@@ -86,12 +76,22 @@ export function FlowEdge(props: EdgeProps) {
         style={{
           ...style,
           stroke,
-          strokeWidth: 2,
+          strokeWidth: flowing ? 2.5 : 2,
           strokeDasharray: dashed ? DASH : undefined,
           opacity: dashed ? 0.85 : 1,
         }}
       />
-      {variant === "await" && (
+      {flowing && (
+        <>
+          <circle className="fs-edge-flow-dot fs-edge-flow-dot--glow" r={5} fill={stroke}>
+            <animateMotion dur="1.35s" repeatCount="indefinite" path={edgePath} calcMode="linear" />
+          </circle>
+          <circle className="fs-edge-flow-dot fs-edge-flow-dot--core" r={2.5} fill="#fff">
+            <animateMotion dur="1.35s" repeatCount="indefinite" path={edgePath} calcMode="linear" />
+          </circle>
+        </>
+      )}
+      {variant === "await" && !flowing && (
         <path
           d={edgePath}
           fill="none"

@@ -115,6 +115,15 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
                         str(name) for name in (s.get("produces") or [])
                         if isinstance(name, str) and name
                     ],
+                    "outputs": [
+                        {
+                            "kind": str(o.get("kind")),
+                            "label": str(o.get("label")),
+                            "source": o.get("source"),
+                        }
+                        for o in (s.get("outputs") or [])
+                        if isinstance(o, dict) and o.get("kind") and o.get("label")
+                    ],
                     "tools_available": [
                         str(tool) for tool in (s.get("tools_available") or [])
                         if isinstance(tool, str) and tool
@@ -122,6 +131,10 @@ def _load_pipeline_meta(pipeline_type: Optional[str]) -> dict[str, Any]:
                     "required_tools": [
                         str(tool) for tool in (s.get("required_tools") or [])
                         if isinstance(tool, str) and tool
+                    ],
+                    "required_artifacts_in": [
+                        str(name) for name in (s.get("required_artifacts_in") or [])
+                        if isinstance(name, str) and name
                     ],
                 }
                 for s in manifest.get("stages", [])
@@ -1306,8 +1319,6 @@ def _build_project_summary(
         })
 
     for rel_dir, kind, label in (
-        ("exports/thumbnails", "image", "封面"),
-        ("exports/video", "video", "导出成片"),
         ("assets/images", "image", None),
         ("assets/video", "video", None),
         ("assets/audio", "audio", None),
@@ -1325,10 +1336,39 @@ def _build_project_summary(
                     _rel(project_dir, f),
                     label=label or f.name,
                     media_type=kind,
-                    source_artifact="publish_log" if rel_dir.startswith("exports/") else None,
+                    source_artifact=None,
                 ))
         except OSError:
             continue
+
+    publish_stage = next(
+        (s for s in stages if s.get("name") == "publish"),
+        None,
+    )
+    publish_active = publish_stage and publish_stage.get("status") in (
+        "completed", "in_progress", "awaiting_human", "failed",
+    )
+    if publish_active or "publish_log" in artifacts:
+        for rel_dir, kind, label in (
+            ("exports/thumbnails", "image", "封面"),
+            ("exports/video", "video", "导出成片"),
+        ):
+            d = project_dir / rel_dir
+            if not d.is_dir():
+                continue
+            try:
+                for f in sorted(d.iterdir()):
+                    if not f.is_file():
+                        continue
+                    add_media(_normalize_media_entry(
+                        project_dir,
+                        _rel(project_dir, f),
+                        label=label or f.name,
+                        media_type=kind,
+                        source_artifact="publish_log",
+                    ))
+            except OSError:
+                continue
 
     present = sum(1 for item in artifact_list if item["present"])
     completed = sum(
@@ -1431,9 +1471,17 @@ def _first_actionable_stage(stages: list[dict[str, Any]]) -> Optional[str]:
         if st.get("undeclared") or st.get("blocked_by_upstream"):
             continue
         status = st.get("status") or "pending"
-        if status in ("pending", "in_progress"):
+        if status in ("pending", "in_progress", "failed"):
             return str(st["name"])
     return None
+
+
+def _stage_has_progress(st: dict[str, Any]) -> bool:
+    """True when a stage checkpoint exists and work has moved past pure pending."""
+    status = st.get("status") or "pending"
+    if status in ("awaiting_human", "completed", "in_progress", "failed"):
+        return True
+    return bool(st.get("timestamp")) and status != "pending"
 
 
 def _enforce_stage_order(stages: list[dict[str, Any]]) -> None:
@@ -1451,6 +1499,23 @@ def _enforce_stage_order(stages: list[dict[str, Any]]) -> None:
             st["blocked_by_upstream"] = True
         elif has_checkpoint and status in _UPSTREAM_HARD_BLOCK:
             blocked = True
+
+
+def _reconcile_superseded_stages(stages: list[dict[str, Any]]) -> None:
+    """Pending upstream stages are misleading once a later stage already has a checkpoint."""
+    last_progress = -1
+    for i, st in enumerate(stages):
+        if st.get("undeclared"):
+            continue
+        if _stage_has_progress(st):
+            last_progress = i
+    if last_progress < 0:
+        return
+    for i, st in enumerate(stages):
+        if st.get("undeclared") or i >= last_progress:
+            continue
+        if (st.get("status") or "pending") == "pending":
+            st["superseded_by_downstream"] = True
 
 
 def _infer_in_progress_from_events(
@@ -1515,6 +1580,25 @@ def _infer_in_progress_from_events(
                 return
 
 
+def _activity_hint_from_log_tail(tail: str) -> Optional[str]:
+    """Human-readable tail line for the flow rail (headless agent log heartbeat)."""
+    if not tail or not str(tail).strip():
+        return None
+    prose: Optional[str] = None
+    toolish: Optional[str] = None
+    for raw in reversed(str(tail).splitlines()):
+        line = raw.strip()
+        if not line or (line.startswith("{") and line.endswith("}")):
+            continue
+        clipped = line[:117] + "…" if len(line) > 120 else line
+        if line.startswith("▸"):
+            toolish = toolish or clipped
+            continue
+        prose = clipped
+        break
+    return prose or toolish
+
+
 def _apply_headless_run_to_stages(
     stages: list[dict[str, Any]],
     runs: list[dict[str, Any]],
@@ -1532,8 +1616,35 @@ def _apply_headless_run_to_stages(
         if st.get("status") == "pending":
             st["status"] = "in_progress"
             st["inferred_from_run"] = True
+        if st.get("status") == "in_progress":
             st["active_run_id"] = active.get("task_id")
+            hint = _activity_hint_from_log_tail(active.get("log_tail") or "")
+            if hint:
+                st["activity_hint"] = hint
         return
+
+
+def _enrich_stage_live_activity(
+    stages: list[dict[str, Any]],
+    runs: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    pipeline_meta: dict[str, Any],
+    *,
+    now: Optional[float] = None,
+) -> None:
+    """Attach live tool hints for in_progress stages (events beat stale log tails)."""
+    active_tools = _active_top_level_tools(events, now=now)
+    if not active_tools:
+        return
+    tool_to_stage = _build_tool_to_stage(pipeline_meta)
+    for st in stages:
+        if st.get("status") != "in_progress":
+            continue
+        name = st.get("name")
+        for tool in sorted(active_tools):
+            if tool_to_stage.get(tool) == name:
+                st["activity_hint"] = f"正在运行 {tool}"
+                break
 
 
 def _failure_hint_from_run(run: dict[str, Any]) -> Optional[str]:
@@ -1594,7 +1705,10 @@ def _mark_next_stage(stages: list[dict[str, Any]], next_stage: Optional[str]) ->
     if not next_stage:
         return
     for st in stages:
-        st["is_next"] = st.get("name") == next_stage and st.get("status") == "pending"
+        st["is_next"] = (
+            st.get("name") == next_stage
+            and st.get("status") in ("pending", "failed")
+        )
 
 
 def _production_active(
@@ -1624,6 +1738,10 @@ def _last_activity(project_dir: Path) -> float:
         art = project_dir / "artifacts"
         if art.is_dir():
             candidates.extend(art.glob("*.json"))
+        runs = project_dir / "runs"
+        if runs.is_dir():
+            candidates.extend(runs.glob("*.json"))
+            candidates.extend(runs.glob("*.log"))
         for p in candidates:
             try:
                 latest = max(latest, p.stat().st_mtime)
@@ -1681,12 +1799,14 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
     now = time.time()
 
     _enforce_stage_order(stages)
+    _reconcile_superseded_stages(stages)
     _infer_in_progress_from_events(
         stages, events, pipeline_meta, last_activity=last_activity, now=now,
     )
 
     runs = _collect_runs(project_dir)
     _apply_headless_run_to_stages(stages, runs)
+    _enrich_stage_live_activity(stages, runs, events, pipeline_meta, now=now)
     _enrich_stage_errors_from_runs(stages, runs)
 
     from lib.checkpoint import get_next_stage
@@ -1707,12 +1827,17 @@ def load_board_state(project_dir: Path) -> dict[str, Any]:
             cost = {"total_spent_usd": total}
 
     # Stall detection: an in_progress stage that stopped writing anything.
+    active_run_stages = {
+        r.get("stage")
+        for r in runs
+        if r.get("status") in ("queued", "running") and r.get("stage")
+    }
     for stage_entry in stages:
-        if (
-            stage_entry["status"] == "in_progress"
-            and last_activity
-            and (now - last_activity) > STALL_WINDOW_SECONDS
-        ):
+        if stage_entry["status"] != "in_progress":
+            continue
+        if stage_entry.get("name") in active_run_stages:
+            continue
+        if last_activity and (now - last_activity) > STALL_WINDOW_SECONDS:
             stage_entry["stalled"] = True
             stage_entry["stalled_minutes"] = int((now - last_activity) / 60)
 

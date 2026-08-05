@@ -37,8 +37,8 @@ class HeyGenVideo(BaseTool):
         "  set HEYGEN_API_KEY=your_key_here\n"
         "Get a key at https://app.heygen.com/settings/api"
     )
-    fallback = "wan_video"
-    fallback_tools = ["wan_video", "hunyuan_video", "ltx_video_local", "cogvideo_video", "ltx_video_modal", "image_selector"]
+    fallback = "ltx_video_local"
+    fallback_tools = ["ltx_video_local", "hunyuan_video", "cogvideo_video", "ltx_video_modal", "image_selector"]
     agent_skills = ["ai-video-gen", "create-video"]
 
     capabilities = ["text_to_video", "image_to_video", "provider_selection"]

@@ -31,8 +31,8 @@ class HunyuanVideo(BaseTool):
     runtime = ToolRuntime.LOCAL_GPU
 
     install_instructions = local_install_instructions()
-    fallback = "wan_video"
-    fallback_tools = ["wan_video", "ltx_video_local", "cogvideo_video", "image_selector"]
+    fallback = "ltx_video_local"
+    fallback_tools = ["ltx_video_local", "cogvideo_video", "image_selector"]
     agent_skills = ["ltx2"]
 
     capabilities = ["text_to_video", "image_to_video"]
