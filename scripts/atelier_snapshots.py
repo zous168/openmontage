@@ -29,6 +29,11 @@ NPX = shutil.which("npx") or "npx"
 REPO_ROOT = Path(__file__).resolve().parent.parent
 COMPOSER_DIR = REPO_ROOT / "remotion-composer"
 
+# 供下面 import lib/tools 用；原先延后到 main() 里才插，导致本模块只能自己拼项目路径。
+sys.path.insert(0, str(REPO_ROOT / "agent-hub" / "src"))
+
+from plugins.openmontage.lib.paths import PROJECTS_DIR  # noqa: E402
+
 
 def _load(path: Path) -> dict:
     try:
@@ -48,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--only", nargs="*", help="only these scene ids")
     args = ap.parse_args(argv)
 
-    proj = REPO_ROOT / "projects" / args.slug
+    proj = PROJECTS_DIR / args.slug
     if not proj.is_dir():
         print(f"error: no project at {proj}", file=sys.stderr)
         return 2
@@ -77,8 +82,7 @@ def main(argv: list[str] | None = None) -> int:
         fps = int(props.get("fps") or 30)
 
     # Stage the project into remotion-composer so webpack resolves node_modules.
-    sys.path.insert(0, str(REPO_ROOT))
-    from tools.video.video_compose import VideoCompose  # noqa: E402
+    from plugins.openmontage.tools.video.video_compose import VideoCompose
     staged_entry = VideoCompose()._stage_atelier_project(entry, COMPOSER_DIR)
 
     snap_dir = proj / "snapshots"

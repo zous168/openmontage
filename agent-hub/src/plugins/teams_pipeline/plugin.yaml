@@ -1,0 +1,15 @@
+name: teams_pipeline
+version: 0.1.0
+description: "Microsoft Teams meeting pipeline plugin with durable runtime state and operator CLI flows for Graph-backed transcript-first meeting summaries."
+author: NousResearch
+kind: standalone
+platforms:
+  - linux
+  - macos
+  - windows
+# LT-006.04.03：Teams 出站投递器经 ServiceRegistry 解析（消 plugin↔plugin 直 import）。
+# 可选 + lazy：platforms/teams 未加载时优雅降级，不约束加载序、不 fail-fast。
+requires_services:
+  - key: teams.outbound.writer@1
+    optional: true
+    binding: lazy

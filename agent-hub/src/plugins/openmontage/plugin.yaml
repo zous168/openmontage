@@ -1,0 +1,23 @@
+name: openmontage
+version: 0.1.0
+description: >-
+  OpenMontage 视频生产能力：指令驱动的流水线（提案 → 脚本 → 分镜 → 素材 → 剪辑 →
+  合成 → 发布），带阶段审批门与契约审计。大脑负责编排与对话，本插件负责生产。
+author: OpenMontage
+kind: backend
+platforms:
+  - linux
+  - macos
+  - windows
+provides_tools:
+  # 只读面：状态、能力、流水线定义
+  - om_preflight
+  - om_catalog
+  - om_pipeline
+  - om_project
+  # 阶段导演技能按 next_stage 动态供给（不常驻技能索引）
+  - om_director
+  # 执行面：异步 job（视频生成是分钟级，不能同步阻塞对话）
+  - om_run
+  - om_job
+  - om_state

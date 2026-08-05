@@ -1,0 +1,5 @@
+# agent-hub 本地运行残留。
+# node_modules/、.venv/、__pycache__/、dist/、build/ 与各类缓存已由仓库根 .gitignore 覆盖，此处不重复。
+
+/logs/
+*.log

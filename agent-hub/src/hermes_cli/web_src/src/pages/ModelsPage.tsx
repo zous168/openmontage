@@ -1,0 +1,1077 @@
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import {
+  Brain,
+  ChevronDown,
+  Cpu,
+  DollarSign,
+  Eye,
+  RefreshCw,
+  Settings2,
+  Star,
+  Wrench,
+  X,
+  Zap,
+} from "lucide-react";
+import { api } from "@/lib/api";
+import type {
+  AuxiliaryModelsResponse,
+  AuxiliaryTaskAssignment,
+  FetchJSONOptions,
+  ModelsAnalyticsModelEntry,
+  ModelsAnalyticsResponse,
+} from "@/lib/api";
+import { timeAgo, cn, themedBody } from "@/lib/utils";
+import { formatTokenCount } from "@/lib/format";
+import { Button } from "@nous-research/ui/ui/components/button";
+import { Spinner } from "@nous-research/ui/ui/components/spinner";
+import { Stats } from "@nous-research/ui/ui/components/stats";
+import { Card, CardContent, CardHeader, CardTitle } from "@nous-research/ui/ui/components/card";
+import { Badge } from "@nous-research/ui/ui/components/badge";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useModalBehavior } from "@/hooks/useModalBehavior";
+import { usePageHeader } from "@/contexts/usePageHeader";
+import { useI18n } from "@/i18n";
+import { PluginSlot } from "@/plugins";
+import { ModelPickerDialog } from "@/components/ModelPickerDialog";
+import { resolveAuxTasks, auxTaskLabel, AUX_TASK_KEYS } from "@/lib/aux-tasks";
+
+const PERIOD_OPTIONS = [
+  { days: 7, key: "d7" as const },
+  { days: 30, key: "d30" as const },
+  { days: 90, key: "d90" as const },
+] as const;
+
+/** /models 页写全局 config，不走 profile 作用域。 */
+function globalModelApiOpts(): FetchJSONOptions | undefined {
+  return { skipProfileScope: true };
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+function formatCost(n: number): string {
+  if (n >= 1) return `$${n.toFixed(2)}`;
+  if (n >= 0.01) return `$${n.toFixed(3)}`;
+  if (n > 0) return `$${n.toFixed(4)}`;
+  return "$0";
+}
+
+/** Short model name: strip vendor prefix like "openrouter/" or "anthropic/". */
+function shortModelName(model: string): string {
+  const slashIdx = model.indexOf("/");
+  if (slashIdx > 0) return model.slice(slashIdx + 1);
+  return model;
+}
+
+/** Extract vendor prefix from a model string like "anthropic/claude-opus-4.7" → "anthropic". */
+function modelVendor(model: string, fallback?: string): string {
+  const slashIdx = model.indexOf("/");
+  if (slashIdx > 0) return model.slice(0, slashIdx);
+  return fallback || "";
+}
+
+function TokenBar({
+  input,
+  output,
+  cacheRead,
+  reasoning,
+}: {
+  input: number;
+  output: number;
+  cacheRead: number;
+  reasoning: number;
+}) {
+  const { t } = useI18n();
+  const total = input + output + cacheRead + reasoning;
+  if (total === 0) return null;
+
+  // Segments carry a CSS color value (hex or `var(--token)`) rather than
+  // a Tailwind class so the input/output series can pick up the active
+  // theme's `--series-*-token` vars — see `themes/types.ts`
+  // `ThemeSeriesColors`. The /60–/70 fade on the bar is applied via
+  // color-mix on the same value so themes don't need to ship two
+  // separate hex literals.
+  const segments: Array<{ color: string; label: string; value: number }> = [
+    { value: cacheRead, color: "#60a5fa", label: t.models2?.cacheRead ?? "Cache Read" }, // tailwind blue-400
+    { value: reasoning, color: "#c084fc", label: t.models2?.reasoning ?? "Reasoning" }, // tailwind purple-400
+    { value: input, color: "var(--series-input-token)", label: t.models2?.input ?? "Input" },
+    { value: output, color: "var(--series-output-token)", label: t.models2?.output ?? "Output" },
+  ].filter((s) => s.value > 0);
+
+  return (
+    <div className="space-y-1.5">
+      {/* Stacked bar — segments fill proportionally to their share of total */}
+      <div className="relative flex min-h-[1.5rem] w-full items-stretch overflow-hidden">
+        {segments.map((s, i) => (
+          <div
+            key={i}
+            className="relative flex items-center transition-all duration-300"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${s.color} 70%, transparent)`,
+              width: `${(s.value / total) * 100}%`,
+            }}
+          >
+            {/* Stepped fill pattern overlay */}
+            <div
+              className="absolute inset-0 opacity-30"
+              style={{
+                backgroundImage:
+                  "repeating-linear-gradient(to right, transparent 0 0.4rem, currentColor 0.4rem calc(0.4rem + 1px))",
+              }}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-secondary">
+        {segments.map((s, i) => (
+          <span key={i} className="flex items-center gap-1">
+            <span
+              className="inline-block h-1.5 w-1.5 rounded-full"
+              style={{ backgroundColor: s.color }}
+            />
+            {s.label} {formatTokens(s.value)}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CapabilityBadges({
+  capabilities,
+}: {
+  capabilities: ModelsAnalyticsModelEntry["capabilities"];
+}) {
+  const { t } = useI18n();
+  const hasAny =
+    capabilities.supports_tools ||
+    capabilities.supports_vision ||
+    capabilities.supports_reasoning ||
+    capabilities.model_family;
+  if (!hasAny) return null;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {capabilities.supports_tools && (
+        <span className="inline-flex items-center gap-1 bg-success/10 px-1.5 py-0.5 text-xs font-medium text-success">
+          <Wrench className="h-2.5 w-2.5" /> {t.models2?.capTools ?? "Tools"}
+        </span>
+      )}
+      {capabilities.supports_vision && (
+        <span className="inline-flex items-center gap-1 bg-blue-500/10 px-1.5 py-0.5 text-xs font-medium text-blue-600 dark:text-blue-400">
+          <Eye className="h-2.5 w-2.5" /> {t.models2?.capVision ?? "Vision"}
+        </span>
+      )}
+      {capabilities.supports_reasoning && (
+        <span className="inline-flex items-center gap-1 bg-purple-500/10 px-1.5 py-0.5 text-xs font-medium text-purple-600 dark:text-purple-400">
+          <Brain className="h-2.5 w-2.5" /> {t.models2?.capReasoning ?? "Reasoning"}
+        </span>
+      )}
+      {capabilities.model_family && (
+        <span className="inline-flex items-center bg-muted px-1.5 py-0.5 text-xs font-medium text-text-secondary">
+          {capabilities.model_family}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Per-card "Use as" menu                                              */
+/* ──────────────────────────────────────────────────────────────────── */
+
+function UseAsMenu({
+  provider,
+  model,
+  isMain,
+  mainAuxTask,
+  onAssigned,
+}: {
+  provider: string;
+  model: string;
+  /** True when this card's model+provider match config.yaml's main slot. */
+  isMain: boolean;
+  /** If this model is assigned to a specific aux task, that task's key. */
+  mainAuxTask: string | null;
+  onAssigned(): void;
+}) {
+  const { t } = useI18n();
+  const auxTasks = resolveAuxTasks(t);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [pendingConfirm, setPendingConfirm] = useState<{
+    message: string;
+    scope: "main" | "auxiliary";
+    task: string;
+  } | null>(null);
+
+  const assign = async (
+    scope: "main" | "auxiliary",
+    task: string,
+    confirmExpensiveModel = false,
+  ) => {
+    if (!provider || !model) {
+      setError(t.models2?.errorMissingProviderModel ?? "Missing provider/model");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await api.setModelAssignment({
+        confirm_expensive_model: confirmExpensiveModel,
+        scope,
+        provider,
+        model,
+        task,
+      }, globalModelApiOpts());
+      if (result.confirm_required) {
+        setPendingConfirm({
+          scope,
+          task,
+          message:
+            result.confirm_message ||
+            (t.models2?.expensiveModelFallback ?? "This model has unusually high known pricing."),
+        });
+        return;
+      }
+      onAssigned();
+      setOpen(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Close on outside click.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && !target.closest?.("[data-use-as-menu]")) setOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  return (
+    <div className="relative" data-use-as-menu>
+      <Button
+        size="sm"
+        outlined
+        onClick={() => setOpen((v) => !v)}
+        disabled={busy}
+        className="h-6 px-2 text-xs uppercase"
+        prefix={busy ? <Spinner /> : null}
+      >
+        {t.models2?.useAsButton ?? "Use as"} <ChevronDown className="h-3 w-3" />
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-50 min-w-[220px] border border-border bg-card shadow-lg">
+          <button
+            type="button"
+            onClick={() => assign("main", "")}
+            disabled={busy}
+            className="flex w-full items-center justify-between px-3 py-2 text-xs uppercase hover:bg-muted/50 disabled:opacity-40"
+          >
+            <span className="flex items-center gap-2">
+              <Star className="h-3 w-3" />
+              {t.models2?.menuMainModel ?? "Main model"}
+            </span>
+            {isMain && (
+              <span className="text-display text-xs tracking-wider text-primary">
+                {t.models2?.menuCurrent ?? "current"}
+              </span>
+            )}
+          </button>
+
+          <div className="border-t border-border/50 px-3 py-1.5 text-display text-xs tracking-wider text-text-tertiary">
+            {t.models2?.menuAuxiliaryTask ?? "Auxiliary task"}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => assign("auxiliary", "")}
+            disabled={busy}
+            className="flex w-full items-center justify-between px-3 py-1.5 text-xs uppercase hover:bg-muted/50 disabled:opacity-40"
+          >
+            <span>{t.models2?.menuAllAuxTasks ?? "All auxiliary tasks"}</span>
+          </button>
+
+          {auxTasks.map((task) => (
+            <button
+              key={task.key}
+              type="button"
+              onClick={() => assign("auxiliary", task.key)}
+              disabled={busy}
+              className="flex w-full items-center justify-between px-3 py-1.5 text-xs uppercase hover:bg-muted/50 disabled:opacity-40"
+            >
+              <span>{task.label}</span>
+              {mainAuxTask === task.key && (
+                <span className="text-display text-xs tracking-wider text-primary">
+                  {t.models2?.menuCurrent ?? "current"}
+                </span>
+              )}
+            </button>
+          ))}
+
+          {error && (
+            <div className="px-3 py-2 text-xs text-destructive border-t border-border/50">
+              {error}
+            </div>
+          )}
+        </div>
+      )}
+      <ConfirmDialog
+        open={!!pendingConfirm}
+        title={t.models2?.expensiveModelTitle ?? "Expensive Model Warning"}
+        description={pendingConfirm?.message}
+        destructive
+        confirmLabel={t.models2?.switchAnyway ?? "Switch anyway"}
+        cancelLabel={t.common.cancel}
+        loading={busy}
+        onCancel={() => setPendingConfirm(null)}
+        onConfirm={() => {
+          const pending = pendingConfirm;
+          if (!pending) return;
+          setPendingConfirm(null);
+          void assign(pending.scope, pending.task, true);
+        }}
+      />
+    </div>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  ModelCard                                                           */
+/* ──────────────────────────────────────────────────────────────────── */
+
+function ModelCard({
+  entry,
+  rank,
+  main,
+  aux,
+  onAssigned,
+  showTokens,
+}: {
+  entry: ModelsAnalyticsModelEntry;
+  rank: number;
+  main: { provider: string; model: string } | null;
+  aux: AuxiliaryTaskAssignment[];
+  onAssigned(): void;
+  showTokens: boolean;
+}) {
+  const { t } = useI18n();
+  const provider = entry.provider || modelVendor(entry.model);
+  const totalTokens = entry.input_tokens + entry.output_tokens;
+  const caps = entry.capabilities;
+
+  const isMain =
+    !!main &&
+    main.provider === provider &&
+    main.model === entry.model;
+
+  // First aux task currently using this model (if any).
+  const mainAuxTask =
+    aux.find(
+      (a) => a.provider === provider && a.model === entry.model,
+    )?.task ?? null;
+
+  return (
+    <Card
+      className={`min-w-0 max-w-full overflow-hidden${isMain ? " ring-1 ring-primary/40" : ""}`}
+    >
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-text-tertiary text-xs font-mono">
+                #{rank}
+              </span>
+              <CardTitle className="text-sm font-mono-ui truncate">
+                {shortModelName(entry.model)}
+              </CardTitle>
+              {isMain && (
+                <span className="inline-flex items-center gap-0.5 bg-primary/15 px-1.5 py-0.5 text-display text-xs font-medium tracking-wider text-primary">
+                  <Star className="h-2.5 w-2.5" /> {t.models2?.mainBadge ?? "main"}
+                </span>
+              )}
+              {mainAuxTask && (
+                <span className="inline-flex items-center bg-purple-500/10 px-1.5 py-0.5 text-display text-xs font-medium tracking-wider text-purple-600 dark:text-purple-400">
+                  {t.models2?.auxBadgePrefix ?? "aux · "}
+                  {auxTaskLabel(mainAuxTask, t)}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2 mt-1">
+              {provider && (
+                <Badge tone="secondary" className="text-xs">
+                  {provider}
+                </Badge>
+              )}
+              {caps.context_window && caps.context_window > 0 && (
+                <span className="text-xs text-text-secondary">
+                  {formatTokenCount(caps.context_window)} {t.models2?.ctxSuffix ?? "ctx"}
+                </span>
+              )}
+              {caps.max_output_tokens && caps.max_output_tokens > 0 && (
+                <span className="text-xs text-text-secondary">
+                  {formatTokenCount(caps.max_output_tokens)} {t.models2?.outSuffix ?? "out"}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            {showTokens ? (
+              <div className="text-right">
+                <div className="text-xs font-mono font-semibold">
+                  {formatTokens(totalTokens)}
+                </div>
+                <div className="text-xs text-text-tertiary">
+                  {t.models.tokens}
+                </div>
+              </div>
+            ) : (
+              entry.sessions > 0 && (
+                <div className="text-right">
+                  <div className="text-xs font-mono font-semibold">
+                    {entry.sessions}
+                  </div>
+                  <div className="text-xs text-text-tertiary">
+                    {t.models.sessions}
+                  </div>
+                </div>
+              )
+            )}
+            <UseAsMenu
+              provider={provider}
+              model={entry.model}
+              isMain={isMain}
+              mainAuxTask={mainAuxTask}
+              onAssigned={onAssigned}
+            />
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-3">
+        {showTokens && (
+          <>
+            <TokenBar
+              input={entry.input_tokens}
+              output={entry.output_tokens}
+              cacheRead={entry.cache_read_tokens}
+              reasoning={entry.reasoning_tokens}
+            />
+
+            <div className="grid grid-cols-3 gap-2 text-xs">
+              <div className="text-center">
+                <div className="font-mono font-semibold">{entry.sessions}</div>
+                <div className="text-xs text-text-tertiary">
+                  {t.models.sessions}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="font-mono font-semibold">
+                  {formatTokens(entry.avg_tokens_per_session)}
+                </div>
+                <div className="text-xs text-text-tertiary">
+                  {t.models.avgPerSession}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="font-mono font-semibold">
+                  {entry.api_calls > 0 ? formatTokens(entry.api_calls) : "—"}
+                </div>
+                <div className="text-xs text-text-tertiary">
+                  {t.models.apiCalls}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-text-secondary border-t border-border/30 pt-2">
+          <div className="flex items-center gap-3">
+            {showTokens && entry.estimated_cost > 0 && (
+              <span className="flex items-center gap-0.5">
+                <DollarSign className="h-2.5 w-2.5" />
+                {formatCost(entry.estimated_cost)}
+              </span>
+            )}
+            {showTokens && entry.tool_calls > 0 && (
+              <span className="flex items-center gap-0.5">
+                <Zap className="h-2.5 w-2.5" />
+                {entry.tool_calls} {t.models.toolCalls}
+              </span>
+            )}
+          </div>
+          {entry.last_used_at > 0 && (
+            <span>{timeAgo(entry.last_used_at)}</span>
+          )}
+        </div>
+
+        <CapabilityBadges capabilities={entry.capabilities} />
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Model Settings panel (top of page)                                  */
+/* ──────────────────────────────────────────────────────────────────── */
+
+type PickerTarget =
+  | { kind: "main" }
+  | { kind: "aux"; task: string };
+
+function AuxiliaryTasksModal({
+  aux,
+  refreshKey,
+  onSaved,
+  onClose,
+}: {
+  aux: AuxiliaryModelsResponse | null;
+  refreshKey: number;
+  onSaved(): void;
+  onClose(): void;
+}) {
+  const { t } = useI18n();
+  const auxTasks = resolveAuxTasks(t);
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const modalRef = useModalBehavior({ open: true, onClose });
+
+  const resetAllAux = async () => {
+    setConfirmReset(false);
+    setResetBusy(true);
+    try {
+      await api.setModelAssignment({
+        scope: "auxiliary",
+        task: "__reset__",
+        provider: "",
+        model: "",
+      }, globalModelApiOpts());
+      onSaved();
+    } finally {
+      setResetBusy(false);
+    }
+  };
+
+  return (
+    <div
+      ref={modalRef}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-background/85 backdrop-blur-sm p-4"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="aux-modal-title"
+    >
+      <div className={cn(themedBody, "relative w-full max-w-2xl max-h-[80vh] border border-border bg-card shadow-2xl flex flex-col")}>
+        <Button
+          ghost
+          size="icon"
+          onClick={onClose}
+          className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+          aria-label={t.models2?.closeAriaLabel ?? "Close"}
+        >
+          <X />
+        </Button>
+
+        <header className="p-5 pb-3 border-b border-border">
+          <div className="flex items-center justify-between gap-3 pr-8">
+            <h2
+              id="aux-modal-title"
+              className="font-mondwest text-display text-base tracking-wider"
+            >
+              {t.models2?.auxModalTitle ?? "Auxiliary Tasks"}
+            </h2>
+            <Button
+              size="sm"
+              outlined
+              onClick={() => setConfirmReset(true)}
+              disabled={resetBusy}
+              className="h-6 text-xs uppercase"
+              prefix={resetBusy ? <Spinner /> : null}
+            >
+              {t.models2?.resetAllToAuto ?? "Reset all to auto"}
+            </Button>
+          </div>
+          <p className="text-xs text-text-secondary mt-2">
+            {t.models2?.auxModalDescription ?? (
+              <>
+                Auxiliary tasks handle side-jobs like vision, session search, and
+                compression. <span className="font-mono">auto</span> means
+                &quot;use the main model&quot;. Override per-task when you want a
+                cheap/fast model for a specific job.
+              </>
+            )}
+          </p>
+        </header>
+
+        <div className="flex-1 overflow-y-auto p-5 space-y-1">
+          {auxTasks.map((task) => {
+            const cur = aux?.tasks.find((a) => a.task === task.key);
+            const isAuto =
+              !cur || cur.provider === "auto" || !cur.provider;
+            return (
+              <div
+                key={task.key}
+                className="flex items-center justify-between gap-3 px-3 py-2 border border-border/30 bg-card/50 hover:bg-muted/20 transition-colors"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-xs font-medium">{task.label}</span>
+                    <span className="text-xs text-text-tertiary">
+                      {task.hint}
+                    </span>
+                  </div>
+                  <div className="text-xs font-mono text-text-secondary truncate">
+                    {isAuto
+                      ? (t.models2?.autoUseMainModel ?? "auto (use main model)")
+                      : `${cur?.provider} · ${cur?.model || (t.models2?.providerDefault ?? "(provider default)")}`}
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  outlined
+                  onClick={() => setPicker({ kind: "aux", task: task.key })}
+                  className="h-6 text-xs uppercase"
+                >
+                  {t.models2?.changeButton ?? "Change"}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+
+        {picker && picker.kind === "aux" && (
+          <ModelPickerDialog
+            key={`picker-${refreshKey}`}
+            loader={() => api.getModelOptions(undefined, globalModelApiOpts())}
+            alwaysGlobal
+            title={`${t.models2?.setAuxPickerPrefix ?? "Set Auxiliary: "}${
+              auxTasks.find((task) => task.key === picker.task)?.label ??
+              picker.task
+            }`}
+            onApply={async ({ provider, model, confirmExpensiveModel }) => {
+              const result = await api.setModelAssignment({
+                confirm_expensive_model: confirmExpensiveModel,
+                scope: "auxiliary",
+                task: picker.task,
+                provider,
+                model,
+              }, globalModelApiOpts());
+              if (!result.confirm_required) onSaved();
+              return result;
+            }}
+            onClose={() => setPicker(null)}
+          />
+        )}
+        <ConfirmDialog
+          open={confirmReset}
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => void resetAllAux()}
+          title={t.models2?.resetAuxTitle ?? "Reset auxiliary models"}
+          description={t.models2?.resetAuxDescription ?? "Reset every auxiliary task to 'auto'? This overrides any per-task overrides you've set."}
+          destructive
+          confirmLabel={t.models2?.resetAllButton ?? "Reset all"}
+          loading={resetBusy}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ModelSettingsPanel({
+  aux,
+  refreshKey,
+  onSaved,
+}: {
+  aux: AuxiliaryModelsResponse | null;
+  refreshKey: number;
+  onSaved(): void;
+}) {
+  const { t } = useI18n();
+  const [auxModalOpen, setAuxModalOpen] = useState(false);
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
+
+  const mainProv = aux?.main.provider ?? "";
+  const mainModel = aux?.main.model ?? "";
+
+  const applyAssignment = async ({
+    scope,
+    task,
+    provider,
+    model,
+    confirmExpensiveModel,
+  }: {
+    confirmExpensiveModel?: boolean;
+    scope: "main" | "auxiliary";
+    task: string;
+    provider: string;
+    model: string;
+  }) => {
+    const result = await api.setModelAssignment({
+      confirm_expensive_model: confirmExpensiveModel,
+      scope,
+      task,
+      provider,
+      model,
+    }, globalModelApiOpts());
+    if (!result.confirm_required) onSaved();
+    return result;
+  };
+
+  // Count how many aux tasks have overrides
+  const auxOverrideCount = aux?.tasks.filter(
+    (a) => a.provider && a.provider !== "auto",
+  ).length ?? 0;
+
+  return (
+    <Card className="min-w-0 max-w-full overflow-hidden">
+      <CardHeader className="min-w-0 pb-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          <Settings2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <CardTitle className="text-sm">{t.models2?.modelSettingsTitle ?? "Model Settings"}</CardTitle>
+          <span className="max-w-full min-w-0 text-xs text-text-secondary [overflow-wrap:anywhere]">
+            {t.models2?.appliesToNewSessions ?? "applies to new sessions"}
+          </span>
+        </div>
+      </CardHeader>
+
+      <CardContent className="min-w-0 space-y-3 pt-3">
+        {/* Main row */}
+        <div className="flex min-w-0 flex-col gap-2 bg-muted/20 border border-border/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-0.5">
+              <Star className="h-3 w-3 text-primary" />
+              <span className="text-display text-xs font-medium tracking-wider">
+                {t.models2?.mainModelLabel ?? "Main model"}
+              </span>
+            </div>
+            <div className="text-xs font-mono text-text-secondary truncate">
+              {mainProv || (t.models2?.unset ?? "(unset)")}
+              {mainProv && mainModel && " · "}
+              {mainModel || (t.models2?.unset ?? "(unset)")}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => setPicker({ kind: "main" })}
+            className="shrink-0 self-start text-xs uppercase sm:self-center"
+          >
+            {t.models2?.changeButton ?? "Change"}
+          </Button>
+        </div>
+
+        {/* Auxiliary tasks summary + open modal */}
+        <div className="flex min-w-0 flex-col gap-2 bg-muted/20 border border-border/50 px-3 py-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 mb-0.5">
+              <Cpu className="h-3 w-3 text-text-tertiary" />
+              <span className="text-display text-xs font-medium tracking-wider">
+                {t.models2?.auxiliaryTasksLabel ?? "Auxiliary tasks"}
+              </span>
+            </div>
+            <div className="text-xs font-mono text-text-secondary truncate">
+              {auxOverrideCount > 0
+                ? (t.models2?.overrideSummary ?? "{count} overrides · {auto} auto")
+                    .replace("{count}", String(auxOverrideCount))
+                    .replace("{auto}", String(AUX_TASK_KEYS.length - auxOverrideCount))
+                : (t.models2?.allAutoSummary ?? "{total} tasks · all auto")
+                    .replace("{total}", String(AUX_TASK_KEYS.length))}
+            </div>
+          </div>
+          <Button
+            size="sm"
+            outlined
+            onClick={() => setAuxModalOpen(true)}
+            className="shrink-0 self-start text-xs uppercase sm:self-center"
+          >
+            {t.models2?.configureButton ?? "Configure"}
+          </Button>
+        </div>
+
+        {picker && (
+          <ModelPickerDialog
+            key={`picker-${refreshKey}`}
+            loader={() => api.getModelOptions(undefined, globalModelApiOpts())}
+            alwaysGlobal
+            title={t.models2?.setMainModelTitle ?? "Set Main Model"}
+            onApply={({ provider, model, confirmExpensiveModel }) =>
+              applyAssignment({
+                confirmExpensiveModel,
+                scope: "main",
+                task: "",
+                provider,
+                model,
+              })
+            }
+            onClose={() => setPicker(null)}
+          />
+        )}
+
+        {auxModalOpen && (
+          <AuxiliaryTasksModal
+            aux={aux}
+            refreshKey={refreshKey}
+            onSaved={onSaved}
+            onClose={() => setAuxModalOpen(false)}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/*  Page                                                                */
+/* ──────────────────────────────────────────────────────────────────── */
+
+export default function ModelsPage() {
+  const [days, setDays] = useState(30);
+  const [data, setData] = useState<ModelsAnalyticsResponse | null>(null);
+  const [aux, setAux] = useState<AuxiliaryModelsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saveKey, setSaveKey] = useState(0);
+  // Gate the token/cost UI on `dashboard.show_token_analytics`.  See
+  // hermes_cli/config.py for the rationale: the numbers exclude auxiliary
+  // calls and retries, so they're misleading next to provider billing.
+  const [showTokens, setShowTokens] = useState(false);
+  const { t } = useI18n();
+  const { setAfterTitle, setEnd } = usePageHeader();
+
+  useEffect(() => {
+    api
+      .getConfig()
+      .then((cfg) => {
+        const dash = (cfg?.dashboard ?? {}) as { show_token_analytics?: unknown };
+        setShowTokens(dash.show_token_analytics === true);
+      })
+      .catch(() => {
+        // Default to hidden on any failure — safer than showing wrong numbers.
+        setShowTokens(false);
+      });
+  }, []);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      api.getModelsAnalytics(days),
+      api.getAuxiliaryModels(globalModelApiOpts()).catch(() => null),
+    ])
+      .then(([models, auxData]) => {
+        setData(models);
+        setAux(auxData);
+      })
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false));
+  }, [days]);
+
+  const onAssigned = useCallback(() => {
+    // Reload aux state after any assignment change.
+    api
+      .getAuxiliaryModels(globalModelApiOpts())
+      .then(setAux)
+      .catch(() => {});
+    setSaveKey((k) => k + 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    // Period selector + refresh both live in afterTitle so the controls
+    // sit immediately next to the page title instead of being pinned to
+    // the far-right `end` slot. The active period is conveyed by the
+    // filled (non-outlined) button — no redundant period badge.
+    setAfterTitle(
+      <div className="flex flex-wrap items-center gap-1.5">
+        {PERIOD_OPTIONS.map((p) => (
+          <Button
+            key={p.days}
+            type="button"
+            size="sm"
+            outlined={days !== p.days}
+            onClick={() => setDays(p.days)}
+            className="uppercase"
+          >
+            {t.models2?.periods?.[p.key] ?? `${p.days}d`}
+          </Button>
+        ))}
+        <Button
+          type="button"
+          ghost
+          size="icon"
+          className="text-muted-foreground hover:text-foreground"
+          onClick={load}
+          disabled={loading}
+          aria-label={t.common.refresh}
+        >
+          {loading ? <Spinner /> : <RefreshCw />}
+        </Button>
+      </div>,
+    );
+    setEnd(null);
+    return () => {
+      setAfterTitle(null);
+      setEnd(null);
+    };
+  }, [days, loading, load, setAfterTitle, setEnd, t.common.refresh, t.models2?.periods]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return (
+    <div className="flex min-w-0 max-w-full flex-col gap-6">
+      <PluginSlot name="models:top" />
+
+      <div className="grid min-w-0 gap-6 lg:grid-cols-2">
+        <ModelSettingsPanel
+          aux={aux}
+          refreshKey={saveKey}
+          onSaved={onAssigned}
+        />
+
+        {data && (
+          <Card className="min-w-0 max-w-full overflow-hidden">
+            <CardContent className="min-w-0 py-6">
+              <div className="min-w-0 max-w-full [&_div.grid]:grid-cols-[auto_minmax(0,1fr)_auto]">
+                <Stats
+                  className="min-w-0"
+                  items={
+                  showTokens
+                    ? [
+                        {
+                          label: t.models.modelsUsed,
+                          value: String(data.totals.distinct_models),
+                        },
+                        {
+                          label: t.analytics.totalTokens,
+                          value: formatTokens(
+                            data.totals.total_input + data.totals.total_output,
+                          ),
+                        },
+                        {
+                          label: t.analytics.input,
+                          value: formatTokens(data.totals.total_input),
+                        },
+                        {
+                          label: t.analytics.output,
+                          value: formatTokens(data.totals.total_output),
+                        },
+                        {
+                          label: t.models.estimatedCost,
+                          value: formatCost(data.totals.total_estimated_cost),
+                        },
+                        {
+                          label: t.analytics.totalSessions,
+                          value: String(data.totals.total_sessions),
+                        },
+                      ]
+                    : [
+                        {
+                          label: t.models.modelsUsed,
+                          value: String(data.totals.distinct_models),
+                        },
+                        {
+                          label: t.analytics.totalSessions,
+                          value: String(data.totals.total_sessions),
+                        },
+                      ]
+                }
+              />
+              </div>
+              {!showTokens && (
+                <p className="mt-4 text-xs text-text-tertiary leading-relaxed">
+                  {(() => {
+                    const raw = t.models2?.tokenAnalyticsHidden;
+                    const configLabel = t.models2?.tokenAnalyticsConfigLink ?? "Config";
+                    if (raw) {
+                      // The zh.ts string uses {configLink} as a placeholder for the link text.
+                      const parts = raw.split("{configLink}");
+                      return (
+                        <>
+                          {parts[0]}
+                          <a href="/config" className="underline">{configLabel}</a>
+                          {parts[1] ?? ""}
+                        </>
+                      );
+                    }
+                    // English fallback with inline <code> and link.
+                    return (
+                      <>
+                        Token &amp; cost analytics are hidden because the local counts
+                        exclude auxiliary calls (compression, vision, web extract,
+                        &hellip;) and provider retries, so they diverge from your provider
+                        bill. Enable{" "}
+                        <span className="font-mono">dashboard.show_token_analytics</span>{" "}
+                        in <a href="/config" className="underline">Config</a> to
+                        show the local debug estimate anyway.
+                      </>
+                    );
+                  })()}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {loading && !data && (
+        <div className="flex items-center justify-center py-24">
+          <Spinner className="text-2xl text-primary" />
+        </div>
+      )}
+
+      {error && (
+        <Card>
+          <CardContent className="py-6">
+            <p className="text-sm text-destructive text-center">{error}</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {data && (
+        <>
+          {data.models.length > 0 ? (
+            <div className="grid min-w-0 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {data.models.map((m, i) => (
+                <ModelCard
+                  key={`${m.model}:${m.provider}`}
+                  entry={m}
+                  rank={i + 1}
+                  main={aux?.main ?? null}
+                  aux={aux?.tasks ?? []}
+                  onAssigned={onAssigned}
+                  showTokens={showTokens}
+                />
+              ))}
+            </div>
+          ) : (
+            <Card>
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center text-muted-foreground">
+                  <Cpu className="h-8 w-8 mb-3 opacity-40" />
+                  <p className="text-sm font-medium">{t.models.noModelsData}</p>
+                  <p className="text-xs mt-1 text-text-tertiary">
+                    {t.models.startSession}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      <PluginSlot name="models:bottom" />
+    </div>
+  );
+}

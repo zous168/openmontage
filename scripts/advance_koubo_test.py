@@ -21,11 +21,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "agent-hub" / "src"))
 
-from lib.checkpoint import PROJECTS_DIR, write_checkpoint
-from tools.subtitle.subtitle_gen import SubtitleGen
-from tools.video.remotion_caption_burn import RemotionCaptionBurn
+from plugins.openmontage.lib.checkpoint import PROJECTS_DIR, write_checkpoint
+from plugins.openmontage.tools.subtitle.subtitle_gen import SubtitleGen
+from plugins.openmontage.tools.video.remotion_caption_burn import RemotionCaptionBurn
 
 PID = "my-koubo-test"
 PDIR = PROJECTS_DIR / PID

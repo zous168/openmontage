@@ -42,6 +42,11 @@ music_library/
 .env
 .env.local
 *.env
+# `*.env` only matches names ENDING in .env, so per-profile files like
+# .env.dev / .env.prod / .env.test slipped through and carried real
+# API_SERVER_KEY values into `git status` as untracked-but-committable.
+.env.*
+!.env.example
 .youtube-token.json
 # Google service-account / Vertex AI keys — never commit
 gcp-*.json
@@ -62,6 +67,8 @@ internal/
 # Local agent config (user-specific)
 .claude/memory/
 .claude/settings.local.json
+# Agent scratch: one-off probes, backups, __pycache__ — never part of a change
+.claude/tmp/
 
 # Agent skills lock (local install tracking)
 skills-lock.json
@@ -98,6 +105,11 @@ venv/
 
 # Backlot local cache (thumbnails)
 .backlot/
+
+# Hermes 数据根的开发态落点（runtime_paths 在无 HUB_DATA_DIR 时用 <repo>/.data）。
+# 里面是 state.db、logs、缓存、设备配对令牌——全是本机运行时状态。
+.data/
+
 **/*.tsbuildinfo
 
 # HyperFrames demos — 只提交源码,渲染产物与媒体素材不入库
@@ -113,7 +125,9 @@ demos/**/.waveform-cache/
 _forensics_store/
 
 # React Flow 管线图模式构建产物(可 npm run build:flow 再生成)
-/backlot/ui/flow-dist/
+# 用 **/ 前缀而非 /backlot/...：含中间斜杠的模式会锚定到本 .gitignore 所在层级，
+# backlot 迁入 agent-hub/src/plugins/openmontage/ 后原规则静默失效。
+**/backlot/ui/flow-dist/
 
 # uv 本地 pip 缓存（Windows 上 F: 盘 cache 可能无写权限）
 .uv-cache/

@@ -3,7 +3,7 @@
 - text：每个 produces 产物一条，label=artifact 名，无 source → Flow 展示整份 JSON
 - image/video/audio：按 STAGE_MEDIA 从产物内提取路径
 
-规则见 pipeline_defs/OUTPUTS_SPEC.md
+规则见 scripts/OUTPUTS_SPEC.md
 用法: python scripts/sync_pipeline_outputs.py [--dry-run]
 """
 from __future__ import annotations

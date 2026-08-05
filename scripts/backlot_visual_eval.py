@@ -27,9 +27,11 @@ from typing import Any
 from PIL import Image, ImageChops
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STAGE_DIR = REPO_ROOT / ".backlot" / "screenshot-stage"
-GOLDENS_DIR = REPO_ROOT / "internal" / "evals" / "goldens"
-CAPTURE_ROOT = REPO_ROOT / "internal" / "evals" / "captures"
+# 数据根语义与 lib/paths.py 一致；此脚本独立运行（无仓库内导入），故本地解析。
+DATA_ROOT = Path(os.environ.get("OPENMONTAGE_DATA_ROOT") or REPO_ROOT).expanduser()
+STAGE_DIR = DATA_ROOT / ".backlot" / "screenshot-stage"
+GOLDENS_DIR = DATA_ROOT / "internal" / "evals" / "goldens"
+CAPTURE_ROOT = DATA_ROOT / "internal" / "evals" / "captures"
 PORT = 4791
 
 SHOTS = [

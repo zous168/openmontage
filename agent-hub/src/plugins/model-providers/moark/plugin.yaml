@@ -1,0 +1,5 @@
+name: moark-provider
+kind: model-provider
+version: 1.0.0
+description: 模力方舟 (Gitee AI / moark.com)
+author: R

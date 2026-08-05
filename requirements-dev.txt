@@ -1,5 +1,5 @@
-# OpenMontage - Development Dependencies
--r requirements.txt
-pytest>=8.0
-pytest-asyncio>=0.23
-httpx2>=2.0
+# 开发依赖已并入 agent-hub/pyproject.toml 的 [dependency-groups] dev。
+#
+#   安装：cd agent-hub && uv sync        （默认含 dev 组）
+#
+# SSOT: agent-hub/pyproject.toml

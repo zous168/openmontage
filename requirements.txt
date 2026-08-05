@@ -1,16 +1,13 @@
-# OpenMontage - Core Dependencies
-pyyaml>=6.0
-pydantic>=2.0
-jsonschema>=4.20
-python-dotenv>=1.0
-Pillow>=10.0
-numpy>=1.24
-requests>=2.31
-google-auth>=2.0       # service-account auth for Google TTS + Imagen (Vertex AI)
-google-genai>=1.0.0    # Gemini Developer API clients for Lyria, Veo, and Gemini Omni
-openai>=2.44.0         # Videos API support for Sora 2
-
-# Backlot - the living storyboard (local board server)
-fastapi>=0.110
-uvicorn>=0.29
-watchfiles>=0.21
+# OpenMontage 的依赖已并入 agent-hub/pyproject.toml。
+#
+# 合并成单一仓库、单一运行环境后，两份依赖清单必然漂移，
+# 所以这里不再列具体包，只留指路。
+#
+#   安装：cd agent-hub && uv sync
+#   或：  pip install -e agent-hub          （若已配置 build-system）
+#   GPU： pip install "torch>=2.0" "torchaudio>=2.0" "torchvision>=0.15"
+#         对应 pyproject 的 [project.optional-dependencies] gpu 组；
+#         刻意不进主依赖 —— 体积上千 MB，且不装时相关工具会经
+#         BaseTool.get_status() 优雅降级为 UNAVAILABLE。
+#
+# SSOT: agent-hub/pyproject.toml

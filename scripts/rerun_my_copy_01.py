@@ -14,10 +14,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "agent-hub" / "src"))
 
-from lib.checkpoint import write_checkpoint
-from lib.paths import PROJECTS_DIR
+from plugins.openmontage.lib.checkpoint import write_checkpoint
+from plugins.openmontage.lib.paths import PROJECTS_DIR
 
 PROJECT_ID = "my-copy-01"
 PROJECT = PROJECTS_DIR / PROJECT_ID
@@ -169,7 +169,7 @@ def _refresh_narration(assets: list[dict]) -> tuple[Path, bool]:
         used_reference = True
     else:
         text = _narration_text()
-        from tools.audio.tts_selector import TTSSelector
+        from plugins.openmontage.tools.audio.tts_selector import TTSSelector
 
         tts = TTSSelector()
         source_tool = "video_analyzer"
@@ -230,7 +230,7 @@ def _refresh_narration(assets: list[dict]) -> tuple[Path, bool]:
 
 def _generate_subtitles(narration_path: Path, assets: list[dict], *, narr_duration: float) -> Path:
     """Build SRT from reference transcript scaled to final narration duration."""
-    from tools.subtitle.subtitle_gen import SubtitleGen
+    from plugins.openmontage.tools.subtitle.subtitle_gen import SubtitleGen
 
     sub_dir = PROJECT / "assets" / "subtitles"
     sub_dir.mkdir(parents=True, exist_ok=True)
@@ -352,8 +352,8 @@ def main() -> int:
 
     print("[5/5] HyperFrames 合成 + FFmpeg 烧录字幕")
 
-    from tools.video.hyperframes_compose import HyperFramesCompose
-    from tools.video.video_compose import VideoCompose
+    from plugins.openmontage.tools.video.hyperframes_compose import HyperFramesCompose
+    from plugins.openmontage.tools.video.video_compose import VideoCompose
 
     raw_output = PROJECT / "renders" / "my-copy-01_raw.mp4"
     final_output = PROJECT / "renders" / "my-copy-01.mp4"

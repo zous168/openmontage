@@ -1,0 +1,5 @@
+# MxAI per-Agent 敏感词（仅补缺种子；与 GUI black/white 契约一致）
+black: []
+white: []
+strategy: block
+enabled: true

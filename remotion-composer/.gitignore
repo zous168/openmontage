@@ -1,0 +1,19 @@
+# Remotion 运行时产物。node_modules/、out/ 已由仓库根 .gitignore 覆盖。
+#
+# public/ 下有两类东西：
+#   - 提交的演示夹具（demo-props/*.json）—— 保留
+#   - 渲染前暂存进来的素材与项目 —— 由工具生成，不入库
+# 工具会把源视频拷进 public/<bucket>/ 好让 webpack 解析到，
+# 这些拷贝随时可从项目目录重新生成。
+
+/public/talking-head/
+/public/video/
+/public/music/
+/public/assets/
+
+# 项目 stage 进来的目录（slug 不可枚举，靠标志文件识别的留给人工清理）
+/public/*/artifacts/
+/public/*/snapshots/
+
+# caption-burn 等工具生成的 props，区别于提交的演示夹具
+/public/demo-props/caption-burn-*.json

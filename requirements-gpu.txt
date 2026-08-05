@@ -1,5 +1,11 @@
-# OpenMontage - GPU Dependencies
-# Install these in addition to requirements.txt when GPU is available
-torch>=2.0
-torchaudio>=2.0
-torchvision>=0.15
+# GPU 依赖已并入 agent-hub/pyproject.toml 的
+# [project.optional-dependencies] gpu 组。
+#
+#   安装：cd agent-hub && uv sync --extra gpu
+#   或：  pip install "torch>=2.0" "torchaudio>=2.0" "torchvision>=0.15"
+#
+# 不装也能跑：依赖本地 GPU 推理的工具会经 BaseTool.get_status()
+# 报 UNAVAILABLE，preflight 会如实告诉用户少了哪条路径。
+# agent-hub.spec 的 excludes 也排除了 torch，冻结产物不含 GPU 栈。
+#
+# SSOT: agent-hub/pyproject.toml

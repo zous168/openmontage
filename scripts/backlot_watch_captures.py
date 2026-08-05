@@ -24,8 +24,10 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+# 数据根语义与 lib/paths.py 一致；此脚本独立运行（无仓库内导入），故本地解析。
+DATA_ROOT = Path(os.environ.get("OPENMONTAGE_DATA_ROOT") or REPO_ROOT).expanduser()
 DEFAULT_BASE_URL = "http://127.0.0.1:4750"
-DEFAULT_CAPTURE_ROOT = REPO_ROOT / "internal" / "evals" / "captures"
+DEFAULT_CAPTURE_ROOT = DATA_ROOT / "internal" / "evals" / "captures"
 
 
 def capture_slug(project_id: str, stage: str | None, status: str | None) -> str:

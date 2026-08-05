@@ -1,0 +1,138 @@
+[project]
+name = "marketing-hub-backend"
+version = "1.0.1"
+description = "Marketing Hub (营销中枢大脑) - backend"
+requires-python = ">=3.12"
+readme = "README.md"
+authors = [{ name = "automan-team" }]
+
+dependencies = [
+    # Web / ASGI（Hermes Dashboard + Marketing Hub 组合根 + OpenMontage Backlot 看板）
+    "fastapi>=0.110.0",
+    # >=0.29.0 是 OpenMontage Backlot 的下限（原 hub 下限 0.27.0）
+    "uvicorn[standard]>=0.29.0",
+    "python-multipart>=0.0.9",
+    "aiohttp>=3.9.0",
+    "pyyaml>=6.0.0",
+    "requests>=2.31.0",
+    "httpx>=0.27.0",
+    # Data
+    "sqlmodel>=0.0.16",
+    "sqlalchemy>=2.0.25",
+    "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.9",
+    # Validation
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    # Brotli decompression for httpx/urllib3 (OpenAI API may return br-encoded bodies)
+    "brotlicffi>=1.2.0.1",
+    # Hermes Agent — OpenAI-compatible LLM client (used by all chat_completions providers)
+    # >=2.44.0 是 OpenMontage 的下限：Sora 2 走 Videos API（原 hub 下限 2.0.0）
+    "openai>=2.44.0",
+    # Auth
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    # Supabase
+    "supabase>=2.4.0",
+    # Logging
+    "structlog>=24.1.0",
+    "rich>=13.0.0",
+    # In-process TUI gateway slash-command completion (complete.slash) reuses the
+    # classic CLI's prompt_toolkit-based SlashCommandCompleter; the embedded
+    # gateway runs in this venv, so prompt_toolkit must be present here too.
+    "prompt_toolkit>=3.0.0",
+    # Utils
+    "python-dotenv>=1.0.1",
+    "tenacity>=8.2.3",
+    "orjson>=3.9.0",
+    "jinja2>=3.1.3",
+    # Object storage (MinIO via S3 protocol; 2026-05-18 替代 Supabase Storage)
+    "aioboto3>=12.3.0",
+    "pypdf>=6.12.1",
+    "python-docx>=1.2.0",
+    "openpyxl>=3.1.0",
+    "pywinpty>=2.0.14 ; sys_platform == 'win32'",
+    "croniter>=6.2.2",
+    # 音色参考音可解码校验（时长/声道；拦截 IndexTTS 拒识的损坏 m4a）
+    "mutagen>=1.47.0",
+    # 随 wheel 内嵌各平台 ffmpeg，换机无需本机安装（音色转 wav / 抽帧 / 去音轨）
+    "imageio-ffmpeg>=0.5.0",
+    # ── OpenMontage 能力插件（src/plugins/openmontage/）────────────────────
+    # 其余依赖（fastapi/uvicorn/pydantic/openai/pyyaml/requests/python-dotenv）
+    # 与 hub 共用，已在上方声明。GPU 栈见 [project.optional-dependencies] 的 gpu 组。
+    "jsonschema>=4.20",
+    "Pillow>=10.0",
+    "numpy>=1.24",
+    # Backlot 看板的文件监听（uvicorn[standard] 已间接带入，显式声明避免隐式依赖）
+    "watchfiles>=0.21",
+    # Google TTS + Imagen（Vertex AI）的 service-account 鉴权
+    "google-auth>=2.0",
+    # Gemini Developer API：Lyria、Veo、Gemini Omni
+    "google-genai>=1.0.0",
+]
+
+[project.optional-dependencies]
+hub-sqlite = [
+    "sqlite-vec>=0.1.6",
+    "aiosqlite>=0.20.0",
+]
+embedding = [
+    "fastembed>=0.5.0",
+    "onnxruntime>=1.20.0,<1.21",
+]
+embedding-torch = [
+    "sentence-transformers>=3.3.0",
+]
+# 仿爆款写入剪映官方草稿结构（无则回落明文工程目录）
+jianying = [
+    "pyjianyingdraft>=0.3.0",
+]
+# OpenMontage 本地 GPU 推理（SadTalker、本地 diffusers 等）。
+# 刻意不进主依赖：体积上千 MB，且 agent-hub.spec 的 excludes 已排除 torch，
+# 打包产物不含 GPU 栈。缺失时相关工具经 BaseTool.get_status() 降级为 UNAVAILABLE。
+gpu = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "torchvision>=0.15",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.12.0",
+    "httpx>=0.27.0",
+    "respx>=0.21.0",
+    "ruff>=0.3.0",
+    "mypy>=1.8.0",
+    "debugpy>=1.8.21",
+    "pyinstaller==6.20.0",
+    # OpenMontage 测试用（原 requirements-dev.txt）
+    "httpx2>=2.0",
+]
+
+[tool.uv]
+package = false
+default-groups = ["dev"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "RET", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["src", "."]
+testpaths = ["tests"]
+markers = [
+    "slow: 真 LLM / 额度消耗大的测试，默认 pytest -m 'not slow' 跳过",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+ignore_missing_imports = true

@@ -32,6 +32,14 @@ Makefile    text eol=lf
 *.bat   text eol=crlf
 *.cmd   text eol=crlf
 
+# PowerShell 5.1 (still the default shell on Windows 10/11) mis-parses a
+# here-string whose lines end with a bare LF: `@"` blocks silently expand some
+# variables to empty instead of their value. _start_hub_backend.ps1 generates
+# its uvicorn launcher that way, so an LF checkout produced a launcher with an
+# empty sys.path entry and `reload=` — a syntax error, surfacing only as uv's
+# "os error 2". Keep PowerShell scripts CRLF.
+*.ps1   text eol=crlf
+
 # --- Binary assets (never normalize or diff) -------------------------------
 *.png   binary
 *.jpg   binary

@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "agent-hub" / "src"))
 
 PROJECT = ROOT / "projects" / "my-copy-01"
 IMG_DIR = PROJECT / "assets" / "images"
@@ -70,8 +70,8 @@ def main() -> int:
     IMG_DIR.mkdir(parents=True, exist_ok=True)
     AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 
-    from tools.graphics.image_selector import ImageSelector
-    from tools.audio.tts_selector import TTSSelector
+    from plugins.openmontage.tools.graphics.image_selector import ImageSelector
+    from plugins.openmontage.tools.audio.tts_selector import TTSSelector
 
     assets: list[dict] = []
     total_cost = 0.0

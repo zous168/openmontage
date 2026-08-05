@@ -1,0 +1,10 @@
+# MxAI profile 默认 config 模板（缺则补种 · 见 cfg/bootstrap/profile_bootstrap.py）。
+#
+# 正常路径：profile 的 config.yaml 由 Hermes 克隆自**数据根**（默认/主 profile，
+# clone_from=None）。仅当克隆缺失 config.yaml 时，才用本源码模板兜底，保证 profile
+# 至少有一份有效配置。
+#
+# 主模型在**数据根**由用户在系统设置里设置（不在此预置 model）；各业务 profile 如需
+# 单独绑定推理模型，见 Agent 配置页（CR-76）。
+agent:
+  max_turns: 90

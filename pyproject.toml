@@ -1,0 +1,12 @@
+# uv workspace root.
+#
+# agent-hub/scripts/_start_hub_backend.ps1 resolves its uv project directory to
+# this file's directory when it exists; without it the script falls back to
+# agent-hub/ and uv builds a *second* environment there, which defeats the
+# single-runtime merge.
+#
+# Dependencies stay declared in agent-hub/pyproject.toml — the single source of
+# truth that scripts/install_deps.py reads.
+
+[tool.uv.workspace]
+members = ["agent-hub"]

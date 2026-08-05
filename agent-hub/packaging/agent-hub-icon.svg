@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <!-- 实心大脑轮廓（俯视双半球，顶部中缝内凹），白填充 -->
+  <path fill="#ffffff" d="M512 300
+    C 486 250 420 236 372 268
+    C 300 244 236 300 258 366
+    C 200 396 196 476 246 512
+    C 210 566 244 648 316 662
+    C 336 726 430 750 490 716
+    C 500 724 524 724 534 716
+    C 594 750 688 726 708 662
+    C 780 648 814 566 778 512
+    C 828 476 824 396 766 366
+    C 788 300 724 244 652 268
+    C 604 236 538 250 512 300 Z"/>
+  <!-- 中央纵裂 -->
+  <path fill="none" stroke="#5b39d8" stroke-width="26" stroke-linecap="round"
+        d="M512 300 C 500 420 500 580 512 704"/>
+  <!-- 左半球脑回（层叠开口朝中缝的弧，模拟沟回） -->
+  <g fill="none" stroke="#5b39d8" stroke-width="22" stroke-linecap="round">
+    <path d="M474 360 C 392 372 356 430 402 470"/>
+    <path d="M470 452 C 380 464 356 520 404 556"/>
+    <path d="M478 546 C 396 558 372 612 420 646"/>
+  </g>
+  <!-- 右半球脑回（镜像） -->
+  <g fill="none" stroke="#5b39d8" stroke-width="22" stroke-linecap="round">
+    <path d="M550 360 C 632 372 668 430 622 470"/>
+    <path d="M554 452 C 644 464 668 520 620 556"/>
+    <path d="M546 546 C 628 558 652 612 604 646"/>
+  </g>
+</svg>

@@ -23,18 +23,24 @@ import urllib.request
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-STAGE_DIR = REPO_ROOT / ".backlot" / "screenshot-stage"
+# 本地解析而非 import lib.paths：下面必须在 lib.paths 首次导入**之前**
+# 设好 OPENMONTAGE_PROJECTS_DIR，否则 PROJECTS_DIR 会先冻结成真实项目根。
+DATA_ROOT = Path(os.environ.get("OPENMONTAGE_DATA_ROOT") or REPO_ROOT).expanduser()
+STAGE_DIR = DATA_ROOT / ".backlot" / "screenshot-stage"
 SHOTS_DIR = REPO_ROOT / "docs" / "images" / "backlot"
 PORT = 4790
 
 os.environ["OPENMONTAGE_PROJECTS_DIR"] = str(STAGE_DIR)
-sys.path.insert(0, str(REPO_ROOT))
+# OpenMontage 源码现在是 agent-hub 的插件，包根在 agent-hub/src 下。
+sys.path.insert(0, str(REPO_ROOT / "agent-hub" / "src"))
 
 from PIL import Image, ImageDraw, ImageFilter  # noqa: E402
 
-from lib.checkpoint import init_project, write_checkpoint  # noqa: E402
-from lib.events import emit_event  # noqa: E402
-from tests.contracts.test_phase0_contracts import sample_artifact  # noqa: E402
+from plugins.openmontage.lib.checkpoint import init_project, write_checkpoint  # noqa: E402
+from plugins.openmontage.lib.events import emit_event  # noqa: E402
+from plugins.openmontage.tests.contracts.test_phase0_contracts import (  # noqa: E402
+    sample_artifact,
+)
 
 
 # ---------------------------------------------------------------------------

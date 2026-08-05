@@ -1,0 +1,12 @@
+# MxAI 通用风控种子（渠道首启由 channel_defaults.build_channel_risk_defaults 按渠道覆盖）
+# 注意：bootstrap 不再盲拷本文件到各渠道；本文件仅作兼容回落
+daily_dm_limit: 200
+daily_add_limit: 30  # CR-132：加好友/客户日上限（个微/企微；公域种子为 0）
+daily_collect_limit: 0  # 0=不限；公域 comment_collect 日总量（CR-143）
+daily_reply_limit: 0  # 0=不限；未配置时回退 workbench comment_reply.max_per_day
+min_interval_sec: 3
+listen_poll_interval_sec: 5
+enabled: true
+fail_alert: 5
+sleep_min: 30
+retry: 3

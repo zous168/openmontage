@@ -7,7 +7,7 @@
 import hashlib, json, sys, re
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
-from lib.paths import PROJECTS_DIR
+from plugins.openmontage.lib.paths import PROJECTS_DIR
 
 PID = "my-copy-01"
 PD = PROJECTS_DIR / PID
@@ -26,8 +26,8 @@ def snap():
 
 # --- 违规分类（依据 AGENT_GUIDE） ---
 WRITE_TOOLS = {"Write", "Edit", "NotebookEdit", "MultiEdit"}
-SANCTIONED = ("lib.checkpoint", "lib.decision_log", "lib.project_status",
-              "lib.production_audit", "tool_registry", "registry.")
+SANCTIONED = ("plugins.openmontage.lib.checkpoint", "plugins.openmontage.lib.decision_log", "plugins.openmontage.lib.project_status",
+              "plugins.openmontage.lib.production_audit", "tool_registry", "registry.")
 # 只匹配真正的写盘：2>&1 / 2>/dev/null 这类 fd 重定向、json.dumps（序列化成
 # 字符串打印）都不是写操作，早期正则把它们误判成违规。
 SHELL_WRITE = re.compile(

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>Douyin Comment Sandbox</title>
+</head>
+<body>
+  <h1 id="keyword"></h1>
+  <div class="comment-list">
+    <div class="comment-item" data-video-id="vid_ai_001" data-author="user_alpha">
+      想了解 AI 营销自动化怎么落地
+    </div>
+    <div class="comment-item" data-video-id="vid_ai_002" data-author="user_beta">
+      有没有企业版套餐价格
+    </div>
+    <div class="comment-item" data-video-id="vid_mkt_001" data-author="user_gamma">
+      营销获客工具推荐吗
+    </div>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    document.getElementById("keyword").textContent = params.get("q") || "sandbox";
+  </script>
+</body>
+</html>
