@@ -1,12 +1,20 @@
-"""Backlot server — FastAPI app: board state API, SSE change feed, media.
+"""Backlot server — FastAPI routers: board state API, SSE, media, UI.
 
-The project **board** is a read-only observer: it derives all stage/script/
-storyboard state from files the pipeline already writes under ``projects/``.
+The project **board** is primarily a read-only observer: it derives stage/
+script/storyboard state from files the pipeline already writes under
+``projects/``. The **library** may still bootstrap empty workspaces via
+``POST .../projects`` (``init_project`` only — no checkpoints, no agent
+orchestration); that write path lives in ``backlot.bootstrap``.
 
-The **library** may bootstrap empty workspaces via ``POST /api/projects``
-(``init_project`` only — no checkpoints, no agent orchestration). That write
-path lives in ``backlot.bootstrap`` and does not change how the board renders
-or validates production state.
+Routes are split across ``APIRouter`` builders so Hermes can mount them
+under plugin namespaces:
+
+- API: ``/api/plugins/openmontage`` (or ``/api`` standalone)
+- UI: ``/plugins/openmontage`` (or ``/`` standalone)
+- Media/thumb share the API mount prefix when hub-mounted
+
+``create_app()`` remains a thin wrapper that remounts routers at standalone
+paths for TestClient / ``uvicorn`` tooling.
 """
 
 from __future__ import annotations
@@ -18,9 +26,8 @@ import time
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, FastAPI, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from plugins.openmontage.backlot.env_config import build_env_catalog, update_env_vars
@@ -66,13 +73,18 @@ from plugins.openmontage.backlot.state import PROJECTS_DIR, REPO_ROOT, _is_demo_
 from plugins.openmontage.lib.paths import BACKLOT_STATE_DIR
 
 UI_DIR = Path(__file__).resolve().parent / "ui"
+BRAND_DIR = REPO_ROOT / "assets"
 THUMB_CACHE_DIR = BACKLOT_STATE_DIR / "thumbs"
 THUMB_WIDTHS = (320, 640, 960)
+_BRAND_SUFFIXES = {".svg", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".ico"}
 
 # Paths inside a project whose changes are pure noise for the board.
 _IGNORE_PARTS = {"node_modules", ".git", "__pycache__", ".cache"}
 
 SSE_HEARTBEAT_SECONDS = 15
+
+_runtime_started = False
+_watch_task: Optional[asyncio.Task] = None
 
 
 class CreateProjectBody(BaseModel):
@@ -207,14 +219,119 @@ class StageRejectBody(BaseModel):
     feedback: str = Field(min_length=5, max_length=4000)
 
 
-def _ui_html(name: str, assets: tuple[str, ...]) -> HTMLResponse:
+def mount_prefixes(*, hub: bool = False) -> dict[str, str]:
+    if hub:
+        return {
+            "apiPrefix": "/api/plugins/openmontage",
+            "uiPrefix": "/plugins/openmontage",
+            "mediaPrefix": "/api/plugins/openmontage",
+        }
+    return {"apiPrefix": "/api", "uiPrefix": "", "mediaPrefix": ""}
+
+
+def _ui_html(
+    name: str,
+    assets: tuple[str, ...],
+    *,
+    apiPrefix: str = "/api",
+    uiPrefix: str = "",
+    mediaPrefix: str = "",
+) -> HTMLResponse:
     html = (UI_DIR / name).read_text(encoding="utf-8")
+    brand_base = f"{uiPrefix}/brand" if uiPrefix else "/brand"
+    html = html.replace("/assets/", f"{brand_base}/")
+
+    # Cache-bust listed assets; rewrite into the UI mount when hub-prefixed.
     for asset in assets:
         path = UI_DIR / asset
-        if path.is_file():
-            version = str(int(path.stat().st_mtime))
-            html = html.replace(f"/ui/{asset}", f"/ui/{asset}?v={version}")
+        if not path.is_file():
+            continue
+        version = str(int(path.stat().st_mtime))
+        replacement = f"{uiPrefix}/ui/{asset}?v={version}"
+        html = re.sub(
+            rf'/ui/{re.escape(asset)}(?:\?[^"\']*)?',
+            replacement,
+            html,
+        )
+
+    if uiPrefix:
+        # Static nav / leftover asset tags (import map only covers ES module imports).
+        html = html.replace('href="/"', f'href="{uiPrefix}/"')
+        html = html.replace('href="/ui/', f'href="{uiPrefix}/ui/')
+        html = html.replace('src="/ui/', f'src="{uiPrefix}/ui/')
+
+    config = (
+        "<script>window.__BACKLOT__="
+        f"{{apiPrefix:{json.dumps(apiPrefix)},"
+        f"uiPrefix:{json.dumps(uiPrefix)},"
+        f"mediaPrefix:{json.dumps(mediaPrefix)}}};</script>"
+    )
+    inject = config
+    if uiPrefix:
+        import_map = json.dumps({"imports": {"/ui/": f"{uiPrefix}/ui/"}}, separators=(",", ":"))
+        inject += f'<script type="importmap">{import_map}</script>'
+
+    head_idx = html.find("<head>")
+    if head_idx >= 0:
+        insert_at = head_idx + len("<head>")
+        html = html[:insert_at] + inject + html[insert_at:]
+    else:
+        html = inject + html
     return HTMLResponse(html)
+
+
+def _safe_under(root: Path, file_path: str) -> Path:
+    """Resolve file_path under root; reject traversal and missing files."""
+    if not file_path or file_path.startswith(("/", "\\")) or ".." in Path(file_path).parts:
+        raise HTTPException(status_code=403, detail="path escapes root")
+    root_resolved = root.resolve()
+    target = (root_resolved / file_path).resolve()
+    try:
+        target.relative_to(root_resolved)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="path escapes root") from exc
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+    return target
+
+
+async def ensure_runtime() -> None:
+    """Idempotent: load env, start watcher, reconcile. Call from first SSE or on_ready."""
+    global _runtime_started, _watch_task
+    if _runtime_started:
+        return
+    _runtime_started = True
+    from plugins.openmontage.lib.env_loader import load_env
+    load_env(REPO_ROOT)
+    try:
+        await stage_runner.reconcile_runs()
+    except Exception:
+        pass
+    try:
+        loop = asyncio.get_running_loop()
+        _watch_task = loop.create_task(_watch_projects())
+    except RuntimeError:
+        pass
+
+
+def start_runtime_sync() -> None:
+    """Called from plugin on_ready (sync). Watcher starts on first SSE via ensure_runtime."""
+    from plugins.openmontage.lib.env_loader import load_env
+    load_env(REPO_ROOT)
+
+
+def _needs_ui_no_cache(path: str) -> bool:
+    if path in {"/", ""}:
+        return True
+    if path.endswith(("/plugins/openmontage", "/plugins/openmontage/")):
+        return True
+    return (
+        "/ui" in path
+        or "/p/" in path
+        or "/flow" in path
+        or "/pipelines" in path
+        or path.endswith(".html")
+    )
 
 
 class ChangeHub:
@@ -329,48 +446,32 @@ async def _watch_projects() -> None:
             hub.publish(pid)
 
 
-def create_app() -> FastAPI:
-    app = FastAPI(title="Backlot", docs_url=None, redoc_url=None)
+def build_api_router() -> APIRouter:
+    """JSON / SSE API routes without the `/api` prefix (caller mounts it)."""
+    router = APIRouter()
 
-    @app.on_event("startup")
-    async def _startup() -> None:
-        from plugins.openmontage.lib.env_loader import load_env
-        load_env(REPO_ROOT)
-        app.state.watch_task = asyncio.create_task(_watch_projects())
-        try:
-            await stage_runner.reconcile_runs()
-        except Exception:
-            pass  # 接回失败不应阻塞启动——board 仍可手动刷新
 
-    @app.on_event("shutdown")
-    async def _shutdown() -> None:
-        task = getattr(app.state, "watch_task", None)
-        if task:
-            task.cancel()
-
-    # ---- API ----------------------------------------------------------
-
-    @app.get("/api/health")
+    @router.get("/health")
     async def health() -> dict:
         return {"ok": True, "app": "backlot", "api_version": API_VERSION}
 
-    @app.get("/api/projects")
+    @router.get("/projects")
     async def projects() -> list:
         return await asyncio.to_thread(_cached_summaries)
 
-    @app.get("/api/pipelines")
+    @router.get("/pipelines")
     async def pipelines() -> list:
         return await asyncio.to_thread(list_pipeline_catalog)
 
-    @app.get("/api/style-playbooks")
+    @router.get("/style-playbooks")
     async def style_playbooks() -> list:
         return await asyncio.to_thread(list_style_playbook_options)
 
-    @app.get("/api/settings")
+    @router.get("/settings")
     async def app_settings() -> dict:
         return await asyncio.to_thread(app_settings_response)
 
-    @app.patch("/api/settings")
+    @router.patch("/settings")
     async def patch_app_settings(payload: UpdateAppSettingsBody) -> dict:
         try:
             return await asyncio.to_thread(
@@ -383,32 +484,32 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/system/env-vars")
+    @router.get("/system/env-vars")
     async def system_env_vars() -> dict:
         return await asyncio.to_thread(build_env_catalog)
 
-    @app.patch("/api/system/env-vars")
+    @router.patch("/system/env-vars")
     async def patch_system_env_vars(payload: UpdateEnvVarsBody) -> dict:
         try:
             return await asyncio.to_thread(update_env_vars, payload.values)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/system/dependencies")
+    @router.get("/system/dependencies")
     async def system_dependencies(check: bool = False, verify: bool = False) -> dict:
         if check or verify:
             return await asyncio.to_thread(run_system_check, verify=verify)
         return await asyncio.to_thread(build_dependency_manifest)
 
-    @app.get("/api/system/catalog")
+    @router.get("/system/catalog")
     async def system_catalog() -> dict:
         return await asyncio.to_thread(build_skill_tool_catalog)
 
-    @app.get("/api/system/pipelines")
+    @router.get("/system/pipelines")
     async def system_pipelines() -> dict:
         return await asyncio.to_thread(build_pipeline_admin_catalog)
 
-    @app.patch("/api/system/pipelines/{pipeline_id}")
+    @router.patch("/system/pipelines/{pipeline_id}")
     async def patch_system_pipeline(pipeline_id: str, payload: UpdatePipelineUiBody) -> dict:
         try:
             return await asyncio.to_thread(
@@ -421,14 +522,14 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/system/pipelines/{pipeline_id}/config")
+    @router.get("/system/pipelines/{pipeline_id}/config")
     async def system_pipeline_config(pipeline_id: str) -> dict:
         try:
             return await asyncio.to_thread(get_pipeline_config, pipeline_id)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.patch("/api/system/pipelines/{pipeline_id}/manifest")
+    @router.patch("/system/pipelines/{pipeline_id}/manifest")
     async def patch_system_pipeline_manifest(
         pipeline_id: str,
         payload: UpdatePipelineManifestBody,
@@ -442,14 +543,14 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/system/pipelines/{pipeline_id}/editor-hints")
+    @router.get("/system/pipelines/{pipeline_id}/editor-hints")
     async def system_pipeline_editor_hints(pipeline_id: str) -> dict:
         try:
             return await asyncio.to_thread(build_pipeline_editor_hints, pipeline_id)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.patch("/api/system/pipelines/{pipeline_id}/stages/{stage_name}")
+    @router.patch("/system/pipelines/{pipeline_id}/stages/{stage_name}")
     async def patch_system_pipeline_stage(
         pipeline_id: str,
         stage_name: str,
@@ -465,7 +566,7 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/api/system/pipelines/{pipeline_id}/stages")
+    @router.post("/system/pipelines/{pipeline_id}/stages")
     async def post_system_pipeline_stage(
         pipeline_id: str,
         payload: CreatePipelineStageBody,
@@ -479,14 +580,14 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.delete("/api/system/pipelines/{pipeline_id}/stages/{stage_name}")
+    @router.delete("/system/pipelines/{pipeline_id}/stages/{stage_name}")
     async def delete_system_pipeline_stage(pipeline_id: str, stage_name: str) -> dict:
         try:
             return await asyncio.to_thread(delete_pipeline_stage, pipeline_id, stage_name)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.put("/api/system/pipelines/{pipeline_id}/stages/order")
+    @router.put("/system/pipelines/{pipeline_id}/stages/order")
     async def put_system_pipeline_stage_order(
         pipeline_id: str,
         payload: ReorderPipelineStagesBody,
@@ -500,21 +601,21 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/system/skills/{skill_path:path}")
+    @router.get("/system/skills/{skill_path:path}")
     async def system_skill_content(skill_path: str) -> dict:
         try:
             return await asyncio.to_thread(read_skill_markdown, skill_path)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.patch("/api/system/skills/{skill_path:path}")
+    @router.patch("/system/skills/{skill_path:path}")
     async def patch_system_skill_content(skill_path: str, payload: UpdateSkillBody) -> dict:
         try:
             return await asyncio.to_thread(write_skill_markdown, skill_path, payload.content)
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/api/stage-media")
+    @router.post("/stage-media")
     async def stage_media(file: UploadFile = File(...)) -> dict:
         """Upload local media for bootstrap; returns server path for create_project ingest."""
         try:
@@ -526,7 +627,7 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.post("/api/projects")
+    @router.post("/projects")
     async def create_project(payload: CreateProjectBody) -> dict:
         try:
             result = await asyncio.to_thread(
@@ -545,7 +646,7 @@ def create_app() -> FastAPI:
         hub.publish(result["project_id"])
         return result
 
-    @app.delete("/api/projects/{project_id}")
+    @router.delete("/projects/{project_id}")
     async def delete_project(project_id: str) -> dict:
         try:
             result = await asyncio.to_thread(
@@ -559,7 +660,7 @@ def create_app() -> FastAPI:
         hub.publish(result["project_id"])
         return result
 
-    @app.get("/api/project/{project_id}/settings")
+    @router.get("/project/{project_id}/settings")
     async def project_settings(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -567,7 +668,7 @@ def create_app() -> FastAPI:
         except BootstrapError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.patch("/api/project/{project_id}/settings")
+    @router.patch("/project/{project_id}/settings")
     async def patch_project_settings(project_id: str, payload: UpdateProjectSettingsBody) -> dict:
         _safe_project_dir(project_id)
         try:
@@ -587,12 +688,12 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
-    @app.get("/api/project/{project_id}/flow-layout")
+    @router.get("/project/{project_id}/flow-layout")
     async def project_flow_layout(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(load_flow_layout, project_dir)
 
-    @app.patch("/api/project/{project_id}/flow-layout")
+    @router.patch("/project/{project_id}/flow-layout")
     async def patch_project_flow_layout(project_id: str, payload: FlowLayoutBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(
@@ -602,12 +703,12 @@ def create_app() -> FastAPI:
             viewport=payload.viewport,
         )
 
-    @app.get("/api/project/{project_id}/state")
+    @router.get("/project/{project_id}/state")
     async def project_state(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(load_board_state, project_dir)
 
-    @app.get("/api/project/{project_id}/composition-timeline")
+    @router.get("/project/{project_id}/composition-timeline")
     async def composition_timeline(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         edit_path = project_dir / "artifacts" / "edit_decisions.json"
@@ -616,12 +717,12 @@ def create_app() -> FastAPI:
         edit = json.loads(edit_path.read_text(encoding="utf-8"))
         return await asyncio.to_thread(build_composition_timeline, edit)
 
-    @app.get("/api/project/{project_id}/edit-preview")
+    @router.get("/project/{project_id}/edit-preview")
     async def edit_preview_info(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(build_edit_preview_info, project_dir)
 
-    @app.post("/api/project/{project_id}/edit-preview/start")
+    @router.post("/project/{project_id}/edit-preview/start")
     async def edit_preview_start(project_id: str, payload: EditPreviewStartBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -641,7 +742,7 @@ def create_app() -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-    @app.get("/api/project/{project_id}/nle-edit/draft-props")
+    @router.get("/project/{project_id}/nle-edit/draft-props")
     async def nle_draft_props(project_id: str, request: Request, response: Response) -> dict:
         """Live preview props for the NLE preview iframe (cross-origin polled)."""
         project_dir = _safe_project_dir(project_id)
@@ -655,14 +756,14 @@ def create_app() -> FastAPI:
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.post("/api/project/{project_id}/nle-edit/preview")
+    @router.post("/project/{project_id}/nle-edit/preview")
     async def nle_edit_preview(project_id: str, payload: NleEditBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         result = await asyncio.to_thread(write_draft, project_dir, payload.cuts, payload.overlays)
         hub.publish(project_id)
         return result
 
-    @app.post("/api/project/{project_id}/nle-edit/apply")
+    @router.post("/project/{project_id}/nle-edit/apply")
     async def nle_edit_apply(project_id: str, payload: NleEditBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -680,14 +781,14 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
-    @app.get("/api/project/{project_id}/nle-edit/draft")
+    @router.get("/project/{project_id}/nle-edit/draft")
     async def nle_edit_draft(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return await asyncio.to_thread(read_draft, project_dir)
 
     # ---- Headless-agent stage channel ----------------------------------
 
-    @app.post("/api/project/{project_id}/pipeline/reset")
+    @router.post("/project/{project_id}/pipeline/reset")
     async def pipeline_reset(project_id: str, payload: PipelineResetBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         busy = await asyncio.to_thread(stage_runner._busy_or_none, project_dir)
@@ -708,7 +809,7 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
-    @app.post("/api/project/{project_id}/stage/run", status_code=202)
+    @router.post("/project/{project_id}/stage/run", status_code=202)
     async def stage_run(project_id: str, payload: StageRunBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -733,7 +834,7 @@ def create_app() -> FastAPI:
             "log_path": f"runs/{task.task_id}.log",
         }
 
-    @app.post("/api/project/{project_id}/decisions")
+    @router.post("/project/{project_id}/decisions")
     async def append_project_decision(project_id: str, payload: DecisionAppendBody) -> dict:
         """Flow 节点核心信息保存:append 一条 decision_log 条目(审计 + board 展示)。"""
         project_dir = _safe_project_dir(project_id)
@@ -772,12 +873,12 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return {"ok": True, "decision_id": decision_id}
 
-    @app.get("/api/project/{project_id}/stage/runs")
+    @router.get("/project/{project_id}/stage/runs")
     async def stage_runs(project_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         return {"runs": await asyncio.to_thread(stage_runner.list_runs, project_dir, limit=8)}
 
-    @app.get("/api/project/{project_id}/stage/run/{task_id}/log")
+    @router.get("/project/{project_id}/stage/run/{task_id}/log")
     async def stage_run_log(
         project_id: str, task_id: str, offset: int = 0, limit: int = 200,
     ) -> dict:
@@ -790,7 +891,7 @@ def create_app() -> FastAPI:
         except stage_runner.StageRunError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    @app.post("/api/project/{project_id}/stage/run/{task_id}/cancel")
+    @router.post("/project/{project_id}/stage/run/{task_id}/cancel")
     async def stage_run_cancel(project_id: str, task_id: str) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -801,7 +902,7 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
-    @app.post("/api/project/{project_id}/stage/approve")
+    @router.post("/project/{project_id}/stage/approve")
     async def stage_approve(project_id: str, payload: StageApproveBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -818,7 +919,7 @@ def create_app() -> FastAPI:
         asyncio.create_task(stage_runner.auto_advance_chain(project_dir, from_stage=result["stage"]))
         return result
 
-    @app.post("/api/project/{project_id}/stage/reject")
+    @router.post("/project/{project_id}/stage/reject")
     async def stage_reject(project_id: str, payload: StageRejectBody) -> dict:
         project_dir = _safe_project_dir(project_id)
         try:
@@ -834,8 +935,9 @@ def create_app() -> FastAPI:
         hub.publish(project_id)
         return result
 
-    @app.get("/api/project/{project_id}/events")
+    @router.get("/project/{project_id}/events")
     async def project_events(project_id: str, request: Request) -> StreamingResponse:
+        await ensure_runtime()
         _safe_project_dir(project_id)  # 404 early for unknown projects
 
         async def stream():
@@ -865,8 +967,10 @@ def create_app() -> FastAPI:
             "X-Accel-Buffering": "no",
         })
 
-    @app.get("/api/library/events")
+    @router.get("/library/events")
     async def library_events(request: Request) -> StreamingResponse:
+        await ensure_runtime()
+
         async def stream():
             q = hub.subscribe()
             try:
@@ -893,9 +997,16 @@ def create_app() -> FastAPI:
             "X-Accel-Buffering": "no",
         })
 
+    return router
+
+
+def build_media_router() -> APIRouter:
+    """Media and thumbnail routes at mount-relative `/media` and `/thumb`."""
+    router = APIRouter()
+
     # ---- Thumbnails (downscaled, cached on disk) ------------------------
 
-    @app.get("/thumb/{project_id}/{file_path:path}")
+    @router.get("/thumb/{project_id}/{file_path:path}")
     async def thumb(project_id: str, file_path: str, w: int = 640) -> FileResponse:
         project_dir = _safe_project_dir(project_id)
         target = (project_dir / file_path).resolve()
@@ -917,7 +1028,7 @@ def create_app() -> FastAPI:
 
     # ---- Media (range requests handled by FileResponse) ---------------
 
-    @app.get("/media/{project_id}/{file_path:path}")
+    @router.get("/media/{project_id}/{file_path:path}")
     async def media(project_id: str, file_path: str) -> FileResponse:
         project_dir = _safe_project_dir(project_id)
         target = (project_dir / file_path).resolve()
@@ -929,17 +1040,25 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail="media not found")
         return FileResponse(target)
 
+    return router
+
+
+def build_ui_router(*, hub: bool = False) -> APIRouter:
+    """HTML pages, `/ui` assets, and `/brand` images."""
+    router = APIRouter()
+    prefixes = mount_prefixes(hub=hub)
+
     # ---- UI ------------------------------------------------------------
 
-    @app.get("/p/{project_id}")
+    @router.get("/p/{project_id}")
     async def board_page(project_id: str) -> HTMLResponse:
-        return _ui_html("board.html", ("board.css", "board.js"))
+        return _ui_html("board.html", ("board.css", "board.js"), **prefixes)
 
-    @app.get("/p/{project_path:path}")
+    @router.get("/p/{project_path:path}")
     async def board_page_path(project_path: str) -> HTMLResponse:
-        return _ui_html("board.html", ("board.css", "board.js"))
+        return _ui_html("board.html", ("board.css", "board.js"), **prefixes)
 
-    @app.get("/flow/{project_id}")
+    @router.get("/flow/{project_id}")
     async def flow_page(project_id: str) -> HTMLResponse:
         if not (UI_DIR / "flow-dist" / "flow.js").is_file():
             raise HTTPException(
@@ -949,25 +1068,70 @@ def create_app() -> FastAPI:
         return _ui_html(
             "flow.html",
             ("board.css", "flow-dist/flow.css", "flow-dist/flow.js"),
+            **prefixes,
         )
 
-    @app.get("/pipelines")
+    @router.get("/pipelines")
     async def pipelines_list_page() -> HTMLResponse:
-        return _ui_html("pipelines.html", ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"))
+        return _ui_html(
+            "pipelines.html",
+            ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"),
+            **prefixes,
+        )
 
-    @app.get("/pipelines/{pipeline_id}")
+    @router.get("/pipelines/{pipeline_id}")
     async def pipelines_config_page(pipeline_id: str) -> HTMLResponse:
-        return _ui_html("pipelines.html", ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"))
+        return _ui_html(
+            "pipelines.html",
+            ("board.css", "manifest-form.js", "md-editor.js", "loading.js", "pipelines.js", "i18n.js"),
+            **prefixes,
+        )
 
-    @app.get("/")
+    @router.get("/")
     async def library_page() -> HTMLResponse:
-        return _ui_html("index.html", ("board.css", "library.js", "i18n.js"))
+        return _ui_html("index.html", ("board.css", "library.js", "i18n.js"), **prefixes)
 
-    if UI_DIR.is_dir():
-        app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
-    assets_dir = REPO_ROOT / "assets"
-    if assets_dir.is_dir():
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+    @router.get("/ui/{file_path:path}")
+    async def ui_static(file_path: str) -> FileResponse:
+        if not UI_DIR.is_dir():
+            raise HTTPException(status_code=404, detail="ui not found")
+        return FileResponse(_safe_under(UI_DIR, file_path))
+
+    @router.get("/brand/{file_path:path}")
+    async def brand_static(file_path: str) -> FileResponse:
+        if not BRAND_DIR.is_dir():
+            raise HTTPException(status_code=404, detail="brand assets not found")
+        target = _safe_under(BRAND_DIR, file_path)
+        if target.suffix.lower() not in _BRAND_SUFFIXES:
+            raise HTTPException(status_code=403, detail="brand asset type not allowed")
+        return FileResponse(target)
+
+    return router
+
+
+def build_routers() -> tuple[APIRouter, APIRouter, APIRouter]:
+    return build_api_router(), build_media_router(), build_ui_router()
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="Backlot", docs_url=None, redoc_url=None)
+
+    @app.on_event("startup")
+    async def _startup() -> None:
+        await ensure_runtime()
+
+    @app.on_event("shutdown")
+    async def _shutdown() -> None:
+        global _watch_task
+        task = _watch_task
+        if task:
+            task.cancel()
+            _watch_task = None
+
+    api, media, ui = build_routers()
+    app.include_router(api, prefix="/api")
+    app.include_router(media)
+    app.include_router(ui)
 
     # The board is a long-lived SPA: a tab keeps running whatever board.js it
     # loaded, and browsers heuristically cache /ui assets. no-cache forces a
@@ -976,14 +1140,7 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def ui_no_cache(request, call_next):
         response = await call_next(request)
-        path = request.url.path
-        if (
-            path == "/"
-            or path.startswith("/ui")
-            or path.startswith("/p/")
-            or path.startswith("/flow")
-            or path.startswith("/pipelines")
-        ):
+        if _needs_ui_no_cache(request.url.path):
             response.headers["Cache-Control"] = "no-cache"
         return response
 

@@ -14,7 +14,7 @@ import {
   type XYPosition,
 } from "@xyflow/react";
 import type {BoardState, ProjectSettings} from "./types";
-import {getJSON, patchJSON, postJSON} from "./api";
+import {getJSON, pageURL, patchJSON, postJSON, resolveURL} from "./api";
 import {buildGraph, INPUT_NODE_ID} from "./graph";
 import {FlowEdge} from "./FlowEdge";
 import {StageNode} from "./StageNode";
@@ -150,7 +150,7 @@ export function FlowView() {
     });
 
     if (!staticMode) {
-      es = new EventSource(`/api/project/${encodeURIComponent(projectId)}/events`);
+      es = new EventSource(resolveURL(`/api/project/${encodeURIComponent(projectId)}/events`));
       es.onmessage = (ev) => {
         try {
           const data = JSON.parse(ev.data);
@@ -273,8 +273,8 @@ export function FlowView() {
       <div className="fs-page fs-empty">
         <div className="fs-empty-title">{error}</div>
         <div className="fs-empty-actions">
-          <a className="fs-link" href="/">← {STRINGS.back}项目库</a>
-          {projectId && <a className="fs-link" href={`/p/${encodeURIComponent(projectId)}`}>{STRINGS.openBoard}</a>}
+          <a className="fs-link" href={pageURL("/")}>← {STRINGS.back}项目库</a>
+          {projectId && <a className="fs-link" href={pageURL(`/p/${encodeURIComponent(projectId)}`)}>{STRINGS.openBoard}</a>}
           <button className="fs-btn" onClick={() => { setError(null); refresh().catch((e) => setError(String((e as Error).message || e))); }}>
             {STRINGS.retry}
           </button>
@@ -293,8 +293,8 @@ export function FlowView() {
         <div className="fs-empty-title">{STRINGS.loadFailed}</div>
         {error && <div className="fs-muted">{error}</div>}
         <div className="fs-empty-actions">
-          <a className="fs-link" href="/">← {STRINGS.back}项目库</a>
-          {projectId && <a className="fs-link" href={`/p/${encodeURIComponent(projectId)}`}>{STRINGS.openBoard}</a>}
+          <a className="fs-link" href={pageURL("/")}>← {STRINGS.back}项目库</a>
+          {projectId && <a className="fs-link" href={pageURL(`/p/${encodeURIComponent(projectId)}`)}>{STRINGS.openBoard}</a>}
           <button className="fs-btn" onClick={() => { setLoading(true); setError(null); refresh().catch((e) => setError(String((e as Error).message || e))); }}>
             {STRINGS.retry}
           </button>
@@ -307,8 +307,8 @@ export function FlowView() {
     <div className="fs-page">
       {/* 顶部工具栏 */}
       <div className="fs-toolbar">
-        <a className="fs-link" href="/">← {STRINGS.back}</a>
-        <a className="fs-link" href={`/p/${encodeURIComponent(projectId)}`}>{STRINGS.switchToBoard}</a>
+        <a className="fs-link" href={pageURL("/")}>← {STRINGS.back}</a>
+        <a className="fs-link" href={pageURL(`/p/${encodeURIComponent(projectId)}`)}>{STRINGS.switchToBoard}</a>
         <span className="fs-title">{state.title ?? projectId}</span>
         {state.pipeline?.label_zh && <span className="fs-chip">{state.pipeline.label_zh}</span>}
         <span className={`fs-live${state.live ? " live" : ""}`}>{state.live ? "● live" : "○ idle"}</span>

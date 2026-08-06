@@ -1,4 +1,4 @@
-import { brandMark, deleteJSON, el, fmtAgo, getJSON, patchJSON, postJSON, subscribe, thumbURL } from "/ui/lib.js";
+import { brandMark, deleteJSON, el, fmtAgo, getJSON, pageURL, patchJSON, postJSON, subscribe, thumbURL } from "/ui/lib.js";
 import { artifactLabel, stageLabel, statusLabel, t } from "/ui/i18n.js";
 import { renderLoading } from "/ui/loading.js";
 import {
@@ -90,7 +90,7 @@ function refreshToolbar() {
 function renderPipelinesButton() {
   return el("a", {
     class: "global-settings-btn",
-    href: "/pipelines",
+    href: pageURL("/pipelines"),
   }, t("pipeConfigNav"));
 }
 
@@ -317,7 +317,7 @@ function openCreateModal() {
         };
         const result = await postJSON("/api/projects", body);
         const staticSuffix = new URLSearchParams(location.search).has("static") ? "?static=1" : "";
-        location.href = `/p/${encodeURIComponent(result.project_id)}${staticSuffix}`;
+        location.href = pageURL(`/p/${encodeURIComponent(result.project_id)}${staticSuffix}`);
       } catch (err) {
         errorBox.hidden = false;
         errorBox.textContent = err.message || t("createFailed");
@@ -378,7 +378,7 @@ function card(p) {
   const staticSuffix = new URLSearchParams(location.search).has("static") ? "?static=1" : "";
   const link = el("a", {
     class: `lib-card${p.live ? " live-card" : ""}`,
-    href: `/p/${p.project_id}${staticSuffix}`,
+    href: pageURL(`/p/${p.project_id}${staticSuffix}`),
     style: "text-decoration:none;color:inherit",
   },
     poster,

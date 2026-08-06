@@ -74,17 +74,27 @@ REPO_ROOT = _resolve_repo_root()
 
 
 def _hub_montage_root() -> Path | None:
-    """宿主数据面下的 ``montage/``。
+    """宿主 profile 数据目录下的 ``montage/``。
 
-    作为 Hermes 能力挂载时，宿主进程带着 ``HUB_DATA_DIR``；数据面理应落在它
-    下面，而不是跟源码混在仓库根里。刻意不要求宿主额外注入
-    ``OPENMONTAGE_DATA_ROOT`` —— 这里的常量是模块级的，在插件 ``register()``
-    被调用前就已经算完，宿主那时再注入已经晚了。
+    作为 Hermes 能力挂载时数据面理应落在 profile 下面，而不是跟源码混在仓库
+    根里。刻意不要求宿主额外注入 ``OPENMONTAGE_DATA_ROOT`` —— 这里的常量是
+    模块级的，在插件 ``register()`` 被调用前就已经算完，宿主那时再注入已经晚了。
+
+    走宿主自己的 ``get_hermes_home()`` 而不是直接读 ``HUB_DATA_DIR``：后者只有
+    hub 拉起的进程才带，CLI 起的 agent 没有，于是同一台机器上 hub 看到一份
+    projects、CLI 看到另一份。同一个解析函数才能让同一 profile 下的 agent
+    看到同一份数据。
+
+    独立签出时 ``hermes_constants`` 不存在，返回 None 退回仓库根。
     """
-    raw = (os.environ.get("HUB_DATA_DIR") or "").strip()
-    if not raw:
+    try:
+        from hermes_constants import get_hermes_home
+    except ImportError:
         return None
-    return Path(raw).expanduser() / "montage"
+    try:
+        return get_hermes_home() / "montage"
+    except Exception:
+        return None
 
 
 # 数据根。显式覆盖 > 宿主数据面 > 仓库根（独立签出里直接跑的老行为）。

@@ -5,7 +5,7 @@ import {useEffect, useMemo, useState} from "react";
 import type {BoardState, ProjectSettings, RunState, StageOutputItem, StageState} from "./types";
 import {artifactLabel, railStatusLabel, stageLabel, STRINGS} from "./labels";
 import {stageOutputs, statusCls, upstreamOutputDecl} from "./graph";
-import {kindOfPath, mediaURL, thumbURL} from "./media";
+import {kindOfPath, mediaURL as buildMediaURL, thumbURL} from "./media";
 import {getJSON, patchJSON, postJSON} from "./api";
 import {getCoreFields, type CoreField} from "./coreFields";
 import {optionLabel} from "./fieldLabels";
@@ -426,7 +426,7 @@ function OutputHeroVideos({
   return (
     <div className="fs-output-hero">
       {videos.map((o, i) => {
-        const url = o.path ? mediaURL(projectId, o.path) : null;
+        const url = o.path ? buildMediaURL(projectId, o.path) : null;
         if (!url || o.kind !== "video") return null;
         return (
           <div key={`hero-${o.path ?? i}`} className="fs-output-hero-item">
@@ -530,7 +530,7 @@ function MediaTile({
   projectId: string;
   onOpen: () => void;
 }) {
-  const url = output.path ? mediaURL(projectId, output.path) : null;
+  const url = output.path ? buildMediaURL(projectId, output.path) : null;
 
   if (output.kind === "audio" && url) {
     return (
@@ -634,7 +634,7 @@ function ArtifactStrip({
 
 // 媒体弹框:全屏模态显示视频/图片(点击遮罩或 Esc 关闭)
 function MediaModal({output, projectId, onClose}: {output: StageOutputItem; projectId: string; onClose: () => void}) {
-  const url = output.path ? mediaURL(projectId, output.path) : null;
+  const url = output.path ? buildMediaURL(projectId, output.path) : null;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -1130,7 +1130,12 @@ function InputOps({
 
   const save = saveInputs;
 
-  const mediaURL = sm?.path ? `/media/${encodeURIComponent(state.project_id)}/${encodeURIComponent(String(sm.path).replace(/^projects\/[^/]+\//, ""))}` : null;
+  const playbackURL = sm?.path
+    ? buildMediaURL(state.project_id, String(sm.path).replace(/^projects\/[^/]+\//, ""))
+    : null;
+  const posterURL = sm?.poster
+    ? thumbURL(state.project_id, String(sm.poster), 320)
+    : null;
 
   return (
     <div className="fs-ops" onClick={(e) => e.stopPropagation()}>
@@ -1154,15 +1159,15 @@ function InputOps({
           <div className="fs-see">
             <div className="fs-see-col">
               <div className="fs-section-title">参考素材</div>
-              {sm?.poster && (
+              {posterURL && (
                 <img
                   className="fs-input-poster-lg"
-                  src={`/thumb/${encodeURIComponent(state.project_id)}/${encodeURIComponent(String(sm.poster))}?w=320`}
+                  src={posterURL}
                   alt=""
                 />
               )}
-              {mediaURL && sm?.playable ? (
-                <video className="fs-input-video" src={mediaURL} poster={sm?.poster ? `/thumb/${encodeURIComponent(state.project_id)}/${encodeURIComponent(String(sm.poster))}?w=320` : undefined} controls />
+              {playbackURL && sm?.playable ? (
+                <video className="fs-input-video" src={playbackURL} poster={posterURL || undefined} controls />
               ) : null}
               {typeof inputs.reference_url === "string" && inputs.reference_url && (
                 <div className="fs-preview-row"><b>参考 URL</b>

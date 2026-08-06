@@ -2,7 +2,7 @@
 
 import {
   STAGE_ICONS, brandMark, el, fmtAgo, fmtClock, fmtDuration, fmtMoney,
-  getJSON, mediaURL, pinMediaElements, postJSON, releaseUnusedPinnedMedia,
+  getJSON, mediaURL, pageURL, pinMediaElements, postJSON, releaseUnusedPinnedMedia,
   subscribe, takePinnedMedia, thumbURL, waveBars,
 } from "/ui/lib.js";
 import {
@@ -104,7 +104,7 @@ function renderSlate(s) {
     el("div", { class: "slate-brand" },
       brandMark(),
       el("div", { class: "board-intro" },
-        el("a", { class: "wordmark backlink", href: "/" }, t("backlot")),
+        el("a", { class: "wordmark backlink", href: pageURL("/") }, t("backlot")),
         el("h1", {}, s.title),
         chips.length ? el("div", { class: "slate-chips" }, ...chips) : null,
       ),
@@ -112,7 +112,7 @@ function renderSlate(s) {
     el("div", { class: "slate-actions" },
       el("a", {
         class: "board-settings-btn",
-        href: `/flow/${encodeURIComponent(projectId)}`,
+        href: pageURL(`/flow/${encodeURIComponent(projectId)}`),
         title: t("flowViewTitle"),
       }, t("flowView")),
       el("button", {
@@ -2386,7 +2386,7 @@ function renderEditNleToolbar(s, artifact) {
 
 async function toggleNlePreview(s) {
   try {
-    const info = await (await fetch(`/api/project/${encodedProjectId}/edit-preview`)).json();
+    const info = await getJSON(`/api/project/${encodedProjectId}/edit-preview`);
     const url = info.remotion?.nle_preview_url;
     if (url) {
       openEditPreviewModal({ url, runtime: "remotion", mode: "nle" }, "remotion", "nle");
@@ -2457,9 +2457,7 @@ function discardNleDraft() {
  */
 async function restoreNleDraftFromServer() {
   try {
-    const res = await fetch(`/api/project/${encodedProjectId}/nle-edit/draft`);
-    if (!res.ok) return;
-    const d = await res.json();
+    const d = await getJSON(`/api/project/${encodedProjectId}/nle-edit/draft`);
     if (d.has_draft && !d.stale) {
       nleDraft = { cuts: d.cuts || [], overlays: d.overlays != null ? d.overlays : null };
       nleDirty = true;

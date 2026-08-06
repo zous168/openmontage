@@ -2,8 +2,50 @@
 
 export { fmtAgo } from "/ui/i18n.js";
 
+function backlotConfig() {
+  if (window.__BACKLOT__) return window.__BACKLOT__;
+  // Hub pages live under /plugins/openmontage — derive prefixes if inject missed.
+  const onHub = location.pathname.startsWith("/plugins/openmontage");
+  return {
+    apiPrefix: onHub ? "/api/plugins/openmontage" : "/api",
+    uiPrefix: onHub ? "/plugins/openmontage" : "",
+    mediaPrefix: onHub ? "/api/plugins/openmontage" : "",
+  };
+}
+
+/** Rewrite root absolute Backlot URLs to the mounted namespace. */
+export function resolveURL(url) {
+  if (!url || typeof url !== "string") return url;
+  if (/^https?:\/\//i.test(url) || url.startsWith("//")) return url;
+  const { apiPrefix, mediaPrefix } = backlotConfig();
+  if (url.startsWith("/api/")) return apiPrefix + url.slice(4); // "/api/foo" -> "{apiPrefix}/foo"
+  if (url.startsWith("/media/")) return mediaPrefix + "/media/" + url.slice(7);
+  if (url.startsWith("/thumb/")) return mediaPrefix + "/thumb/" + url.slice(7);
+  return url;
+}
+
+/** Page / navigation URLs under the UI mount prefix (hub: /plugins/openmontage). */
+export function pageURL(path = "/") {
+  const { uiPrefix } = backlotConfig();
+  const p = !path || path === "/" ? "/" : (path.startsWith("/") ? path : `/${path}`);
+  if (!uiPrefix) return p;
+  if (p === "/") return `${uiPrefix}/`;
+  return `${uiPrefix}${p}`;
+}
+
+function handleAuth(res) {
+  if (res.status === 401) {
+    // Hub login page
+    const next = encodeURIComponent(window.location.pathname + window.location.search);
+    window.location.href = `/login?next=${next}`;
+    throw new Error("unauthorized");
+  }
+}
+
 export async function getJSON(url) {
+  url = resolveURL(url);
   const res = await fetch(url);
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -18,7 +60,9 @@ export async function getJSON(url) {
 }
 
 export async function deleteJSON(url) {
+  url = resolveURL(url);
   const res = await fetch(url, { method: "DELETE" });
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -37,7 +81,9 @@ export async function deleteJSON(url) {
 }
 
 export async function postForm(url, formData) {
+  url = resolveURL(url);
   const res = await fetch(url, { method: "POST", body: formData });
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -56,11 +102,13 @@ export async function postForm(url, formData) {
 }
 
 export async function postJSON(url, body) {
+  url = resolveURL(url);
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -79,11 +127,13 @@ export async function postJSON(url, body) {
 }
 
 export async function putJSON(url, body) {
+  url = resolveURL(url);
   const res = await fetch(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -102,11 +152,13 @@ export async function putJSON(url, body) {
 }
 
 export async function patchJSON(url, body) {
+  url = resolveURL(url);
   const res = await fetch(url, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
+  handleAuth(res);
   let data = null;
   try {
     data = await res.json();
@@ -163,7 +215,9 @@ export function fmtClock(iso) {
 }
 
 export function mediaURL(projectId, relPath) {
-  return `/media/${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}`;
+  const { mediaPrefix } = backlotConfig();
+  const path = `${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}`;
+  return `${mediaPrefix}/media/${path}`;
 }
 
 /** Detach hero <video> nodes before a full board re-render so SSE/replay ticks
@@ -193,11 +247,14 @@ export function releaseUnusedPinnedMedia() {
 
 // Downscaled cached JPEG for images (full media only in players/lightbox).
 export function thumbURL(projectId, relPath, w = 640) {
-  return `/thumb/${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}?w=${w}`;
+  const { mediaPrefix } = backlotConfig();
+  const path = `${encodeURIComponent(projectId)}/${relPath.split("/").map(encodeURIComponent).join("/")}`;
+  return `${mediaPrefix}/thumb/${path}?w=${w}`;
 }
 
 // Subscribe to a server-sent change feed; call onChange (debounced) per burst.
 export function subscribe(url, onChange) {
+  url = resolveURL(url);
   let timer = null;
   const source = new EventSource(url);
   source.onmessage = (msg) => {
@@ -230,6 +287,8 @@ export function waveBars(container, seedStr, count = 26, maxH = 14) {
 }
 
 export function brandMark({ size = 40, hidden = false } = {}) {
+  const { uiPrefix } = backlotConfig();
+  const brand = (name) => `${uiPrefix}/brand/${name}`;
   const wrap = el("div", {
     class: "brand-mark-wrap",
     "aria-hidden": hidden ? "true" : null,
@@ -243,11 +302,12 @@ export function brandMark({ size = 40, hidden = false } = {}) {
     decoding: "async",
   };
   wrap.append(
-    el("img", { ...imgAttrs, class: "brand-mark brand-mark-dark", src: "/assets/monty-dark.svg" }),
-    el("img", { ...imgAttrs, class: "brand-mark brand-mark-light", src: "/assets/monty-light.svg" }),
+    el("img", { ...imgAttrs, class: "brand-mark brand-mark-dark", src: brand("monty-dark.svg") }),
+    el("img", { ...imgAttrs, class: "brand-mark brand-mark-light", src: brand("monty-light.svg") }),
   );
   return wrap;
 }
+
 
 export const STAGE_ICONS = {
   completed: "✓",

@@ -303,7 +303,7 @@ projects/<project-name>/
 At pipeline initialization, before any stage runs:
 
 1. **Initialize the workspace**: `python -c "from plugins.openmontage.lib.checkpoint import init_project; init_project('<project-id>', title='<Title>', pipeline_type='<pipeline>')"` — creates the layout above and writes `project.json` (the marker the Backlot board reads).
-2. **Open the board**: run `python -m plugins.openmontage.backlot open <project-id>`. This starts the Backlot server if needed and opens the user's browser at the project's live board. If the command fails, continue the production — the board is an observer, never a blocker. This is the agent's ONLY board duty; the board derives everything else from disk.
+2. **Point the user at the board**: open `http://127.0.0.1:<hub-port>/plugins/openmontage/p/<project-id>` (or the library at `/plugins/openmontage/`). Backlot is mounted inside the Hermes hub — there is no separate `backlot open` process. If the browser cannot open, continue the production — the board is an observer, never a blocker.
 
 ### Backlot Web Channel (page-driven runs)
 
@@ -311,9 +311,9 @@ Since Backlot API v44 the board is no longer *only* an observer: the page can
 drive the pipeline as a second execution channel, equal in contract to the
 interactive agent.
 
-- **Run a stage** — `POST /api/project/{id}/stage/run` spawns a headless agent
-  (`claude -p --permission-mode bypassPermissions`, prompt via stdin) that
-  reads the **same director skill**, executes **the same registry tools**
+- **Run a stage** — `POST /api/plugins/openmontage/project/{id}/stage/run`
+  starts an **in-process** Hermes `AIAgent` (same process / brain as the hub)
+  that reads the **same director skill**, executes **the same registry tools**
   (events.jsonl auto-attributed) and writes **the same checkpoint contract**.
   It executes exactly one stage — `stage == get_next_stage()` is the only legal
   target; the server never chains stages or auto-advances.

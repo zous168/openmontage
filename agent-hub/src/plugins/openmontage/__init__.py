@@ -22,7 +22,7 @@ from plugins.openmontage.exec_tools import EXEC_TOOLS
 from plugins.openmontage.governance import post_tool_call, pre_tool_call
 from plugins.openmontage.skills import DIRECTOR_TOOLS, register_skills
 
-__all__ = ["register"]
+__all__ = ["register", "on_ready"]
 
 _EMOJI = {
     "om_preflight": "🩺",
@@ -54,3 +54,38 @@ def register(ctx) -> None:  # noqa: ANN001  (ctx 类型由宿主提供)
     # 挂到 pre_tool_call 上才是真拦得住。理由见 governance.py。
     ctx.register_hook("pre_tool_call", pre_tool_call)
     ctx.register_hook("post_tool_call", post_tool_call)
+
+    from plugins.openmontage.backlot.server import (
+        build_api_router,
+        build_media_router,
+        build_ui_router,
+    )
+
+    ctx.register_routes(
+        build_api_router(),
+        prefix="/api/plugins/openmontage",
+        tags=["openmontage-backlot"],
+    )
+    # Canonical media/thumb under the plugin API namespace (used by lib.js mediaPrefix).
+    ctx.register_routes(
+        build_media_router(),
+        prefix="/api/plugins/openmontage",
+        tags=["openmontage-backlot"],
+    )
+    # Compat: keep /thumb and /media at hub root so legacy/hardcoded img src still work.
+    ctx.register_routes(
+        build_media_router(),
+        prefix="",
+        tags=["openmontage-backlot"],
+    )
+    ctx.register_routes(
+        build_ui_router(hub=True),
+        prefix="/plugins/openmontage",
+        tags=["openmontage-backlot"],
+    )
+
+
+def on_ready(ctx) -> None:  # noqa: ANN001
+    from plugins.openmontage.backlot.server import start_runtime_sync
+
+    start_runtime_sync()

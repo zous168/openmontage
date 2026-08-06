@@ -2,6 +2,7 @@ import {Handle, Position, type NodeProps} from "@xyflow/react";
 import {memo} from "react";
 import type {SourceMedia} from "./types";
 import type {InputNodeData} from "./graph";
+import {thumbURL} from "./media";
 
 type InputNodeProps = NodeProps & {data: InputNodeData};
 
@@ -36,7 +37,7 @@ function InputNodeInner({data}: InputNodeProps) {
         {sm?.poster && (
           <img
             className="fs-input-poster"
-            src={`/thumb/${encodeURIComponent(data.projectId)}/${encodeURIComponent(String(sm.poster))}?w=240`}
+            src={thumbURL(data.projectId, String(sm.poster), 240)}
             alt=""
           />
         )}

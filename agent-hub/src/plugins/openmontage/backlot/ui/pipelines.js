@@ -1,6 +1,6 @@
 /** Dedicated pipeline config — stages, review checklists, director skill prompts. */
 
-import { el, getJSON, patchJSON, postJSON, putJSON, deleteJSON } from "/ui/lib.js";
+import { el, getJSON, pageURL, patchJSON, postJSON, putJSON, deleteJSON } from "/ui/lib.js";
 import { t, stageLabel } from "/ui/i18n.js";
 import { createMdEditor } from "/ui/md-editor.js";
 import { renderLoading, showLoading } from "/ui/loading.js";
@@ -23,10 +23,10 @@ function pipelineIdFromPath() {
 
 function navigateToPipeline(id) {
   if (id) {
-    history.pushState(null, "", `/pipelines/${encodeURIComponent(id)}`);
+    history.pushState(null, "", pageURL(`/pipelines/${encodeURIComponent(id)}`));
     void renderConfig(id);
   } else {
-    history.pushState(null, "", "/pipelines");
+    history.pushState(null, "", pageURL("/pipelines"));
     void renderList();
   }
 }
@@ -826,6 +826,8 @@ window.addEventListener("popstate", () => {
 });
 
 applyPreferences(readLocalPreferences());
+const pipeBack = document.getElementById("pipeBackLink");
+if (pipeBack) pipeBack.setAttribute("href", pageURL("/"));
 const initialId = pipelineIdFromPath();
 if (initialId) void renderConfig(initialId);
 else void renderList();

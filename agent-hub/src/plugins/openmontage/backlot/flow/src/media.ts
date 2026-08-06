@@ -5,6 +5,11 @@ const VIDEO_EXT = [".mp4", ".webm", ".mov"];
 const IMAGE_EXT = [".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg"];
 const AUDIO_EXT = [".mp3", ".wav", ".m4a", ".ogg"];
 
+function backlotConfig(): { mediaPrefix: string } {
+  const w = window as unknown as { __BACKLOT__?: { mediaPrefix?: string } };
+  return { mediaPrefix: w.__BACKLOT__?.mediaPrefix ?? "" };
+}
+
 export function normPath(path: string, projectId: string): string {
   const clean = String(path ?? "").replace(/\\/g, "/");
   const prefix = `projects/${projectId}/`;
@@ -21,11 +26,13 @@ function encodeSegments(projectId: string, path: string): string {
 }
 
 export function thumbURL(projectId: string, path: string, w = 320): string {
-  return `/thumb/${encodeURIComponent(projectId)}/${encodeSegments(projectId, path)}?w=${w}`;
+  const { mediaPrefix } = backlotConfig();
+  return `${mediaPrefix}/thumb/${encodeURIComponent(projectId)}/${encodeSegments(projectId, path)}?w=${w}`;
 }
 
 export function mediaURL(projectId: string, path: string): string {
-  return `/media/${encodeURIComponent(projectId)}/${encodeSegments(projectId, path)}`;
+  const { mediaPrefix } = backlotConfig();
+  return `${mediaPrefix}/media/${encodeURIComponent(projectId)}/${encodeSegments(projectId, path)}`;
 }
 
 export function kindOfPath(path: string): "video" | "image" | "audio" | "text" {

@@ -2,7 +2,7 @@
 
 Covers: run preparation / lock, fake-agent lifecycle (awaiting_human /
 completed / failed), page approve / reject (incl. revision cap), cancel,
-prompt assembly, CLI resolution, and the HTTP endpoints.
+prompt assembly, Hermes executor seam, and the HTTP endpoints.
 """
 
 from __future__ import annotations
@@ -70,29 +70,17 @@ def project_dir(projects_root):
     )
 
 
-class FakeProc:
-    """鸭子类型 asyncio.subprocess.Process（pid=0 保证永不误杀真实进程）。"""
+def install_fake_agent(monkeypatch, behavior=None, exit_code: int = 0):
+    """Monkeypatch the in-process executor seam (``execute_stage_agent``)."""
 
-    def __init__(self, behavior=None, exit_code: int = 0):
-        self.pid = 0
-        self.returncode = exit_code
-        self._behavior = behavior
+    async def fake_execute(task, log_fh=None):
+        if behavior:
+            prompt = task.prompt.encode("utf-8") if getattr(task, "prompt", None) else None
+            await behavior(prompt)
+        return exit_code
 
-    async def communicate(self, input: bytes | None = None):
-        if self._behavior:
-            await self._behavior(input)
-        return (b"", b"")
-
-
-def install_fake_agent(monkeypatch, behavior=None, exit_code: int = 0) -> FakeProc:
-    proc = FakeProc(behavior=behavior, exit_code=exit_code)
-
-    async def fake_spawn(cmd, *, cwd, stdout, stderr):
-        return proc
-
-    monkeypatch.setattr(stage_runner_mod, "_spawn_agent", fake_spawn)
-    monkeypatch.setattr(stage_runner_mod, "_resolve_claude_cmd", lambda: ["claude"])
-    return proc
+    monkeypatch.setattr(stage_runner_mod, "execute_stage_agent", fake_execute)
+    return fake_execute
 
 
 def agent_writes_awaiting(project_id: str, stage: str, artifact_name: str):
@@ -598,14 +586,18 @@ class TestRunLock:
 
 
 class TestStreamLogRendering:
-    """stream-json 落盘保真，展示前渲染——运行中也能看到日志。"""
+    """NDJSON 落盘保真，展示前渲染——运行中也能看到日志。"""
 
-    def test_cli_uses_streaming_output(self):
-        args = stage_runner_mod._build_cli_args(2.0)
-        # text 模式只在退出时一次性吐出 → 运行中日志恒为空。
-        assert "stream-json" in args
-        assert "--verbose" in args
-        assert "text" not in args
+    def test_renders_approval_audit(self):
+        raw = json.dumps({
+            "type": "system",
+            "subtype": "approval",
+            "decision": "auto-approved",
+            "description": "rm -rf dangerous",
+            "command": "rm -rf /tmp/x",
+        })
+        assert "自动批准" in "\n".join(stage_runner_mod.render_run_log(raw))
+        assert "rm -rf dangerous" in "\n".join(stage_runner_mod.render_run_log(raw))
 
     def test_renders_tool_use_text_and_result(self):
         raw = "\n".join([
@@ -690,54 +682,19 @@ class TestStreamLogRendering:
         assert stage_runner_mod._log_tail(tmp_path / "nope.log", 100) == ""
 
 
-class TestCliResolution:
-    def test_which_rejects_extensionless_on_windows(self, monkeypatch):
-        if os.name != "nt":
-            pytest.skip("Windows-specific")
-        import shutil
+class TestExecutorSeam:
+    def test_execute_stage_agent_is_patchable_seam(self):
+        assert callable(stage_runner_mod.execute_stage_agent)
 
-        def fake_which(name):
-            return {
-                "claude": r"C:\Users\test\npm\claude",  # sh 脚本——必须排除
-                "claude.cmd": r"C:\Users\test\npm\claude.cmd",
-            }.get(name)
-
-        monkeypatch.setattr(shutil, "which", fake_which)
-        assert stage_runner_mod._which("claude") is None
-        assert stage_runner_mod._which("claude.cmd") == r"C:\Users\test\npm\claude.cmd"
-
-    def test_child_env_drops_host_session_vars(self):
-        env = stage_runner_mod._child_env({
-            "CLAUDE_CODE_ENTRYPOINT": "claude-desktop",
-            "CLAUDECODE": "1",
-            "CLAUDE_CODE_SESSION_ID": "abc",
-            "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH": "1",
-            "ANTHROPIC_AUTH_TOKEN": "keep-me",
-            "ANTHROPIC_BASE_URL": "https://example.invalid",
-            "PATH": "/usr/bin",
-        })
-        # 宿主会话变量必须剥离——否则子进程走宿主托管 OAuth 凭据 → 401。
-        assert "CLAUDE_CODE_ENTRYPOINT" not in env
-        assert "CLAUDECODE" not in env
-        assert "CLAUDE_CODE_SESSION_ID" not in env
-        assert "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH" not in env
-        # 机器级 provider 配置必须保留。
-        assert env["ANTHROPIC_AUTH_TOKEN"] == "keep-me"
-        assert env["ANTHROPIC_BASE_URL"] == "https://example.invalid"
-        assert env["PATH"] == "/usr/bin"
-
-    def test_child_env_does_not_mutate_source(self):
-        src = {"CLAUDE_CODE_ENTRYPOINT": "claude-desktop", "PATH": "/usr/bin"}
-        stage_runner_mod._child_env(src)
-        assert src["CLAUDE_CODE_ENTRYPOINT"] == "claude-desktop"
-
-    def test_resolve_claude_cmd_returns_list(self):
-        try:
-            cmd = stage_runner_mod._resolve_claude_cmd()
-        except stage_runner_mod.StageRunError:
-            pytest.skip("claude CLI 未安装")
-        assert isinstance(cmd, list) and cmd
-        assert " " not in cmd[0]  # 无参数注入
+    def test_interrupt_agent_tolerates_missing_agent(self, project_dir):
+        task = stage_runner_mod.RunTask(
+            task_id="x",
+            project_dir=project_dir,
+            project_id=project_dir.name,
+            stage="research",
+            pipeline_type=PIPELINE,
+        )
+        stage_runner_mod._interrupt_agent(task, "noop")
 
 
 class TestHttpEndpoints:

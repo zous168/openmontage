@@ -1,7 +1,7 @@
 """Stage runner — headless-agent stage execution + page-driven approval for Backlot.
 
-页面驱动通道：``POST /api/project/{id}/stage/run`` 触发无头 claude CLI
-（``claude -p --permission-mode bypassPermissions``）执行**单一** pipeline 阶段。
+页面驱动通道：``POST /api/project/{id}/stage/run`` 在 hub 进程内构造 Hermes
+``AIAgent``，于工作线程调用 ``run_conversation`` 执行**单一** pipeline 阶段。
 无头 agent 读同一份 director skill、走同一 registry（工具事件自动落
 events.jsonl）、写同一份 checkpoint 契约 —— 与交互式 agent 完全同轨。
 
@@ -30,7 +30,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from plugins.openmontage.lib.paths import CODE_ROOT, PROJECTS_DIR, REPO_ROOT
+from plugins.openmontage.lib.paths import CODE_ROOT, PROJECTS_DIR
+from plugins.openmontage.backlot.agent_executor import execute_stage_agent
 
 # Backlot had no logging at all: a rejected run or a halted auto-advance left
 # nothing on disk, so "the board just stopped" was unattributable after the fact.
@@ -42,12 +43,11 @@ RUN_STATUSES = ("queued", "running", "succeeded", "failed", "aborted")
 KEEP_RUNS = 20
 HEARTBEAT_SECONDS = 25
 MONITOR_POLL_SECONDS = 5
-RECONCILE_STAGNANT_SECONDS = 120
 # prepare 加锁 → run_task 写出 runs/*.json 之间的窗口；超出视为孤儿锁。
 ORPHAN_LOCK_GRACE_SECONDS = 45
 DEFAULT_WALL_TIME_MINUTES = 30
 MIN_WALL_TIME_MINUTES = 10
-DEFAULT_BUDGET_USD = 5
+DEFAULT_BUDGET_USD = 5  # advisory only (prompt guidance); no CLI budget kill
 REVISION_LIMIT_DEFAULT = 3
 # 尾巴按**原始 NDJSON 字节**切——一个事件动辄数百字节，取得太小渲染后
 # 只剩一两行，板面预览就没信息量了。
@@ -90,10 +90,10 @@ class RunTask:
     log_path: Path = field(init=False)
     prompt: str = ""
     started_ts: float = field(default_factory=time.time)
-    # 取消/超时由外部设置（cancel_run / _monitor），run_task 的
-    # communicate 返回后据此定终态。
+    # 取消/超时由外部设置（cancel_run / _monitor），execute_stage_agent
+    # 返回后据此定终态。
     requested_status: Optional[str] = None
-    proc: Optional[asyncio.subprocess.Process] = None
+    agent: Any = None  # live Hermes AIAgent (in-process)
     monitor_task: Optional[asyncio.Task] = None
     heartbeat_task: Optional[asyncio.Task] = None
 
@@ -133,111 +133,19 @@ def _run_state_path(project_dir: Path, task_id: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# CLI 解析（Windows 关键路径）
+# In-process agent helpers (Claude CLI spawn removed — see agent_executor.py)
 # ---------------------------------------------------------------------------
 
 
-def _resolve_claude_cmd() -> list[str]:
-    """返回可被 CreateProcess 执行的 claude 命令 argv 头（不含参数）。
-
-    已知事实（本机实测）：npm 全局目录 ``%APPDATA%/npm/claude`` 是
-    extensionless POSIX sh 脚本（Git Bash 的 which 能找到但 CreateProcess
-    无法执行）；真正的入口是 ``claude.cmd`` → 直接调用 npm 包内原生
-    ``bin/claude.exe``。解析顺序：
-    1. npm 包内原生 exe（Windows 优先，零中间层）
-    2. shutil.which("claude.cmd") / "claude.exe"（PATHEXT 解析，排除 sh 脚本）
-    3. 降级 "claude"（POSIX 或 PATH 里确实有可执行文件时）
-    """
-    if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        if appdata:
-            native = (
-                Path(appdata)
-                / "npm"
-                / "node_modules"
-                / "@anthropic-ai"
-                / "claude-code"
-                / "bin"
-                / "claude.exe"
-            )
-            if native.is_file():
-                return [str(native)]
-    for name in ("claude.cmd", "claude.exe", "claude"):
-        found = _which(name)
-        if found:
-            return [found]
-    raise StageRunError("未找到 claude CLI——请确认 Claude Code 已安装并加入 PATH")
-
-
-def _which(name: str) -> Optional[str]:
-    import shutil
-
+def _interrupt_agent(task: "RunTask", reason: str = "") -> None:
+    """Ask the live AIAgent to stop; no subprocess kill."""
+    agent = task.agent
+    if agent is None:
+        return
     try:
-        resolved = shutil.which(name)
-    except OSError:
-        return None
-    if not resolved:
-        return None
-    # Git Bash 下 which("claude") 可能命中 extensionless sh 脚本——CreateProcess
-    # 无法执行（无 PATHEXT 后缀），必须排除。
-    if os.name == "nt" and "." not in Path(resolved).name:
-        return None
-    return resolved
-
-
-def _build_cli_args(budget_usd: float) -> list[str]:
-    """argv 100% 静态（budget 来自 manifest 数值）——用户输入只经 stdin。
-
-    用 ``stream-json`` 而非 ``text``：text 只在进程结束时一次性吐出，
-    于是「查看日志」在最需要它的时候（阶段跑了几分钟还没结束）永远是空的。
-    stream-json 实时逐行落盘，日志随 agent 推进增长。原始 NDJSON 留在
-    ``runs/*.log``（保真、可 debug），展示前经 ``render_run_log`` 渲染。
-    """
-    return [
-        "-p",
-        "--output-format", "stream-json",
-        "--verbose",  # stream-json 在 -p 下需要它才输出逐事件流
-        "--permission-mode", "bypassPermissions",
-        "--max-budget-usd", f"{budget_usd:.2f}",
-    ]
-
-
-# 会话级宿主变量——必须从无头子进程环境剥离。
-#
-# 背景（本机实测，21 次 spawn 最小化）：Backlot server 通常由交互式 agent
-# 启动（`python -m plugins.openmontage.backlot open <id>`），于是继承宿主会话注入的
-# ``CLAUDE_CODE_ENTRYPOINT='claude-desktop'``。原样传给独立 spawn 的
-# claude CLI 后，子进程认定自己跑在桌面 App 内、改用**宿主托管的 OAuth
-# 凭据**而非 settings.json 的 ANTHROPIC_AUTH_TOKEN，凭据过期即
-# ``401 OAuth access token has expired``——无头通道整体不可用。
-#
-# ENTRYPOINT 是唯一的必需项（其余单独保留均不致命），但会话身份/宿主
-# 认证握手类变量同样不该泄漏进一个独立会话，一并剥离。用户自己在
-# settings.json 配的 CLAUDE_CODE_*（SUBAGENT_MODEL / EFFORT_LEVEL / …）
-# 不在此列，且 CLI 会自行重读 settings.json，配置不丢。
-_CHILD_ENV_DROP = frozenset({
-    "CLAUDE_CODE_ENTRYPOINT",           # ← 401 的直接成因
-    "CLAUDE_CODE_SESSION_ID",
-    "CLAUDE_CODE_HOST_SESSION_ID",
-    "CLAUDE_CODE_CHILD_SESSION",
-    "CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH",
-    "CLAUDE_CODE_SDK_HAS_OAUTH_REFRESH",
-    "CLAUDE_CODE_OAUTH_SCOPES",
-    "CLAUDE_CODE_EXECPATH",
-    "CLAUDECODE",
-    "CLAUDE_PID",
-    "CLAUDE_AGENT_SDK_VERSION",
-})
-
-
-def _child_env(base: Optional[dict] = None) -> dict:
-    """无头子进程环境：继承机器配置（ANTHROPIC_* 等），剥离宿主会话变量。"""
-    from plugins.openmontage.lib.python_runtime import openmontage_python_env
-
-    env = openmontage_python_env(base)
-    for key in _CHILD_ENV_DROP:
-        env.pop(key, None)
-    return env
+        agent.interrupt(reason or None)
+    except Exception as exc:
+        log.debug("agent.interrupt failed: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +250,7 @@ def _release_lock(project_dir: Path, task_id: str) -> None:
 
 
 def _update_lock_pid(project_dir: Path, task: RunTask) -> None:
-    """spawn 后把真实 pid 补进锁（供 stale 判定与并发检查）。"""
+    """agent 启动后把 hub pid 补进锁（供 stale 判定与并发检查）。"""
     path = _lock_path(project_dir)
     existing = _read_json(path)
     if existing and existing.get("task_id") == task.task_id:
@@ -464,6 +372,9 @@ def _render_stream_event(obj: dict) -> Optional[str]:
     if typ == "system":
         if obj.get("subtype") == "init":
             return f"● 会话启动 · model={obj.get('model') or '?'}"
+        if obj.get("subtype") == "approval":
+            desc = obj.get("description") or "dangerous tool"
+            return f"● 自动批准 · {desc}"
         return None
     if typ == "assistant":
         out = []
@@ -622,50 +533,8 @@ def _cleanup_old_runs(project_dir: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# 进程管理
+# Agent 运行监控（in-process；无子进程）
 # ---------------------------------------------------------------------------
-
-
-async def _spawn_agent(cmd: list[str], *, cwd: Path, stdout, stderr) -> asyncio.subprocess.Process:
-    """唯一 spawn 点（测试 seam）。Windows: DETACHED + 无窗口，孩子存活于
-    server 重启（供 reconcile 接回）；POSIX: start_new_session。"""
-    kwargs: dict[str, Any] = {
-        "cwd": str(cwd),
-        "stdout": stdout,
-        "stderr": stderr,
-        "stdin": asyncio.subprocess.PIPE,
-        "env": _child_env(),
-    }
-    if os.name == "nt":
-        kwargs["creationflags"] = (
-            subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NEW_PROCESS_GROUP
-            | getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-        )
-    else:
-        kwargs["start_new_session"] = True
-    return await asyncio.create_subprocess_exec(*cmd, **kwargs)
-
-
-def _kill_process_tree(pid: int) -> None:
-    """Windows taskkill /T /F（claude 是 node，有子进程树）；POSIX killpg。"""
-    if pid <= 0:
-        return
-    try:
-        if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(pid), "/T", "/F"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-        else:
-            import signal
-
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
-    except (OSError, ProcessLookupError):
-        pass
 
 
 async def _heartbeat(task: RunTask) -> None:
@@ -686,8 +555,7 @@ async def _monitor(task: RunTask) -> None:
             task.error = (
                 f"超时（{task.timeout_seconds / 60:.0f} 分钟墙钟上限），已终止"
             )
-            if task.pid:
-                _kill_process_tree(task.pid)
+            _interrupt_agent(task, "wall-clock timeout")
             return
 
 
@@ -732,7 +600,7 @@ def _prepare_stage_run(
     parameters: Optional[dict] = None,
     feedback: Optional[str] = None,
 ) -> RunTask:
-    """同步校验 + 加锁 + 组装 prompt + 注册任务（不 spawn）。
+    """同步校验 + 加锁 + 组装 prompt + 注册任务（不启动 agent）。
 
     校验顺序（契约）：manifest 加载 → stage == get_next_stage（同时覆盖
     首次运行与驳回/失败重跑）→ 加锁（409）→ 组装 prompt。
@@ -792,7 +660,7 @@ def _prepare_stage_run(
     task.timeout_seconds = max(wall_minutes, MIN_WALL_TIME_MINUTES) * 60
     task.budget_usd = float(orchestration.get("budget_default_usd") or DEFAULT_BUDGET_USD)
 
-    # 锁携带 pid —— spawn 前 pid 未知，先占位 0，spawn 后补写。
+    # 锁携带 pid —— agent 启动前占位 0，启动后写 hub pid。
     task.pid = 0
     _acquire_lock(project_dir, task)
     try:
@@ -814,29 +682,26 @@ def _prepare_stage_run(
 
 
 async def run_task(task: RunTask, *, chain: bool = True) -> None:
-    """核心协程：spawn → stdin 送 prompt → 等退出 → 定终态。"""
+    """核心协程：in-process AIAgent → 等待结束 → 定终态。"""
     runs = _runs_dir(task.project_dir)
     runs.mkdir(parents=True, exist_ok=True)
     log_fh = open(task.log_path, "wb", buffering=0)  # 二进制句柄，防混编码
     succeeded = False
     try:
-        cmd = [*_resolve_claude_cmd(), *_build_cli_args(task.budget_usd)]
-        task.proc = await _spawn_agent(cmd, cwd=REPO_ROOT, stdout=log_fh, stderr=log_fh)
-        task.pid = task.proc.pid
+        task.pid = os.getpid()  # hub pid — stale lock after server restart
         log.info(
-            "run.spawned project=%s stage=%s task=%s pid=%s budget=$%s timeout=%ss",
+            "run.started project=%s stage=%s task=%s pid=%s timeout=%ss",
             task.project_id, task.stage, task.task_id, task.pid,
-            task.budget_usd, task.timeout_seconds,
+            task.timeout_seconds,
         )
-        # 锁补写真实 pid（供 stale 判定与并发检查）。
         _update_lock_pid(task.project_dir, task)
         task.status = "running"
         _write_run_state(task)
         task.monitor_task = asyncio.create_task(_monitor(task))
         task.heartbeat_task = asyncio.create_task(_heartbeat(task))
 
-        await task.proc.communicate(input=task.prompt.encode("utf-8"))
-        task.exit_code = task.proc.returncode
+        # Test seam: monkeypatch execute_stage_agent.
+        task.exit_code = await execute_stage_agent(task, log_fh)
         if task.requested_status == "aborted":
             _finalize(task, "aborted")
         elif task.requested_status == "timed_out":
@@ -848,8 +713,7 @@ async def run_task(task: RunTask, *, chain: bool = True) -> None:
             task.error = f"agent 退出码 {task.exit_code}"
             _finalize(task, "failed")
     except asyncio.CancelledError:
-        if task.pid:
-            _kill_process_tree(task.pid)
+        _interrupt_agent(task, "task cancelled")
         _finalize(task, "aborted")
         raise
     except Exception as exc:
@@ -863,8 +727,10 @@ async def run_task(task: RunTask, *, chain: bool = True) -> None:
             log_fh.close()
         except OSError:
             pass
+        task.agent = None
     if chain and succeeded:
         await auto_advance_chain(task.project_dir, from_stage=task.stage)
+
 
 
 def _finalize(task: RunTask, status: str) -> None:
@@ -1012,19 +878,15 @@ def cancel_run(project_dir: Path, task_id: str) -> dict:
     if task and task.task_id == task_id and task.status in ("queued", "running"):
         task.requested_status = "aborted"
         task.error = "用户在 Backlot 页面取消"
-        if task.pid:
-            _kill_process_tree(task.pid)
+        _interrupt_agent(task, "user cancel")
         _finalize(task, "aborted")
         return {"ok": True, "task_id": task_id, "status": "aborted"}
-    # 非内存态任务（服务重启后）：直接按 pid 杀 + 标状态。
+    # 非内存态任务（服务重启后）：in-process agent 已随 hub 消亡，只标状态。
     state = _read_run(project_dir, task_id)
     if not state:
         raise StageRunError("未知任务")
     if state.get("status") not in ("queued", "running"):
         return {"ok": False, "task_id": task_id, "status": state.get("status")}
-    pid = state.get("pid")
-    if isinstance(pid, int) and pid > 0:
-        _kill_process_tree(pid)
     state["status"] = "aborted"
     state["finished_at"] = _now_iso()
     state["error"] = "用户在 Backlot 页面取消（服务重启后补记）"
@@ -1047,11 +909,9 @@ def _write_state_dict(project_dir: Path, state: dict) -> None:
 
 
 async def reconcile_runs() -> None:
-    """服务启动时接回运行中的无头任务（DETACHED 子进程在 server 重启后存活）。
+    """服务启动时回收磁盘上仍标 running/queued 的任务。
 
-    - pid 已死 → 依据 checkpoint 终态定 succeeded/failed，否则 failed(中断)。
-    - pid 存活 → 重建监控：完成判定 = 日志停滞 + checkpoint 终态；
-      超时看门狗 = 原 deadline 失效后按剩余时间放宽 5 分钟。
+    In-process AIAgent 随 hub 进程消亡，无法 PID 接回——一律标 failed/interrupted。
     """
     if not PROJECTS_DIR.is_dir():
         return
@@ -1062,27 +922,21 @@ async def reconcile_runs() -> None:
         for state in _list_runs(project_dir, limit=KEEP_RUNS):
             if state.get("status") not in ("queued", "running"):
                 continue
-            task_id = state.get("task_id", "")
-            pid = state.get("pid")
-            if not isinstance(pid, int) or pid <= 0 or not _pid_alive(pid):
-                _finalize_reconciled(project_dir, state, interrupted=True)
-                continue
-            task = RunTask(
-                task_id=task_id,
-                project_dir=project_dir,
-                project_id=project_dir.name,
-                stage=state.get("stage", ""),
-                pipeline_type=state.get("pipeline_type", ""),
-                status="running",
-            )
-            task.pid = pid
-            task.started_at = state.get("started_at", task.started_at)
-            # 已跑时长计入墙钟，但服务停机时长不算——clamp 到 timeout 内，
-            # 保证重启后至少还留足剩余时间。
-            elapsed = max(0.0, time.time() - _parse_ts(state.get("started_at")))
-            task.started_ts = time.time() - min(elapsed, task.timeout_seconds)
-            _TASKS[project_dir.name] = task
-            asyncio.create_task(_reconcile_watch(task))
+            _finalize_reconciled(project_dir, state, interrupted=True)
+            stage = str(state.get("stage") or "")
+            if stage:
+                _patch_stuck_in_progress(
+                    RunTask(
+                        task_id=str(state.get("task_id") or ""),
+                        project_dir=project_dir,
+                        project_id=project_dir.name,
+                        stage=stage,
+                        pipeline_type=str(state.get("pipeline_type") or ""),
+                        status="aborted",
+                        error=state.get("error")
+                        or "服务重启导致进程状态丢失（任务中断）",
+                    )
+                )
 
 
 def _parse_ts(iso: Any) -> float:
@@ -1113,39 +967,6 @@ def _finalize_reconciled(project_dir: Path, state: dict, *, interrupted: bool) -
     state["finished_at"] = _now_iso()
     _write_state_dict(project_dir, state)
     _release_lock(project_dir, state.get("task_id", ""))
-
-
-async def _reconcile_watch(task: RunTask) -> None:
-    """重启后监控：log 停滞 + checkpoint 终态 → 定终态；超时看门狗。"""
-    last_size = task.log_path.stat().st_size if task.log_path.is_file() else 0
-    stagnant_since: Optional[float] = None
-    deadline = task.started_ts + task.timeout_seconds + 300
-    while True:
-        await asyncio.sleep(MONITOR_POLL_SECONDS)
-        if task.status != "running":
-            return
-        if time.time() > deadline:
-            _kill_process_tree(task.pid or 0)
-            _finalize_reconciled(task.project_dir, _read_run(task.project_dir, task.task_id) or {}, interrupted=True)
-            _TASKS.pop(task.project_id, None)
-            return
-        if not task.log_path.is_file():
-            continue
-        size = task.log_path.stat().st_size
-        if size != last_size:
-            last_size = size
-            stagnant_since = None
-            continue
-        if stagnant_since is None:
-            stagnant_since = time.time()
-        elif time.time() - stagnant_since > RECONCILE_STAGNANT_SECONDS:
-            from plugins.openmontage.lib.checkpoint import read_checkpoint
-
-            cp = read_checkpoint(PROJECTS_DIR, task.project_id, task.stage)
-            if cp and cp.get("status") in ("completed", "awaiting_human", "failed"):
-                _finalize_reconciled(task.project_dir, _read_run(task.project_dir, task.task_id) or {}, interrupted=False)
-                _TASKS.pop(task.project_id, None)
-                return
 
 
 # ---------------------------------------------------------------------------
@@ -1270,7 +1091,7 @@ preflight 示例：
    - 永远不要对 gated 阶段写 completed + human_approved=False（checkpoint 库
      会拒绝，GATE VIOLATION）。
 4. 任何失败: 写 status='failed' + error（≤400 字符，简述原因），不要留下 in_progress。
-5. 时间预算 {wall_time_minutes} 分钟（服务端到点强杀）；成本预算 ${budget_usd}。
+5. 时间预算 {wall_time_minutes} 分钟（服务端到点中断）。 参考成本提示 ${budget_usd}（无硬性 CLI 预算杀进程）。
    稳步推进，频繁 checkpoint。
 """
 
@@ -1286,7 +1107,7 @@ def _busy_or_none(project_dir: Path) -> Optional[str]:
     if task and task.status in ("queued", "running"):
         pid = task.pid if isinstance(task.pid, int) else 0
         if pid > 0 and not _pid_alive(pid):
-            # 内存里仍标 running 但子进程已死 —— 视为孤儿，勿阻塞批准/驳回。
+            # 内存里仍标 running 但 hub pid 已死 —— 视为孤儿，勿阻塞批准/驳回。
             _TASKS.pop(project_dir.name, None)
             _reconcile_lock(project_dir)
         else:
@@ -1299,7 +1120,7 @@ def _busy_or_none(project_dir: Path) -> Optional[str]:
         if isinstance(pid, int) and pid > 0 and not _pid_alive(pid):
             _finalize_reconciled(project_dir, state, interrupted=True)
             continue
-        return "该项目已有任务在运行（服务重启后恢复中），请等待完成"
+        return "该项目已有任务在运行（磁盘残留 running，请等待回收），请等待完成"
     return None
 
 

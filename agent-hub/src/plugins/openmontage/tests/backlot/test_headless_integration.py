@@ -1,14 +1,7 @@
-"""Optional integration test — real headless claude spawn (slow, opt-in).
+"""Optional integration test — real in-process Hermes AIAgent (slow, opt-in).
 
-Verifies the Windows spawn chain end-to-end: CLI resolution (claude.exe /
-claude.cmd) → argv construction → child env scrub → `claude -p` executes
-and returns.
-
-The env scrub is load-bearing, not cosmetic: the Backlot server normally
-inherits ``CLAUDE_CODE_ENTRYPOINT`` from the interactive session that
-launched it, and passing it through makes the child use host-managed OAuth
-credentials → ``401 OAuth access token has expired``. This test spawns with
-``_child_env()`` so a regression there fails here.
+Verifies that ``run_agent_conversation`` can construct an AIAgent and complete
+a trivial turn (requires configured provider credentials).
 
 Run explicitly (skipped by default):
     RUN_BACKLOT_HEADLESS_IT=1 python -m pytest tests/backlot/test_headless_integration.py -v
@@ -16,34 +9,29 @@ Run explicitly (skipped by default):
 
 from __future__ import annotations
 
+import io
 import os
-import subprocess
 
 import pytest
 
-import plugins.openmontage.backlot.stage_runner as stage_runner_mod
+from plugins.openmontage.backlot import agent_executor
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("RUN_BACKLOT_HEADLESS_IT") != "1",
-    reason="opt-in integration test (spawns a real claude process)",
+    reason="opt-in integration test (runs a real Hermes AIAgent turn)",
 )
 
 
-def test_headless_claude_spawns_and_answers():
-    cmd = [
-        *stage_runner_mod._resolve_claude_cmd(),
-        *stage_runner_mod._build_cli_args(1.0),
-        "print 1+1",
-    ]
-    assert cmd[0]  # resolved binary (no shell interpolation)
-    r = subprocess.run(
-        cmd, capture_output=True, timeout=180,
-        cwd=str(stage_runner_mod.REPO_ROOT),
-        env=stage_runner_mod._child_env(),  # 与 _spawn_agent 同一环境构造
+def test_headless_hermes_agent_answers():
+    buf = io.BytesIO()
+    holder: list = []
+    result = agent_executor.run_agent_conversation(
+        "Reply with exactly the characters: 2",
+        task_id="itest",
+        log_fh=buf,
+        agent_holder=holder,
     )
-    assert r.returncode == 0, (
-        f"claude exited {r.returncode}: "
-        f"{r.stderr.decode('utf-8', 'replace')[:400]}"
-    )
-    out = (r.stdout or b"").decode("utf-8", "replace")
-    assert "2" in out, f"expected answer in stdout, got: {out[:400]}"
+    assert result.get("exit_code") == 0, result
+    assert "2" in (result.get("final_response") or ""), result
+    log_text = buf.getvalue().decode("utf-8", "replace")
+    assert '"type": "system"' in log_text or '"type":"system"' in log_text

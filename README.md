@@ -162,8 +162,9 @@ Every production on your machine, live-first, in the library:
 <p align="center"><img src="docs/images/backlot/library.png" alt="Backlot library" width="920"></p>
 
 ```bash
-python -m plugins.openmontage.backlot open                  # the library — every project on disk
-python -m plugins.openmontage.backlot open <project-id>     # one production's live board
+# Hub board (default local port 8643):
+#   http://127.0.0.1:8643/plugins/openmontage/              # library
+#   http://127.0.0.1:8643/plugins/openmontage/p/<project-id>
 python scripts/backlot_simulate_run.py  # no production yet? watch a simulated one live
 ```
 

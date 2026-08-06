@@ -36,6 +36,7 @@ class _RecordingCtx:
         self.skills: list[str] = []
         self.skill_paths: list[Path] = []
         self.hooks: list[str] = []
+        self.routes: list[tuple[str, object]] = []
 
     def register_tool(self, name, **_kw):  # noqa: ANN001
         self.tools.append(name)
@@ -48,6 +49,9 @@ class _RecordingCtx:
     def register_hook(self, hook_name, callback):  # noqa: ANN001
         assert callable(callback)
         self.hooks.append(hook_name)
+
+    def register_routes(self, router, *, prefix="", tags=None):  # noqa: ANN001
+        self.routes.append((prefix, router))
 
 
 @pytest.fixture(scope="module")
@@ -74,6 +78,14 @@ def test_manifest_matches_registered_tools(registered):
 def test_registers_governance_hooks(registered):
     assert "pre_tool_call" in registered.hooks
     assert "post_tool_call" in registered.hooks
+
+
+def test_registers_backlot_routes(registered):
+    prefixes = [p for p, _ in registered.routes]
+    assert "/api/plugins/openmontage" in prefixes
+    assert "/plugins/openmontage" in prefixes
+    assert "" in prefixes  # /thumb + /media root compat
+    assert prefixes.count("/api/plugins/openmontage") == 2  # api + media
 
 
 def test_registers_agent_guide_and_meta_skills(registered):
@@ -162,9 +174,71 @@ def test_data_root_is_redirectable(tmp_path):
     assert Path(got["skills"]) == Path(got["code"]) / "skills"
 
 
-def test_data_root_defaults_to_repo_root():
-    """不注入时数据根等于仓库根 —— 独立签出的老行为。"""
-    assert DATA_ROOT == REPO_ROOT
+def _probe_data_root(tmp_path, *, script: str, env_extra: dict) -> dict:
+    """在子进程里取一次路径常量。
+
+    常量是模块级的，``importlib.reload`` 会让已经 ``from ... import`` 过的模块
+    与新值不一致，污染同一次 pytest 运行里的其它用例。
+    """
+    import os
+    import subprocess
+    import sys
+
+    probe = tmp_path / "probe_paths.py"
+    probe.write_text(script, encoding="utf-8")
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OPENMONTAGE_")}
+    env.pop("HUB_DATA_DIR", None)
+    env.update(env_extra)
+    env["PYTHONPATH"] = str(CODE_ROOT.parent.parent)
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    proc = subprocess.run(
+        [sys.executable, str(probe)], env=env, capture_output=True, text=True, check=False
+    )
+    assert proc.returncode == 0, proc.stderr
+    return json.loads(proc.stdout)
+
+
+_DUMP = (
+    "import json\n"
+    "from plugins.openmontage.lib import paths as p\n"
+    "print(json.dumps({'data': str(p.DATA_ROOT), 'repo': str(p.REPO_ROOT)}))\n"
+)
+
+
+def test_data_root_follows_the_profile_when_hosted(tmp_path):
+    """挂在 Hermes 下时数据面落在 profile 目录，而不是跟源码混在仓库根。"""
+    from hermes_constants import get_hermes_home
+
+    got = _probe_data_root(tmp_path, script=_DUMP, env_extra={})
+    assert Path(got["data"]) == get_hermes_home() / "montage"
+
+
+def test_data_root_agrees_between_hub_and_cli(tmp_path):
+    """hub 拉起的进程带 HUB_DATA_DIR，CLI 起的不带 —— 两者必须解析到同一份数据。
+
+    曾经这里读的是 ``HUB_DATA_DIR`` 环境变量，于是同一台机器上 hub 看到 5 个
+    项目、CLI 看到 0 个。
+    """
+    from hermes_constants import get_hermes_home
+
+    hosted = _probe_data_root(
+        tmp_path, script=_DUMP, env_extra={"HUB_DATA_DIR": str(get_hermes_home())}
+    )
+    cli = _probe_data_root(tmp_path, script=_DUMP, env_extra={})
+    assert hosted["data"] == cli["data"]
+
+
+def test_data_root_falls_back_to_repo_root_standalone(tmp_path):
+    """独立签出里没有宿主可问，退回仓库根 —— 迁移前的老行为。"""
+    script = (
+        "import sys\n"
+        # 置 None 让后续 import 抛 ImportError，等价于宿主不存在。
+        "sys.modules['hermes_constants'] = None\n"
+    ) + _DUMP
+    got = _probe_data_root(tmp_path, script=script, env_extra={})
+    assert Path(got["data"]) == Path(got["repo"])
 
 
 # ─── 3. 只读面对真实数据可用 ──────────────────────────────────────────

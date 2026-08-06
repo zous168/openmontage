@@ -67,7 +67,7 @@ init_project("my-project", title="My Project", pipeline_type="cinematic")
 ```
 
 这会创建规范的目录布局并写出 `project.json` —— 这是 Backlot 看板在
-第一个检查点出现之前显示该项目所需的标记文件。然后启动看板：`python -m plugins.openmontage.backlot open my-project`
+第一个检查点出现之前显示该项目所需的标记文件。然后打开看板：`http://127.0.0.1:<hub-port>/plugins/openmontage/p/my-project`（Hub 已挂载 Backlot，无需单独 `backlot open`）。
 （不可用时不致命 —— 看板只是观察者，绝不是阻塞项）。
 
 ### 第 4 步：阶段内检查点（续跑支持 + 存活信号）

@@ -4,7 +4,7 @@ import {resolve} from "node:path";
 // 产物输出到 backlot/ui/flow-dist/ — 由 Backlot 的 StaticFiles mount(/ui)直接服务。
 // 稳定文件名(flow.js/flow.css)是为了配合 server.py 的 _ui_html mtime 版本化注入。
 export default defineConfig({
-  base: "/ui/flow-dist/",
+  base: "./",
   build: {
     outDir: resolve(__dirname, "../ui/flow-dist"),
     emptyOutDir: true,
