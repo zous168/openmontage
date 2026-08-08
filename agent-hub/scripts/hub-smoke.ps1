@@ -35,7 +35,7 @@ function Test-Endpoint {
 
 Write-Host "==> Hub smoke $BaseUrl" -ForegroundColor Cyan
 
-$loginName = if ($env:HUB_DEV_SEED_AI_WORKER_LOGIN) { $env:HUB_DEV_SEED_AI_WORKER_LOGIN } else { 'aw_seed_demo001' }
+$loginName = if ($env:HUB_DEV_SEED_AI_WORKER_LOGIN) { $env:HUB_DEV_SEED_AI_WORKER_LOGIN } else { 'aw_1d8c23200075fe43bf0881c5' }
 $loginPass = if ($env:HUB_DEV_SEED_PASSWORD) { $env:HUB_DEV_SEED_PASSWORD } else { 'Seed@Pass123' }
 $loginJson = "{`"login_name`":`"$loginName`",`"password`":`"$loginPass`"}"
 try {

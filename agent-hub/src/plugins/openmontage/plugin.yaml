@@ -21,3 +21,9 @@ provides_tools:
   - om_run
   - om_job
   - om_state
+  # 无头 stage 专用面（toolset openmontage_stage；编排大脑通常不用）
+  - om_registry
+  - om_checkpoint
+  - om_artifact_read
+  - om_artifact_write
+  - om_decision_append

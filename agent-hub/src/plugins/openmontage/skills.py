@@ -4,6 +4,9 @@
 
 AGENT_GUIDE.md（契约层）
     整个能力的操作手册。注册为常驻技能，大脑随时可显式加载。
+    顶部 ``om:session-brief`` 块由 ``pre_llm_call`` **按需**注入：仅当本轮
+    用户消息像视频生产 / OpenMontage 工作时才追加，避免 ``hi`` 之类问候
+    触发 onboarding / om_preflight。同一会话只注入一次。
 
 meta/（跨阶段方法论）
     reviewer、checkpoint-protocol、taste-direction 之类，与具体流水线无关。
@@ -17,9 +20,14 @@ pipelines/<type>/<stage>-director.md（阶段导演）
 
 from __future__ import annotations
 
+import logging
+import os
+import re
 from typing import Any
 
 from plugins.openmontage.bridge import _error, _json
+
+logger = logging.getLogger(__name__)
 
 _META_DESCRIPTIONS = {
     "reviewer": "阶段产出的批判性复核清单——交付前自查用",
@@ -34,6 +42,102 @@ _META_DESCRIPTIONS = {
     "video-reference-analyst": "参考视频的拆解方法",
     "voice-performance-director": "配音表演指导与可听性把关",
 }
+
+_BRIEF_START = "<!-- om:session-brief:start -->"
+_BRIEF_END = "<!-- om:session-brief:end -->"
+_BRIEF_RE = re.compile(
+    re.escape(_BRIEF_START) + r"\s*(.*?)\s*" + re.escape(_BRIEF_END),
+    re.DOTALL,
+)
+
+# 同一会话只注入一次完整 brief，避免每轮重复占上下文。
+_briefed_sessions: set[str] = set()
+
+# 用户消息里出现这些，才认为在谈 OpenMontage / 视频生产。
+_OM_INTENT_RE = re.compile(
+    r"("
+    r"open\s*montage|openmontage|\bom[_-]"
+    r"|视频|短片|短视频|解说|剪辑|成片|片头|片尾|分镜|剧本|旁白|配音"
+    r"|流水线|管线|检查点|看板|backlot"
+    r"|montage|remotion|hyperframes|ffmpeg"
+    r"|做[个一]?[条部]?片|帮我做|做[点个].*内容|创作.*视频|生成.*视频"
+    r"|reference[- ]driven|explainer|pipeline"
+    r"|om_preflight|om_run|om_job|om_project|om_director|om_pipeline|om_state|om_catalog"
+    r")",
+    re.IGNORECASE,
+)
+
+# 纯问候 / 极短闲聊：即使误伤关键词也不注入。
+_GREETING_ONLY_RE = re.compile(
+    r"^\s*("
+    r"hi|hello|hey|yo|sup"
+    r"|你好|您好|嗨|哈喽|早|早安|午安|晚安|在吗|在不在"
+    r"|谢谢|感谢|ok|okay|好的|嗯|哦"
+    r")[\s!！.。?？~～]*$",
+    re.IGNORECASE,
+)
+
+
+def message_looks_like_openmontage_intent(user_message: str | None) -> bool:
+    """本轮是否像在谈视频生产 / OpenMontage（而非闲聊问候）。"""
+    text = (user_message or "").strip()
+    if not text:
+        return False
+    if _GREETING_ONLY_RE.match(text):
+        return False
+    return bool(_OM_INTENT_RE.search(text))
+
+
+def load_session_brief() -> str:
+    """从 AGENT_GUIDE.md 抽取 session-brief 块。标记缺失则返回空串。"""
+    try:
+        from plugins.openmontage.lib.paths import CODE_ROOT
+
+        guide = CODE_ROOT / "AGENT_GUIDE.md"
+        if not guide.is_file():
+            return ""
+        text = guide.read_text(encoding="utf-8")
+    except Exception as exc:
+        logger.debug("session-brief 读取失败: %s", exc)
+        return ""
+
+    match = _BRIEF_RE.search(text)
+    if not match:
+        logger.debug("AGENT_GUIDE.md 缺少 om:session-brief 标记")
+        return ""
+    return match.group(1).strip()
+
+
+def pre_llm_call(**kw: Any) -> dict[str, str] | None:
+    """按需把 AGENT_GUIDE 顶部 brief 注入用户消息。
+
+    Hermes 约定：返回 ``{"context": "..."}`` 追加到本轮 user message，
+    不改 system prompt（保住 prompt cache）。
+
+    仅当本轮用户消息像 OpenMontage / 视频生产意图时注入；问候与无关闲聊
+    不注入。同一 ``session_id`` 只注入一次。
+
+    无头阶段 agent（``OPENMONTAGE_HEADLESS_STAGE=1``）跳过：brief 是给编排
+    大脑的（om_run / om_job 轮询），塞进被编排者会触发自我轮询。
+    """
+    if os.environ.get("OPENMONTAGE_HEADLESS_STAGE"):
+        return None
+    if not message_looks_like_openmontage_intent(kw.get("user_message")):
+        return None
+    session_id = str(kw.get("session_id") or "").strip()
+    # 进入 OM 生产意图 → 能力收口（从工具列表拿掉读文件等）
+    if session_id:
+        from plugins.openmontage.capability_lock import mark_session_lockdown
+
+        mark_session_lockdown(session_id, reason="om_intent")
+    if session_id and session_id in _briefed_sessions:
+        return None
+    brief = load_session_brief()
+    if not brief:
+        return None
+    if session_id:
+        _briefed_sessions.add(session_id)
+    return {"context": brief}
 
 
 def register_skills(ctx) -> None:  # noqa: ANN001
@@ -138,6 +242,23 @@ def handle_director(args: dict, **_kw: Any) -> str:
         # 不要沉默返回空技能：那会让大脑以为这个阶段没有规程而自由发挥。
         return _error(f"导演技能文件缺失: {rel}", resolved_to=str(skill_file))
 
+    # 附带本阶段 produces 的字段契约，避免只读技能散文后自造 JSON 键名。
+    stage_block = next(
+        (s for s in (manifest.get("stages") or []) if s.get("name") == stage),
+        {},
+    )
+    produces = [
+        str(p) for p in (stage_block.get("produces") or []) if isinstance(p, str) and p
+    ]
+    artifact_contracts: list = []
+    for art_name in produces:
+        try:
+            from plugins.openmontage.schemas.artifacts import summarize_artifact_schema
+
+            artifact_contracts.append(summarize_artifact_schema(art_name))
+        except Exception as exc:
+            artifact_contracts.append({"artifact": art_name, "error": str(exc)})
+
     return _json(
         {
             "ok": True,
@@ -146,6 +267,12 @@ def handle_director(args: dict, **_kw: Any) -> str:
             "stage": stage,
             "skill_path": rel,
             "skill": skill_file.read_text(encoding="utf-8"),
+            "produces": produces,
+            "artifact_contracts": artifact_contracts,
+            "note": (
+                "写产物前对照 artifact_contracts 的 required / items.required；"
+                "字段名必须一致，禁止自造别名；不要打开 *.schema.json。"
+            ),
         }
     )
 

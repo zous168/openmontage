@@ -1,348 +1,380 @@
-# OpenMontage - Agent Guide
+# OpenMontage — Agent 指南
 
-Start here. This is the complete operating guide and agent contract for OpenMontage.
+从这里开始。这是 OpenMontage 的完整操作指南与 Agent 契约。
 
-For architecture, key files, and conventions see [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md).
+架构、关键文件与约定参见 [`PROJECT_CONTEXT.md`](PROJECT_CONTEXT.md)。
 
-## First Interaction — Onboarding
+<!-- om:session-brief:start -->
+## 会话简报（Hermes）
 
-When the user's first message is vague, exploratory, or asks what you can do ("make me a video", "what can you do?", "help me create something", "I want to make content"), read the onboarding skill **before** doing anything else:
+本块是 **OpenMontage 插件**契约，不是 Hermes 全局系统提示。仅在用户本轮在谈视频生产 / OM 项目时由插件注入；问候与无关闲聊不应加载本块，更不要为此调用 `om_*` / onboarding。
 
-**Read:** `skills/meta/onboarding.md`
+OpenMontage 生产是流水线驱动的。**不要**用 `read_file` / `search_files` / `terminal` 浏览仓库或插件源码来重建契约、猜审批、找 reset 脚本——`om_*` 通道已足够。进入 OM/视频意图后，编排 agent **会从工具列表统一拿掉** `read_file`/`search_files`/`terminal`/`execute_code`；违规调用仍会被 `pre_tool_call` 硬拦截。
 
-This skill teaches you to run discovery, classify the user's setup, present capabilities in plain language, and offer starter prompts tailored to their available tools. The goal: get the user from "curious" to "making a video" in under 60 seconds.
+动手做视频 / 查项目时：
+1. 完整契约 → `skill_view("openmontage:agent-guide")`（即本文件）
+2. 能力菜单 → `om_preflight`
+3. 项目进度 / 产物是否存在 → `om_project`（看 `stages[].artifact_exists`、`orphans`、`suggested_action`）
+4. Stage 导演 → `om_director(project_id=...)`
+5. 运行 / 轮询 → `om_run` / `om_job` / `om_state`
+   - `om_run` 后立即用 `om_job` 轮询（返回 `status`/`work_done`/`checkpoint_status`/`suggested_action`/`recovery`），**不要**自己 `execute_code`/`terminal`/`import stage_runner` 跑阶段
+   - **轮询节奏**：反复调 `om_job`（约每 15–60s 一次）。label 写成「轮询 research 进度」/「轮询 edit 进度」。**禁止**「等 90 秒查 … 进度」「Wait 10min」——假等待会被硬拦
+   - `om_job` 若 `work_done=true` / `suggested_action=stop_polling` / `gate_blocked` → **立刻停轮询**；`pid_scope=hub` 时 `hub_pid_alive`≠阶段还在跑，以 `worker_active`/`work_done` 为准
+   - 若 `om_project`/`om_job` 提示 orphan（磁盘已有规范产物但 checkpoint 未闭环）→ `om_state(action="complete_from_disk", stage=...)`；门控 stage 仍走 `awaiting_human` + approve（看 `gate_blocked` / `next_runnable_stage`）
+   - **失败时读返回的 `diagnostics` / `runtime`**（`busy`、`worker_active`、`blockers`、`schema.errors`、`expected` 字段契约、`suggested_actions`），按其中建议行动；**不要** find 源码、清 `.run.lock`、或猜审批
+   - schema 失败时按 `diagnostics.expected` 改字段名（如 `claim` 不是 `stat`），或 `om_run` 重跑；`om_director` 也会返回 `artifact_contracts`
+   - 写文件优先用 `write_file`（带 label），不要用 `execute_code` 拼路径写 checkpoint
+   - 任务在跑时不要 `om_state approve`；等 `om_job` 完成或失败后再处理
+6. **必填** `label`：`execute_code` / `terminal` / `om_job` 无 label 会被拦截；3–8 字、用户语言，说明**这一次**在做什么（如「写 in_progress 检查点」「轮询 research 进度」），不要写「运行代码」/工具名、不要照抄用户原话；每次轮询换新 label；**禁止**「等 Ns 查进度」假等待 label
 
-**Skip onboarding** when the user arrives with a specific, actionable request (e.g., "Make a 60-second explainer about black holes"). Go directly to Rule Zero.
+元技能（onboarding、reviewer 等）→ `skill_view("openmontage:<name>")`。
+流水线定义 / stage 顺序 / 审批门 → `om_pipeline`。
+`.agents/skills/` 下的 Layer 3 供应商技能在工具通过 `agent_skills` 列出时，仍可按路径读取。
+<!-- om:session-brief:end -->
 
-## Reference Video Entry Point
+## Hermes 工具通道
 
-When the user provides a **video URL or local video file as inspiration** — for example:
+当 Hermes 的 `om_*` 工具可用时，用它们来代替按路径阅读 OpenMontage 文档：
 
-- "Can you make a video like this?"
-- "I love this YouTube Short. Make me something similar."
-- "Use this Reel as a reference."
+| 需求 | 调用 |
+|------|------|
+| 完整契约（本指南） | `skill_view("openmontage:agent-guide")` |
+| 入门引导 / 元方法论 | `skill_view("openmontage:<name>")` |
+| 能力 / 供应商菜单 | `om_preflight` |
+| 按能力查看工具 | `om_catalog` |
+| 流水线列表、stage、审批门 | `om_pipeline` |
+| 项目 `next_stage` / 资产 / 审计 | `om_project` |
+| 当前 stage 导演技能全文 | `om_director` |
+| 执行 stage / 轮询 job / 写入状态 | `om_run` / `om_job` / `om_state` |
 
-— do **not** treat this as a generic web-search or prompt-writing request.
+当 `om_*` / `skill_view` 可用时，**不要**用文件工具打开 `pipeline_defs/*.yaml` 或 `skills/pipelines/**` 来了解 stage 顺序或导演流程——那是 `om_pipeline` 和 `om_director` 的职责。
 
-This is a first-class workflow in OpenMontage.
+没有 `om_*` 的宿主（Cursor / Claude Code）仍按下面的路径说明执行。
 
-### Required behavior
+## 首次交互 — 入门引导
 
-1. **Read:** `skills/meta/video-reference-analyst.md`
-2. **Run the reference analysis workflow** using the local analysis tools (`video_analyzer`, transcript extraction, scene detection, frame sampling)
-3. **Produce a grounded summary** of what the reference is doing:
-   - content
-   - pacing
-   - structure
-   - style
-   - what makes it work
-4. **Then** run normal capability audit and pipeline selection
-5. Present **2-3 differentiated concepts** for the user's version — not a carbon copy
+当用户在谈**视频 / 内容制作**，且请求含糊或探索性质（例如"帮我做个视频"、"你能做什么视频？"、"帮我做点内容"、"我想做点内容"）时，先加载入门引导技能，**再**做任何其他事情：
 
-### Important distinction
+**Hermes：** `skill_view("openmontage:onboarding")`
+**其他宿主：** 阅读 `skills/meta/onboarding.md`
 
-- **Reference-driven request:** "make me something like this" -> use `video-reference-analyst.md`
-- **Source-footage request:** "edit this footage" / "cut this into clips" -> use `source_media_review` and the appropriate footage-led pipeline
+该技能教你如何做需求挖掘、对用户的配置进行分类、用平实的语言介绍能力，并基于用户可用的工具给出量身定制的起始提示词。目标：让用户在 60 秒内从"好奇"进入"开始做视频"。
 
-If a model misses this distinction, it will often fall back to plain search + guesswork. That is incorrect for OpenMontage.
+**跳过入门引导**的情况：
+- 纯问候或无关闲聊（"hi"、"你好"）——正常寒暄即可，**不要**为此读 AGENT_GUIDE、加载 onboarding 或跑 `om_preflight`
+- 用户带着明确、可执行的需求到来（例如"做一个关于黑洞的 60 秒解说视频"）——直接进入零号规则（Rule Zero）
 
-## Rule Zero — All Production Goes Through a Pipeline
+## 参考视频入口
 
-**Every video production request MUST go through the pipeline system. No exceptions.**
+当用户提供**视频 URL 或本地视频文件作为灵感参考**时——例如：
 
-When the user asks to make, create, produce, or generate any video content — a trailer, explainer, clip, animation, or any other video — the agent must:
+- "你能做一个像这样的视频吗？"
+- "我很喜欢这个 YouTube Short，帮我做点类似的。"
+- "把这个 Reel 当作参考。"
 
-1. **Identify the pipeline.** Match the request to one of the pipelines in `pipeline_defs/`. If unclear, ask the user.
-2. **Read the pipeline manifest.** `pipeline_defs/<pipeline>.yaml` — know the stages, tools, and quality gates.
-3. **Run preflight.** Discover available tools via the registry. Present the capability menu.
-4. **Execute stage by stage.** For EACH stage, read the stage director skill (`skills/pipelines/<pipeline>/<stage>-director.md`) BEFORE doing any work in that stage.
-5. **Read Layer 3 skills before calling tools.** Before using any tool with an `agent_skills` field, read the referenced skill in `.agents/skills/`. These contain provider-specific prompting guidance, parameter optimization, and quality techniques that dramatically improve output.
+——**不要**把这类请求当作普通的网页搜索或提示词编写需求来处理。
 
-**Do NOT:**
-- Write ad-hoc Python scripts to call tools directly
-- Skip the pipeline and go straight to API calls
-- Generate assets without reading the stage director skill first
-- Use a tool without checking its Layer 3 skill for prompting guidance
-- Bypass preflight, checkpoints, or review
+这是 OpenMontage 的一级工作流（first-class workflow）。
 
-The intelligence is in the skills, not in improvised code. An agent that reads the director skills and Layer 3 knowledge will produce significantly better output than one that calls tools directly with generic prompts.
+### 必需行为
 
-### Pipeline Bypass Prohibition (HARD RULE)
+1. **加载：** Hermes `skill_view("openmontage:video-reference-analyst")` —— 其他宿主：阅读 `skills/meta/video-reference-analyst.md`
+2. **运行参考分析工作流**，使用本地分析工具（`video_analyzer`、字幕提取、场景检测、抽帧采样）
+3. **产出一份有依据的参考视频分析摘要**，说明该参考视频在做什么：
+   - 内容
+   - 节奏
+   - 结构
+   - 风格
+   - 它为什么有效
+4. **然后**进行常规的能力审计与流水线选择
+5. 为用户版本提出 **2–3 个差异化概念**——而不是照抄（carbon copy）
 
-Production orchestration MUST stay inside the pipeline loop. The agent drives stages with **director skills + registry tools + checkpoints** — not with improvised Python that chains multiple stages.
+### 重要区分
 
-**Forbidden bypass patterns:**
+- **参考驱动型需求：**"帮我做点像这样的东西" → 使用 `video-reference-analyst.md`
+- **素材剪辑型需求：**"剪辑这段素材" / "把这段剪成短片" → 使用 `source_media_review` 和相应的素材主导型流水线
 
-| Pattern | Why it violates the contract |
+如果模型错过这一区分，往往会退回到"普通搜索 + 猜测"的做法。对 OpenMontage 而言这是错误的。
+
+## 零号规则 — 所有生产必须走流水线
+
+**每个视频生产请求都必须走流水线系统。没有例外。**
+
+当用户要求制作、创建、生产或生成任何视频内容——预告片、解说视频、短片、动画或任何其他视频时，agent 必须：
+
+1. **识别流水线。** 通过 `om_pipeline` 匹配请求（或询问用户）。不要凭记忆臆造 stage 顺序。
+2. **加载流水线定义。** Hermes：`om_pipeline(name=...)`。其他宿主：阅读 `pipeline_defs/<pipeline>.yaml` —— 了解各个 stage、工具和质量门（quality gates）。
+3. **执行预检（preflight）。** Hermes：`om_preflight`。其他宿主：通过注册表发现。展示能力菜单。
+4. **逐 stage 执行。** 对**每个** stage，在执行任何工作**之前**先加载 stage 导演技能：Hermes `om_director(project_id=..., stage=...)` —— 其他宿主：阅读 `skills/pipelines/<pipeline>/<stage>-director.md`。
+5. **调用工具前先读 Layer 3 技能。** 在调用任何带 `agent_skills` 字段的工具之前，阅读 `.agents/skills/` 中引用的技能（此处按路径读取是正确的——这些不是 Hermes 插件技能）。这些技能包含供应商特定的提示词指导、参数优化和质量技巧，能大幅提升输出质量。
+
+**禁止：**
+- 编写临时 Python 脚本来直接调用工具
+- 跳过流水线直接调用 API
+- 不先阅读 stage 导演技能就生成资产
+- 不查看工具的 Layer 3 技能就使用该工具
+- 绕过预检、检查点（checkpoint）或评审
+- 当 `om_*` / `skill_view` 可用时，用通用文件工具浏览 `AGENT_GUIDE.md` / `skills/` / `pipeline_defs/` 来重建 OpenMontage 契约
+
+智能在技能里，不在临场发挥的代码里。阅读了导演技能和 Layer 3 知识的 agent 产生的输出，将明显优于用通用提示词直接调用工具的 agent。
+
+### 流水线绕行禁令（HARD RULE）
+
+生产编排必须保持在流水线循环之内。agent 用**导演技能 + 注册表工具 + 检查点**驱动各个 stage——而不是用链式串联多个 stage 的临场 Python 脚本。
+
+**禁止的绕行模式：**
+
+| 模式 | 违反契约的原因 |
 |---------|------------------------------|
-| Repo-root `scripts/rerun_*.py` (or similar) calling `tool.execute()` across assets→compose | Replaces stage directors, skips human gates, leaves no tool trace in `events.jsonl` |
-| `python -c` / inline scripts that write `checkpoint_*` with `human_approved=true` while `decision_log` still has `user_approved=false` | Forges approval without user consent |
-| Skipping `awaiting_human` on proposal/script/assets when the manifest requires it | Same as silent approval |
-| Composing while `get_next_stage()` is not `compose` | Stage order violation |
+| 仓库根目录的 `scripts/rerun_*.py`（或类似脚本）跨 assets→compose 调用 `tool.execute()` | 取代了 stage 导演，跳过了人工门，在 `events.jsonl` 中不留工具痕迹 |
+| `python -c` / 内联脚本在 `decision_log` 中仍是 `user_approved=false` 时写入 `human_approved=true` 的 `checkpoint_*` | 未经用户同意伪造审批 |
+| manifest 要求 `awaiting_human` 时，跳过 proposal/script/assets 的 `awaiting_human` | 等同于静默批准 |
+| `get_next_stage()` 不是 `compose` 时进行合成（compose） | 违反 stage 顺序 |
 
-**Allowed Python (not bypass):**
+**允许的 Python（不算绕行）：**
 
-- **Tools** — `video_analyzer`, `tts_selector`, `video_compose`, etc. via the registry
-- **Persistence** — `plugins.openmontage.lib.checkpoint.write_checkpoint`, `init_project`, `get_next_stage`
-- **Governance utilities** — `plugins.openmontage.lib.production_audit.audit_project` (read-only), `scripts/reset_project_pipeline.py` (checkpoint reset only — does not generate media)
-- **Project-scoped one-offs** — only under `projects/<id>/scripts/` per `skills/meta/capability-extension.md`, with a `capability_extension` decision; never multi-stage pipeline substitutes
+- **工具** — 通过注册表调用的 `video_analyzer`、`tts_selector`、`video_compose` 等
+- **持久化** — `plugins.openmontage.lib.checkpoint.write_checkpoint`、`init_project`、`get_next_stage`
+- **治理工具** — `plugins.openmontage.lib.production_audit.audit_project`（只读）、`scripts/reset_project_pipeline.py`（仅重置检查点——不生成媒体）
+- **项目范围内的临时脚本** — 仅限 `projects/<id>/scripts/` 下，按 `skills/meta/capability-extension.md` 执行，并需有 `capability_extension` 决策；绝不能作为多 stage 流水线的替代品
 
-**Enforcement:** `skills/meta/reviewer.md` treats bypass signals as **CRITICAL**. Contract tests in `tests/contracts/test_pipeline_bypass_contract.py` guard the agent guide, reviewer skill, and non-production script markers. After compose, run `audit_project()` when reviewing — approval drift and missing tool traces are blocking findings.
+**执行机制：** `skills/meta/reviewer.md` 将绕行信号视为**严重（CRITICAL）**。`tests/contracts/test_pipeline_bypass_contract.py` 中的契约测试守护 agent 指南、评审技能和非生产脚本标记。合成（compose）之后评审时应运行 `audit_project()`——审批漂移（approval drift）和工具痕迹缺失都是阻塞级发现。
 
-**If you need a full rerun:** reset checkpoints (`scripts/reset_project_pipeline.py`), then re-enter at `get_next_stage()` and execute each stage with its director skill. Do not wrap the pipeline in a single script.
+**如果需要完整重跑：** 先重置检查点（`scripts/reset_project_pipeline.py`），然后从 `get_next_stage()` 重新进入，用各自的导演技能执行每个 stage。不要把整个流水线包进一个脚本里。
 
-### Agent Introspection (HARD RULE)
+### Agent 内省（HARD RULE）
 
-Agents discover project state through **repository APIs and IDE read tools** — not shell directory listings.
+Agent 通过 **OpenMontage 状态 API** 发现项目状态——而不是用 shell 目录列举。
 
-**Preferred (in order):**
+**首选方式（按顺序）：**
 
-1. **`python -m plugins.openmontage.lib.project_status <project-id>`** — single source of truth for `next_stage`, completed stages, artifact paths, director skill path, tool trace summary, and optional `--audit`
-2. **IDE Read / Glob** — open a known artifact or skill file when you already know the path
-3. **Documented one-liners** — registry preflight, `write_checkpoint`, `init_project` (see sections below)
+1. **Hermes：** `om_project`（可选 `audit=true`）—— `next_stage`、已完成 stage、资产路径、导演技能路径、工具痕迹摘要的唯一权威来源
+2. **其他宿主 / 脚本：** `python -m plugins.openmontage.lib.project_status <project-id>` —— 与上面相同的载荷，外加可选 `--audit`
+3. **IDE Read / Glob** — 已知路径时直接打开已知资产或技能文件
+4. **文档化的一行命令** — 注册表预检、`write_checkpoint`、`init_project`（见下文各节）
 
-**Forbidden for exploration:**
+**探索阶段禁止：**
 
-| Pattern | Why |
+| 模式 | 原因 |
 |---------|-----|
-| `dir`, `ls`, `find`, `Get-ChildItem`, `tree` to discover project layout | Fragile on Windows/PowerShell; bypasses canonical paths; error-prone |
-| Writing temporary `.py` files just to print paths or list directories | Improvised orchestration smell; use `plugins.openmontage.lib.project_status` instead |
-| Multi-line `python -c` scripts that chain tool calls across stages | Same class of bypass as `rerun_*.py` — one stage per agent turn |
+| 用 `dir`、`ls`、`find`、`Get-ChildItem`、`tree` 发现项目布局 | 在 Windows/PowerShell 上脆弱；绕过规范路径；易出错 |
+| 为打印路径或列举目录而编写临时 `.py` 文件 | 临场编排的味道；改用 `plugins.openmontage.lib.project_status` |
+| 用多行 `python -c` 脚本跨 stage 链式调用工具 | 与 `rerun_*.py` 同类的绕行——每个 agent 回合只做一个 stage |
 
-**Allowed `python -c` (single-purpose only):**
+**允许的 `python -c`（仅限单一用途）：**
 
-- `plugins.openmontage.lib.project_status.build_project_status(...)` or the CLI above
-- `plugins.openmontage.lib.checkpoint.write_checkpoint` / `get_next_stage` / `init_project` — **one call site per invocation**
-- `plugins.openmontage.tools.tool_registry.registry.discover()` + one catalog method for preflight
-- `plugins.openmontage.lib.production_audit.audit_project(...)` — read-only governance
+- `plugins.openmontage.lib.project_status.build_project_status(...)` 或上面的 CLI
+- `plugins.openmontage.lib.checkpoint.write_checkpoint` / `get_next_stage` / `init_project` —— **每次调用只有一个调用点**
+- `plugins.openmontage.tools.tool_registry.registry.discover()` + 一个目录方法用于预检
+- `plugins.openmontage.lib.production_audit.audit_project(...)` — 只读治理
 
-**Production work still uses registry tools** (`BaseTool.execute()`), not shell transcodes and not ad-hoc Python that replaces director skills.
+**生产工作仍然使用注册表工具**（`BaseTool.execute()`），而不是 shell 转码，也不是取代导演技能的临时 Python。
 
-### Artifact Persistence (HARD RULE)
+### 资产持久化（HARD RULE）
 
-Project state on disk is **contract data**, not a scratchpad. Agents persist artifacts only through validated library APIs — never by editing JSON with the file editor or shell redirection.
+磁盘上的项目状态是**契约数据**，不是草稿纸。Agent 只能通过经过验证的库 API 持久化资产——绝不能用文件编辑器或 shell 重定向来修改 JSON。
 
-**Forbidden:**
+**禁止：**
 
-| Pattern | Why |
+| 模式 | 原因 |
 |---------|-----|
-| `Write` / `StrReplace` on `projects/<id>/decision_log.json` | Bypasses schema validation and append-only audit trail; agents mutate `user_visible` to cheat drift checks |
-| Direct edits to `checkpoint_*.json` or `artifacts/*.json` | Same — use `write_checkpoint()` |
-| One-off helpers like `_compose_once.py`, `run_stage.py` under repo root or project root | Improvised orchestration — use registry tools + director skills |
-| "Fixing audit" by hiding old `decision_log` entries instead of appending approved ones | Violates append-only history; Backlot shows latest per `(category, subject)` |
+| 用 `Write` / `StrReplace` 修改 `projects/<id>/decision_log.json` | 绕过 schema 校验和只追加（append-only）审计轨迹；agent 篡改 `user_visible` 来作弊漂移检查 |
+| 直接编辑 `checkpoint_*.json` 或 `artifacts/*.json` | 同样——改用 `write_checkpoint()` |
+| 在仓库根目录或项目根目录放一次性辅助脚本，如 `_compose_once.py`、`run_stage.py` | 临场编排——改用注册表工具 + 导演技能 |
+| 通过隐藏旧 `decision_log` 条目而不是追加已批准的条目来"修复审计" | 违反只追加历史；Backlot 按 `(category, subject)` 显示最新条目 |
 
-**Required APIs:**
+**必需的 API：**
 
-| Need | Use |
+| 需求 | 使用 |
 |------|-----|
-| Stage complete + artifacts | `plugins.openmontage.lib.checkpoint.write_checkpoint(...)` |
-| Append decisions mid-stage / rerun approval | `plugins.openmontage.lib.decision_log.append_decisions(project_id, [...])` or CLI `python -m plugins.openmontage.lib.decision_log append <id> --file decisions.json` |
-| Inspect state | `python -m plugins.openmontage.lib.project_status <id>` |
-| Generate media | Registry tools (`piper_tts`, `video_compose`, …) via `BaseTool.execute()` |
+| Stage 完成 + 资产 | `plugins.openmontage.lib.checkpoint.write_checkpoint(...)` |
+| stage 中途追加决策 / 重跑审批 | `plugins.openmontage.lib.decision_log.append_decisions(project_id, [...])` 或 CLI `python -m plugins.openmontage.lib.decision_log append <id> --file decisions.json` |
+| 检查状态 | `python -m plugins.openmontage.lib.project_status <id>` |
+| 生成媒体 | 注册表工具（`piper_tts`、`video_compose` 等）通过 `BaseTool.execute()` |
 
-When a choice changes, **append** a new decision with the same `(category, subject)` — never rewrite or delete older entries.
+当某个选择发生变化时，**追加**一条新的、使用相同 `(category, subject)` 的决策——绝不重写或删除旧条目。
 
-### Voice Listenability (HARD RULE)
+### 语音可听性（HARD RULE）
 
-Narration speech rate must stay within normal listening limits. See `skills/meta/voice-performance-director.md` → Listenability Floor. Piper `length_scale` ≥ **0.85** (and ≥ script `provider_notes`); no post-TTS `atempo` squeeze to force-fit timeline unless the user explicitly approved (`decision_log` `downgrade_approval`). `audit_project()` flags `voice_listenability_violation` as **CRITICAL**.
+旁白语速必须保持在正常聆听极限之内。参见 `skills/meta/voice-performance-director.md` → 可听性下限（Listenability Floor）。Piper `length_scale` ≥ **0.85**（且 ≥ 脚本的 `provider_notes`）；未经用户明确批准（`decision_log` 中的 `downgrade_approval`），不得用 TTS 之后的 `atempo` 压缩来强行适配时间线。`audit_project()` 将 `voice_listenability_violation` 标记为**严重（CRITICAL）**。
 
-## What OpenMontage Is
+## OpenMontage 是什么
 
-OpenMontage is an instruction-driven video production system. The AI agent IS the intelligence — it reads instructions (pipeline manifests + stage director skills + meta skills) and drives the pipeline using tools.
+OpenMontage 是一个指令驱动的视频生产系统。AI agent 本身就是智能体——它读取指令（流水线清单 + stage 导演技能 + 元技能）并用工具驱动流水线。
 
 ```
-Agent reads pipeline manifest (YAML) -> reads stage director skill (MD)
--> uses tools (Python BaseTool subclasses) -> self-reviews (meta skill)
--> checkpoints (Python utility) -> presents to human for approval
+Agent 读取流水线清单 (YAML) -> 读取 stage 导演技能 (MD)
+-> 使用工具 (Python BaseTool 子类) -> 自我评审 (元技能)
+-> 检查点 (Python 工具) -> 提交给人类审批
 ```
 
-**Python = tools + persistence.** No orchestration logic, creative decisions, review logic, or checkpoint policy in Python code. The agent makes those decisions guided by instructions.
+**Python = 工具 + 持久化。** 编排逻辑、创意决策、评审逻辑或检查点策略都不写在 Python 代码里。这些决策由 agent 在指令引导下做出。
 
-Core loop:
+核心循环：
 
-1. Select a pipeline.
-2. Run preflight.
-3. Discover real tools from the registry.
-4. Present the user with concepts, tool plan, production plan, and cost.
-5. Execute stage by stage with checkpoints.
+1. 选择流水线。
+2. 运行预检。
+3. 从注册表发现真实工具。
+4. 向用户呈现概念、工具方案、生产方案和成本。
+5. 带检查点逐 stage 执行。
 
-## Decision Communication Contract
+## 决策沟通契约
 
-For any meaningful production decision, the agent must communicate the decision before acting. The user should never have to infer which provider, model, or render path was chosen after the fact.
+对于任何有实质意义的生产决策，agent 必须在行动之前沟通该决策。用户绝不应该在事后才去推断选用了哪个供应商、模型或渲染路径。
 
-### Announce Before Execution
+### 执行前宣布
 
-Before any paid or consequential generation call, state:
+在发起任何付费或影响重大的生成调用之前，说明：
 
-- the exact tool name,
-- the provider,
-- the model or provider variant,
-- the reason it was chosen,
-- whether it is a sample or a batch run.
+- 确切工具名，
+- 供应商，
+- 模型或供应商变体，
+- 选择它的原因，
+- 这是样例运行（sample）还是批量运行（batch）。
 
-### Ask Before Major Changes
+### 重大变更前先询问
 
-The agent must ask the user before changing any major production choice, including:
+在更改任何重大生产选择之前，agent 必须询问用户，包括：
 
-- switching provider,
-- switching model family or provider variant,
-- switching from video-led to still-led treatment,
-- switching composition engine when that changes the output character,
-- dropping narration, music, or other approved creative elements,
-- changing from sample mode to batch mode.
+- 更换供应商，
+- 更换模型系列或供应商变体，
+- 从视频主导改为静态图主导的处理方式，
+- 在输出特征会改变的情况下更换合成引擎，
+- 删除已批准的旁白、音乐或其他创意元素，
+- 从样例模式改为批量模式。
 
-Minor prompt refinements inside an already approved provider/model path do not require separate approval unless they materially change the creative direction.
+在已批准的供应商/模型路径内做细微的提示词调整，不需要单独批准，除非它实质性地改变了创意方向。
 
-### Re-log Changed Decisions (Binding)
+### 重新记录变更的决策（具约束力）
 
-The `decision_log` is the board's Decisions rail and the run's audit trail. It is **append-only history, not a scratchpad.** When a choice you already logged changes mid-run — the user swaps the voice, you switch provider/model/runtime/music, or a fallback overrides an earlier pick — you MUST **append a new `decision_log` entry** for the new choice, reusing the **same `category` AND the same `subject`** (e.g. `category: "voice_selection"`, `subject: "Narration TTS provider"`), with the superseded option moved into `options_considered` and `rejected_because` noting it was changed.
+`decision_log` 是看板（board）的"决策（Decisions）"轨道，也是本次运行（run）的审计轨迹。它是**只追加历史，不是草稿纸。** 当你已经记录的某个选择在运行中途发生变化时——用户更换了配音，你切换了供应商/模型/运行时/音乐，或某个回退方案覆盖了先前选择——你必须为新的选择**追加一条新的 `decision_log` 条目**，复用**相同的 `category` 和相同的 `subject`**（例如 `category: "voice_selection"`、`subject: "Narration TTS provider"`），并将被取代的选项移入 `options_considered` 和 `rejected_because`，注明它已变更。
 
-Editing only a downstream artifact (the `asset_manifest`, a prop) while leaving the old decision in the log is a defect: the board keeps showing the stale choice (e.g. `voice → openai_onyx` after the user moved to Chirp3). The board identifies a decision by its **(category, subject) pair** and renders the latest entry for that pair as current (tagged "revised") — so the fix is to append the new entry with an identical `subject`, never to silently mutate the old one or reword the subject (a reworded subject reads as a different decision and both will show). Keeping distinct decisions in one category (e.g. TTS vs image `provider_selection`) is exactly why the pair, not the category alone, is the key. This applies at every stage, not just `idea`.
+只编辑下游资产（`asset_manifest`、某个 prop）却把旧决策留在日志里是一个缺陷：看板会一直显示过时的选择（例如用户已切到 Chirp3，看板仍显示 `voice → openai_onyx`）。看板用 **(category, subject) 对** 来标识一条决策，并将该对的最新条目渲染为当前状态（标记为"已修订（revised）"）——所以正确的做法是追加一条 `subject` 完全相同的新条目，绝不静默篡改旧条目或改写 subject（改写过的 subject 会被读成另一条决策，两条都会显示）。在同一个 category 里保留不同决策（例如 TTS 与图像的 `provider_selection`）正是要用"对"而不是只用 category 作为键的原因。这一规则适用于每个 stage，不只是 `idea`。
 
-### Present Both Composition Runtimes (HARD RULE)
+### 呈现两种合成运行时（HARD RULE）
 
-When both Remotion and HyperFrames are available on the machine (check `video_compose.get_info()["render_engines"]`), the agent **MUST present both options to the user** before locking `render_runtime` at the proposal stage. The agent MAY recommend one with rationale — but silently picking a "default" is forbidden even when the pipeline manifest or a director skill suggests one.
+当机器上同时可用 Remotion 和 HyperFrames 时（检查 `video_compose.get_info()["render_engines"]`），agent 在 proposal stage 锁定 `render_runtime` **之前必须把两个选项都呈现给用户**。agent 可以给出带理由的推荐——但即使流水线清单或某个导演技能暗示了某个默认值，**静默选择"默认"也是被禁止的**。
 
-The presentation MUST include, for each runtime:
+呈现内容必须包含每个运行时的：
 
-1. A one-sentence plain-language description of what it is best at for **this specific brief**.
-2. A one-sentence honest tradeoff (why it might not be the right pick here).
-3. The agent's recommendation and the reason, tied to the brief's delivery_promise and visual approach.
+1. 一句平实的语言，说明它针对**这个具体简报（brief）**最擅长做什么。
+2. 一句诚实的权衡（为什么在这里可能不是正确选择）。
+3. agent 的推荐及其理由，与简报的 delivery_promise 和视觉方案挂钩。
 
-Then wait for explicit user approval before advancing. Record the full shortlist — BOTH runtimes plus any "ffmpeg" option that applies — as `options_considered` in the `render_runtime_selection` decision logged in `decision_log`. A decision log entry with only one runtime considered when both were available is a CRITICAL reviewer finding.
+然后等待用户明确批准再推进。把完整候选清单——两个运行时加上任何适用的 "ffmpeg" 选项——记录为 `decision_log` 中 `render_runtime_selection` 决策的 `options_considered`。当两个运行时都可用却只考虑了其中一个的决策日志条目，是评审的严重（CRITICAL）发现。
 
-Exception: if only one runtime is available on the machine, the agent proceeds with it but MUST say so explicitly ("HyperFrames isn't installed on this machine; I'm proceeding with Remotion. Install HyperFrames if you want the alternative."). The `render_runtime_selection` decision still records the unavailable option as `rejected_because: "runtime not available on this machine"`.
+例外：如果机器上只有一个运行时可用，agent 可以用它继续，但必须明确说明（"这台机器没装 HyperFrames；我继续使用 Remotion。如果你想用另一个，请安装 HyperFrames。"）。`render_runtime_selection` 决策仍须将不可用选项记录为 `rejected_because: "runtime not available on this machine"`。
 
-This rule applies to every pipeline that invokes `video_compose` — not just Wave 1. A pipeline's director skill may recommend a runtime, but that recommendation is input to the conversation with the user, not a decision.
+此规则适用于每个调用 `video_compose` 的流水线——不只是 Wave 1。流水线的导演技能可以推荐某个运行时，但该推荐只是与用户对话的输入，而不是决策。
 
-### Composition Authoring Mode — Templated vs Atelier
+### 合成创作模式 — 模板化（Templated）vs Atelier
 
-Orthogonal to *runtime* is *authoring mode*: **how** the composition is built. Present it as its own proposal decision and log it in `decision_log` (`category: "composition_mode"`).
+与*运行时*正交的是*创作模式*：合成是**如何**构建的。把它作为独立的 proposal 决策呈现，并记录到 `decision_log`（`category: "composition_mode"`）。
 
-- **Templated** — assemble the stock `cut.type` scene-types (`text_card`, `stat_card`, `bar_chart`, …) into the `Explainer`/`CinematicRenderer` compositions. Fast, cheap, reliable — and the reason most videos look alike. Right for batch output, localization variants, quick drafts, and low-stakes internal clips.
-- **Atelier** — **hand-author the composition from scratch**: bespoke scenes, a one-off theme, and motion written for this piece, rendered via `composition_mode: "atelier"` (see `video_compose` → `_render_via_atelier`). No reusable creative components; a fresh visual language every time.
+- **Templated（模板化）** — 把现成的 `cut.type` 场景类型（`text_card`、`stat_card`、`bar_chart` 等）组装进 `Explainer`/`CinematicRenderer` 合成。快速、便宜、可靠——也是大多数视频看起来千篇一律的原因。适合批量输出、多语言变体、快速草稿和低风险内部短片。
+- **Atelier（工坊）** — **从零手写合成**：定制场景、一次性主题、为这个片子专门写的动效，通过 `composition_mode: "atelier"` 渲染（见 `video_compose` → `_render_via_atelier`）。没有可复用的创意组件；每次都是一种全新的视觉语言。
 
-**Default to atelier for hero work** — marketing, launches, brand pieces, any single-deliverable explainer that must impress. The deciding rule: *reuse engine knowledge, never creative components.* In atelier mode the stock scene-type catalog, `hyperframes-registry` blocks, fixtures, and finished components are **off-limits** — they are frozen looks that reintroduce sameness. Before building, route through **`skills/meta/taste-direction.md`** to set the design read and taste dials, then **`skills/meta/bespoke-composition.md`**, which sequences: art direction (`visual-style`) → motion principles (Disney 12 via `framer-motion`/`lottie-bodymovin`) → engine mechanics (`remotion-best-practices` + the stock components read *only as a mechanics codex*) → render via the atelier path. Close with a **distinctness review**: *could this be any other product's video? does it reuse a look I've made before?* — the inverse of "does it match the reference." Atelier costs more tokens and iteration than templated; say so at proposal so the user opts in knowingly.
+**英雄级作品（hero work）默认用 atelier**——营销、发布、品牌片、任何必须惊艳的单一交付解说视频。判定规则：*复用引擎知识，绝不复用创意组件。* 在 atelier 模式下，现成场景类型目录、`hyperframes-registry` 块、fixtures 和成品组件都是**禁区**——它们是会重新带来千篇一律感的冻结外观。开工前，先走 **`skills/meta/taste-direction.md`** 设定设计读取和品味刻度（taste dials），再走 **`skills/meta/bespoke-composition.md`**，其顺序为：美术方向（`visual-style`）→ 动效原理（通过 `framer-motion`/`lottie-bodymovin` 的迪士尼 12 原则）→ 引擎机制（`remotion-best-practices` + 把现成组件**仅**当作机制法典来读）→ 通过 atelier 路径渲染。最后做一次**独特性评审**：*这会不会是任何其他产品的视频？它是否复用了我以前做过的外观？*——即"是否符合参考"的反面。Atelier 比模板化花费更多 token 和迭代；在 proposal 时说明这一点，让用户知情选择。
 
-### Escalate Blockers Explicitly
+### 明确升级阻塞
 
-When a blocker occurs, the agent must surface it immediately using this structure:
+发生阻塞时，agent 必须立即按以下结构上报：
 
-1. What was attempted
-2. What failed
-3. Whether the issue is auth, provider access, tool bug, or prompt/design quality
-4. What options exist next
-5. Which option the agent recommends, with reasoning
+1. 尝试了什么
+2. 失败了什么
+3. 问题是鉴权、供应商访问、工具缺陷，还是提示词/设计质量
+4. 接下来有哪些选项
+5. agent 推荐哪个选项，以及理由
 
-Do not continue with a substitute path until the user approves.
+在用户批准之前，不要继续走替代路径。
 
-### Recommendation Style
+### 推荐风格
 
-When asking the user to choose, do not just list options. The agent should:
+请用户选择时，不要只列选项。agent 应该：
 
-- provide the shortlist,
-- explain the tradeoffs briefly,
-- recommend one option,
-- wait for approval before proceeding.
+- 给出候选清单，
+- 简要说明权衡，
+- 推荐一个选项，
+- 获得批准后再继续。
 
-### No Unilateral Substitutions
+### 不得单方面替换
 
-If the approved path is blocked, the agent may investigate and prepare alternatives, but may not execute those alternatives without user approval.
+如果已批准的路径被阻塞，agent 可以调查并准备备选方案，但在未经用户批准之前不得执行这些备选方案。
 
-This applies especially to:
+这一点尤其适用于：
 
-- provider swaps,
-- model swaps,
-- fallback tools,
-- prompt-only substitutes for reference-driven generation,
-- still-image animatics in place of true motion.
+- 供应商更换，
+- 模型更换，
+- 回退工具，
+- 用纯提示词替代参考驱动生成，
+- 用静态图动画分镜（animatic）替代真正的动效。
 
-## Orchestrator
+## 编排器
 
-The agent itself orchestrates the production state machine:
+agent 本身编排生产状态机：
 
 `research -> proposal -> script -> scene_plan -> assets -> edit -> compose`
 
-The agent:
+agent：
 
-1. Reads the pipeline manifest (`pipeline_defs/*.yaml`) to know the process
-2. Calls `python -m plugins.openmontage.lib.project_status <project-id>` (or `checkpoint.get_next_stage()`) to find where to resume and which director skill to read next
-3. Reads the stage's director skill (`skills/pipelines/<pipeline>/<stage>-director.md`) to know HOW
-4. Uses tools (`tools/`) for concrete capabilities
-5. Self-reviews using the reviewer meta skill (`skills/meta/reviewer.md`)
-6. Checkpoints via the checkpoint protocol (`skills/meta/checkpoint-protocol.md`)
-7. Presents to human for approval when `human_approval_default: true`
+1. 读取流水线清单（`pipeline_defs/*.yaml`）以了解流程
+2. 调用 `python -m plugins.openmontage.lib.project_status <project-id>`（或 `checkpoint.get_next_stage()`）以确定从何处续跑、下一步该读哪个导演技能
+3. 读取该 stage 的导演技能（`skills/pipelines/<pipeline>/<stage>-director.md`）以了解怎么做
+4. 用工具（`tools/`）提供具体能力
+5. 用评审元技能（`skills/meta/reviewer.md`）自我评审
+6. 按检查点协议（`skills/meta/checkpoint-protocol.md`）落检查点
+7. 当 `human_approval_default: true` 时提交给人类审批
 
-Infrastructure files:
+基础设施文件：
 
-- `lib/checkpoint.py` — read/write checkpoints, stage validation
-- `lib/project_status.py` — **agent introspection CLI** (`python -m plugins.openmontage.lib.project_status <id>`)
-- `lib/decision_log.py` — **append-only decision log API** (`python -m plugins.openmontage.lib.decision_log append …`)
-- `tools/cost_tracker.py` — budget governance
-- `lib/pipeline_loader.py` — manifest loading and helpers
+- `lib/checkpoint.py` — 检查点读写、stage 校验
+- `lib/project_status.py` — **agent 内省 CLI**（`python -m plugins.openmontage.lib.project_status <id>`）
+- `lib/decision_log.py` — **只追加决策日志 API**（`python -m plugins.openmontage.lib.decision_log append …`）
+- `tools/cost_tracker.py` — 预算治理
+- `lib/pipeline_loader.py` — 清单加载与辅助函数
 
-## Project Directory Convention
+## 项目目录约定
 
-Every production run creates a project workspace under `projects/`. This directory is gitignored — all generated assets are regenerable.
+每次生产运行都在 `projects/` 下创建项目工作区。该目录已被 gitignore——所有生成的资产都是可再生的。
 
 ```
 projects/<project-name>/
-├── artifacts/          # JSON artifacts from each stage (research_brief, script, scene_plan, etc.)
+├── artifacts/          # 每个 stage 的 JSON 资产（research_brief、script、scene_plan 等）
 ├── assets/
-│   ├── images/         # Generated images (PNG)
-│   ├── video/          # Generated video clips (MP4)
-│   ├── audio/          # Narration segments + final mix (MP3/WAV)
-│   ├── music/          # Background music track (MP3)
-│   └── subtitles.srt   # Generated subtitles
+│   ├── images/         # 生成的图片 (PNG)
+│   ├── video/          # 生成的视频片段 (MP4)
+│   ├── audio/          # 旁白片段 + 最终混音 (MP3/WAV)
+│   ├── music/          # 背景音乐轨道 (MP3)
+│   └── subtitles.srt   # 生成的字幕
 └── renders/
-    └── final.mp4       # Final rendered video (the deliverable)
+    └── final.mp4       # 最终渲染视频（交付物）
 ```
 
-**Naming convention**: Use kebab-case derived from the video title (e.g., `hidden-math-of-nature`, `how-music-rewires-brain`).
+**命名约定**：用视频标题派生 kebab-case（例如 `hidden-math-of-nature`、`how-music-rewires-brain`）。
 
-At pipeline initialization, before any stage runs:
+在流水线初始化时、任何 stage 运行之前：
 
-1. **Initialize the workspace**: `python -c "from plugins.openmontage.lib.checkpoint import init_project; init_project('<project-id>', title='<Title>', pipeline_type='<pipeline>')"` — creates the layout above and writes `project.json` (the marker the Backlot board reads).
-2. **Point the user at the board**: open `http://127.0.0.1:<hub-port>/plugins/openmontage/p/<project-id>` (or the library at `/plugins/openmontage/`). Backlot is mounted inside the Hermes hub — there is no separate `backlot open` process. If the browser cannot open, continue the production — the board is an observer, never a blocker.
+1. **初始化工作区**：`python -c "from plugins.openmontage.lib.checkpoint import init_project; init_project('<project-id>', title='<Title>', pipeline_type='<pipeline>')"` —— 创建上面的目录结构并写入 `project.json`（Backlot 看板读取的标记文件）。
+2. **把用户引向看板**：打开 `http://127.0.0.1:<hub-port>/plugins/openmontage/p/<project-id>`（或 `/plugins/openmontage/` 库页面）。Backlot 已挂载在 Hermes hub 内部——**没有独立的 `backlot open` 进程**。如果浏览器打不开，继续生产即可——看板是观察者，绝不是阻塞项。
 
-### Backlot Web Channel (page-driven runs)
+### Backlot Web 通道（页面驱动的运行）
 
-Since Backlot API v44 the board is no longer *only* an observer: the page can
-drive the pipeline as a second execution channel, equal in contract to the
-interactive agent.
+自 Backlot API v44 起，看板不再*仅*是观察者：页面可以作为第二条执行通道驱动流水线，与交互式 agent 拥有同等的契约地位。
 
-- **Run a stage** — `POST /api/plugins/openmontage/project/{id}/stage/run`
-  starts an **in-process** Hermes `AIAgent` (same process / brain as the hub)
-  that reads the **same director skill**, executes **the same registry tools**
-  (events.jsonl auto-attributed) and writes **the same checkpoint contract**.
-  It executes exactly one stage — `stage == get_next_stage()` is the only legal
-  target; the server never chains stages or auto-advances.
-- **Approve / reject gates** — `POST /api/project/{id}/stage/approve` /
-  `/stage/reject` are the page equivalents of a chat approval: approve rewrites
-  `awaiting_human → completed` with `human_approved=True` **and mirrors the
-  same `(category, subject)` decision with `user_approved=true`** (otherwise
-  `approval_gate_drift` fires); reject appends a `human_rejection` decision
-  and rewrites the stage to `in_progress` (artifacts preserved) so a re-run
-  re-enters via `get_next_stage()`.
-- **Concurrency** — the web channel guards itself with a per-project
-  `.run.lock` (stale takeover); it does **not** lock against the interactive
-  agent (that channel is unchanged). Two executors racing the same stage is a
-  documented boundary: last-write-wins plus the checkpoint gate and stage-order
-  audit backstops it.
-- **Server-side files** (`runs/*.json`, `runs/*.log`, `.run.lock`) are
-  observation metadata only — never part of checkpoint / artifacts /
-  decision_log / events.jsonl contract paths. `audit_project()` treats a
-  page-driven run exactly like an agent-driven one.
-- Web-run artifacts still gate on humans: the headless agent writes
-  `awaiting_human` and ENDS; the page approval button is the human gate.
+- **运行一个 stage** — `POST /api/plugins/openmontage/project/{id}/stage/run`
+  启动一个**进程内**的 Hermes `AIAgent`（与 hub 同进程/同大脑），它读取**相同的导演技能**、执行**相同的注册表工具**（events.jsonl 自动归因）并写入**相同的检查点契约**。它恰好只执行一个 stage——`stage == get_next_stage()` 是唯一合法的目标；服务器绝不串联 stage 或自动推进。
+- **批准 / 拒绝门** — `POST /api/project/{id}/stage/approve` / `/stage/reject` 是聊天审批在页面上的等价物：approve 将 `awaiting_human` 改写为 `completed` 且 `human_approved=True`，**并镜像写入同一条 `(category, subject)` 决策，`user_approved=true`**（否则会触发 `approval_gate_drift`）；reject 追加一条 `human_rejection` 决策并将该 stage 改写为 `in_progress`（资产保留），以便重跑通过 `get_next_stage()` 重新进入。
+- **并发** — Web 通道用每个项目一个 `.run.lock`（可接管过期锁）保护自身；它**不**对交互式 agent 加锁（该通道保持不变）。两个执行器竞争同一个 stage 是已文档化的边界：last-write-wins 加上检查点门和 stage 顺序审计作为兜底。
+- **服务端文件**（`runs/*.json`、`runs/*.log`、`.run.lock`）只是观察元数据——绝不参与 checkpoint / artifacts / decision_log / events.jsonl 的契约路径。`audit_project()` 对页面驱动的运行与对 agent 驱动的运行一视同仁。
+- Web 运行的资产仍然以人工为门：无头 agent 写入 `awaiting_human` 然后**结束**；页面上的批准按钮就是人工门。
 
-All tools and agents must write outputs to these paths — **always pass an explicit `output_path` under `projects/<project-id>/`**. Assets written to the repo root, cwd, or temp dirs are invisible to the user's board and violate the workspace contract.
+所有工具和 agent 都必须把输出写到这些路径——**始终在 `projects/<project-id>/` 下传入显式的 `output_path`**。写到仓库根目录、cwd 或临时目录的资产对用户的看板不可见，且违反工作区契约。
 
-**This applies to atelier and HyperFrames-skill runs too**: hand-authored compositions still write the canonical artifacts they have (script or beats-plan, scene_plan-equivalent, asset manifest) plus checkpoints into `projects/<project-id>/`. The board is runtime-agnostic; only runs that skip the artifacts get a degraded board.
+**这也适用于 atelier 和 HyperFrames 技能运行**：手写合成的作品仍要把它们拥有的规范资产（脚本或 beats 计划、scene_plan 等价物、资产清单）连同检查点写入 `projects/<project-id>/`。看板与运行时无关；只有跳过资产的运行才会得到降级的看板。
 
-## Music Library
+## 音乐库
 
-Users can place royalty-free music tracks in `music_library/` (gitignored). The asset director will check this folder before falling back to API-based music generation.
+用户可以在 `music_library/` 中放置免版权音乐（已 gitignore）。资产导演在回退到基于 API 的音乐生成之前，会先检查这个文件夹。
 
 ```
 music_library/
@@ -351,32 +383,32 @@ music_library/
 └── ...
 ```
 
-If the folder has tracks, the proposal and asset stages should present them as options alongside generated music. See the proposal-director and asset-director skills for details.
+如果该文件夹里有音轨，proposal 和 assets 阶段应把它们与生成的音乐一起作为选项呈现。详见 proposal-director 和 asset-director 技能。
 
-## Available Pipelines
+## 可用流水线
 
-| Pipeline | Best For | Stability |
+| 流水线 | 最适合 | 稳定性 |
 |----------|----------|-----------|
-| `animated-explainer` | Topic to fully generated explainer | production |
-| `talking-head` | Footage-led speaker videos | beta |
-| `screen-demo` | Screen recordings and walkthroughs | production |
-| `clip-factory` | Many clips from one long source | beta |
-| `podcast-repurpose` | Podcast highlights and derivatives | beta |
-| `cinematic` | Trailer, teaser, and mood-led edits | production |
-| `animation` | Motion-graphics and animation-first videos | production |
-| `character-animation` | Local rigged cartoon characters and reusable character acting | beta |
-| `hybrid` | Source footage plus support visuals | production |
-| `avatar-spokesperson` | Presenter-led avatar or lip-sync videos | production |
-| `localization-dub` | Subtitle, dub, and translated variants | beta |
-| `framework-smoke` | Test: minimal 2-stage smoke test | test |
+| `animated-explainer` | 从主题到完整生成的解说视频 | production |
+| `talking-head` | 素材主导的口播视频 | beta |
+| `screen-demo` | 屏幕录制与操作演示 | production |
+| `clip-factory` | 从一个长素材切出多个短片 | beta |
+| `podcast-repurpose` | 播客精彩片段与衍生内容 | beta |
+| `cinematic` | 预告片、宣传片与情绪主导的剪辑 | production |
+| `animation` | 动态图形与动画优先的视频 | production |
+| `character-animation` | 本地绑定卡通角色与可复用角色表演 | beta |
+| `hybrid` | 源素材加辅助视觉 | production |
+| `avatar-spokesperson` | 主持人主导的虚拟形象或唇形同步视频 | production |
+| `localization-dub` | 字幕、配音与翻译变体 | beta |
+| `framework-smoke` | 测试：最小 2-stage 冒烟测试 | test |
 
-> **Beta pipelines** have not been fully audited. They work, but expect rough edges. Mention this when the user selects one.
+> **Beta 流水线**尚未经过全面审计。它们能用，但会有毛刺。用户选择时请提及这一点。
 
-## Mandatory Preflight
+## 强制预检
 
-Do this before any creative work. **Use `provider_menu_summary()` first — it's the human-ready rollup.** The raw `support_envelope()` dump is a firehose (megabytes of JSON on a well-configured machine); pasting it into chat will bury the user.
+在任何创意工作之前做这件事。**先使用 `provider_menu_summary()`——它是面向人类的汇总。** 原始的 `support_envelope()` 转储是一股洪流（配置良好的机器上会有数 MB 的 JSON）；贴进聊天会把用户淹没。
 
-**Use the repo interpreter** (not Cursor/host `python`). On Windows: `.venv/Scripts/python.exe`. macOS/Linux: `.venv/bin/python`. Or set `OPENMONTAGE_PYTHON` in `.env`. Host venvs without torch/diffusers will falsely report `video_selector` unavailable even when local LTX is installed in the repo venv.
+**使用仓库的解释器**（不是 Cursor/宿主 `python`）。Windows：`.venv/Scripts/python.exe`。macOS/Linux：`.venv/bin/python`。或者在 `.env` 中设置 `OPENMONTAGE_PYTHON`。宿主 venv 缺少 torch/diffusers 时，即使仓库 venv 里装了本地 LTX，也会误报 `video_selector` 不可用。
 
 ```bash
 .venv/Scripts/python.exe -c "
@@ -387,101 +419,101 @@ print(json.dumps(registry.provider_menu_summary(), indent=2))
 "
 ```
 
-The summary returns four fields the agent should translate into plain language:
+汇总返回四个字段，agent 应将其转译为平实的语言：
 
-- `composition_runtimes` — booleans for `ffmpeg`, `remotion`, `hyperframes`. This is the source of truth for the "Present Both Composition Runtimes (HARD RULE)" check.
-- `capabilities[]` — one entry per capability family with `configured / total` counts and provider lists. Ready-made for the "N of M configured" menu.
-- `setup_offers[]` — unavailable tools whose install is a 1-minute env-var fix. Lead with these when offering upgrades.
-- `runtime_warnings[]` — specific signals like "hyperframes: npm package not resolvable". Surface these to the user verbatim — they're the kind of silent-failure bugs that break the governance contract.
+- `composition_runtimes` — `ffmpeg`、`remotion`、`hyperframes` 的布尔值。这是"呈现两种合成运行时（HARD RULE）"检查的权威来源。
+- `capabilities[]` — 每个能力家族一条，含 `configured / total` 计数和供应商列表。可直接用于"N of M 已配置"菜单。
+- `setup_offers[]` — 不可用但安装只需 1 分钟环境变量修复的工具。推荐升级时优先讲这些。
+- `runtime_warnings[]` — 具体信号，如 "hyperframes: npm package not resolvable"。把这类信息逐字呈现给用户——它们是那种会破坏治理契约的静默失败 bug。
 
-Then, for deeper inspection (only when the summary isn't enough):
+然后，做更深入的检查（仅当汇总不够时）：
 
 ```bash
-# Full menu — grouped available/unavailable per capability.
+# 完整菜单——按能力分组的可用/不可用。
 .venv/Scripts/python.exe -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu(), indent=2))"
 
-# Raw envelope — every tool's full contract. Slow/firehose; use for debugging only.
+# 原始信封——每个工具的完整契约。慢/洪流；仅供调试。
 .venv/Scripts/python.exe -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.support_envelope(), indent=2))"
 ```
 
-Then:
+然后：
 
-1. Read the selected manifest in `pipeline_defs/`.
-2. Check every `required_tools` entry against the registry.
-3. Check `fallback_tools` for unavailable tools.
-4. Report one of: `passed`, `degraded`, or `blocked`.
-5. Do not start production until the user understands the real capability envelope.
+1. 读取 `pipeline_defs/` 中选定的清单。
+2. 把每个 `required_tools` 条目与注册表核对。
+3. 检查 `fallback_tools` 中不可用的工具。
+4. 报告其中之一：`passed`、`degraded` 或 `blocked`。
+5. 在用户了解真实能力信封之前，不要开始生产。
 
-### Provider Menu (Mandatory at Preflight)
+### 供应商菜单（预检时强制）
 
-Already fetched via `provider_menu_summary()` above. Read that output and **present it to the user as a capability menu**, not as a flat tool list. Use `provider_menu()` directly only when you need the per-tool detail the summary collapses.
+已通过上面的 `provider_menu_summary()` 获取。阅读该输出并**把它作为能力菜单呈现给用户**，而不是作为扁平的工具列表。只有当你需要汇总折叠掉的逐工具细节时，才直接使用 `provider_menu()`。
 
-**How to present:**
-
-```
-YOUR CAPABILITIES
-
-  Video Generation:  0/13 configured
-  Image Generation:  1/7 configured
-  Text-to-Speech:    1/3 configured
-  Music Generation:  1/1 configured
-  Composition:       3/3 configured (FFmpeg, video_stitch, video_trimmer)
-
-  You can produce videos now with images + TTS + FFmpeg.
-  Quick upgrades available — see below.
-```
-
-For EACH capability with unavailable providers, read the `install_instructions` field from the menu output and present setup options grouped by effort:
+**如何呈现：**
 
 ```
-QUICK SETUP OPTIONS (1-minute each — set an env var in .env)
+你的能力
 
-  Video Generation (0/13 -> unlock the biggest upgrade):
-    Each unavailable provider lists its own install_instructions.
-    Read them from the provider_menu output and present grouped by env var.
-    Example: if 3 tools need FAL_KEY, group them: "FAL_KEY unlocks 3 providers"
+  视频生成:  0/13 已配置
+  图像生成:  1/7 已配置
+  文字转语音:  1/3 已配置
+  音乐生成:  1/1 已配置
+  合成:       3/3 已配置 (FFmpeg, video_stitch, video_trimmer)
 
-  Image Generation (1/7 -> more style options):
-    Same pattern — read install_instructions from each unavailable tool.
-
-  Text-to-Speech (1/3):
-    Same pattern.
-
-LOCAL OPTIONS (free, needs hardware):
-  Tools with runtime=LOCAL or runtime=LOCAL_GPU — read from the menu.
-
-Already Available:
-  List what's working. The user should feel good about what they have.
+  你现在就能用图片 + TTS + FFmpeg 制作视频。
+  还有快速升级项可选——见下方。
 ```
 
-**Rules:**
-- Do NOT hardcode provider names, API key names, or setup URLs in your prompts.
-  Read them from the registry's `install_instructions` field on each tool.
-- Always show the ratio: "X of Y configured" — this makes breadth visible.
-- Group by capability, not by individual tool.
-- Show what they CAN do now, then what they COULD unlock.
-- If the user declines setup, proceed with the best available path — no nagging.
-- If a tool shares an env var with others, group them (read from `dependencies` field).
+对于**每个**有不可用供应商的能力，从菜单输出中读取 `install_instructions` 字段，并按投入程度分组呈现设置选项：
 
-### Setup Offer Protocol
+```
+快速设置选项（每个 1 分钟——在 .env 里设置一个环境变量）
 
-When tools are `UNAVAILABLE` but can be fixed with simple configuration, **offer the user setup help instead of silently working around the limitation.** Many tools are one env var away from working.
+  视频生成 (0/13 -> 解锁最大的升级):
+    每个不可用供应商都有各自的 install_instructions。
+    从 provider_menu 输出中读取它们，按环境变量分组呈现。
+    示例：如果有 3 个工具需要 FAL_KEY，把它们归为一组："FAL_KEY 解锁 3 个供应商"
 
-| Fix Complexity | Action |
+  图像生成 (1/7 -> 更多风格选项):
+    同样的模式——从每个不可用工具读取 install_instructions。
+
+  文字转语音 (1/3):
+    同样的模式。
+
+本地选项（免费，需要硬件）:
+  runtime=LOCAL 或 runtime=LOCAL_GPU 的工具——从菜单中读取。
+
+已经可用的:
+  列出可用的部分。让用户对自己已有的东西感觉良好。
+```
+
+**规则：**
+- **不要**在提示词中硬编码供应商名称、API 密钥名称或设置 URL。
+  从注册表中每个工具的 `install_instructions` 字段读取。
+- 始终显示比例："X of Y 已配置"——这让广度可见。
+- 按能力分组，而不是按单个工具分组。
+- 先展示他们现在能做什么，再展示他们可能解锁什么。
+- 如果用户拒绝设置，就用现有最佳路径继续——不要唠叨。
+- 如果一个工具与其他工具共享环境变量，把它们归为一组（从 `dependencies` 字段读取）。
+
+### 设置提议协议
+
+当工具为 `UNAVAILABLE` 但可以通过简单配置修复时，**主动向用户提供设置帮助，而不是静默绕过这个限制。** 很多工具只差一个环境变量就能工作。
+
+| 修复复杂度 | 动作 |
 |----------------|--------|
-| **1-minute fix** (env var) | Offer to help configure now — read `install_instructions` from the tool |
-| **5-minute fix** (install) | Explain what to install and why — read `install_instructions` from the tool |
-| **Complex fix** (GPU, model download) | Note the limitation, explain what it would unlock, move on |
+| **1 分钟修复**（环境变量） | 提议现在帮忙配置——从工具读取 `install_instructions` |
+| **5 分钟修复**（安装） | 说明要装什么、为什么——从工具读取 `install_instructions` |
+| **复杂修复**（GPU、模型下载） | 说明限制，解释它能解锁什么，然后继续 |
 
-**Rules:**
-- Always tell the user what they're missing AND what they'd gain
-- Show the cost difference (free local vs. paid API)
-- If the user declines setup, proceed with the best available path — no nagging
-- Group related fixes (tools sharing the same env var dependency)
+**规则：**
+- 始终告诉用户他们缺什么**以及**能获得什么
+- 展示成本差异（免费本地 vs 付费 API）
+- 如果用户拒绝设置，就用现有最佳路径继续——不要唠叨
+- 把相关的修复归组（共享同一环境变量依赖的工具）
 
-### Composition Runtimes (Inside video_compose)
+### 合成运行时（video_compose 内部）
 
-`video_compose` has **three** render engines / runtimes. They are parallel, not ranked — the choice is made at proposal and locked in `edit_decisions.render_runtime`. Check which are available:
+`video_compose` 有**三个**渲染引擎/运行时。它们是平行的，不是排名的——选择在 proposal 时做出，并锁定在 `edit_decisions.render_runtime`。检查哪些可用：
 
 ```bash
 python -c "
@@ -494,67 +526,67 @@ print('HyperFrames note:', info.get('hyperframes_note'))
 "
 ```
 
-| Engine | Used For | Requires |
-|--------|----------|----------|
-| **FFmpeg** | Video-only cuts, concat, trim, subtitle burn | `ffmpeg` binary (always available) |
-| **Remotion** | React-based composition: still images → animated video, text cards, stat cards, charts, callouts, comparisons, transitions with spring physics, word-level caption burn, TalkingHead avatar | Node.js (`npx`) + `remotion-composer/` + `node_modules` |
-| **HyperFrames** | HTML/CSS/GSAP composition: kinetic typography, product promos, launch reels, website-to-video, registry-block-driven scenes, SVG character rigs | Node.js ≥ 22 + FFmpeg + `npx` (consumed via `npx hyperframes`) |
+| 引擎 | 用途 | 需要 |
+|--------|----------|--------|
+| **FFmpeg** | 纯视频剪辑、拼接、裁剪、字幕烧录 | `ffmpeg` 二进制（始终可用） |
+| **Remotion** | 基于 React 的合成：静态图 → 动画视频、文字卡片、统计卡片、图表、标注、对比、带弹簧物理的转场、词级字幕烧录、TalkingHead 虚拟形象 | Node.js（`npx`）+ `remotion-composer/` + `node_modules` |
+| **HyperFrames** | HTML/CSS/GSAP 合成：动态文字排版、产品宣传片、发布短片、网站转视频、注册表块驱动场景、SVG 角色绑定 | Node.js ≥ 22 + FFmpeg + `npx`（通过 `npx hyperframes` 使用） |
 
-`render_runtime` is **locked at proposal** (`proposal_packet.production_plan.render_runtime`) and **carried through edit_decisions unchanged**. `video_compose` routes based on this field; silent runtime swaps are forbidden. If the chosen runtime becomes unavailable at compose time, surface a structured blocker per "Escalate Blockers Explicitly" above. See `skills/core/hyperframes.md` for the Remotion-vs-HyperFrames decision matrix.
+`render_runtime` 在 **proposal 时锁定**（`proposal_packet.production_plan.render_runtime`）并**原样贯穿 edit_decisions**。`video_compose` 根据该字段路由；静默切换运行时是被禁止的。如果选定的运行时在合成时不可用，按上面的"明确升级阻塞"呈现结构化阻塞。Remotion-vs-HyperFrames 决策矩阵见 `skills/core/hyperframes.md`。
 
-### Critical Rule: Motion-Required Requests
+### 关键规则：需要动效的需求
 
-For any request where the deliverable inherently depends on motion rather than static coverage, treat motion as a hard requirement. Examples:
+对于任何交付物本质上依赖动效而非静态覆盖的需求，把动效视为硬性要求。示例：
 
-- sci-fi trailers,
-- cinematic teasers built from generated clips,
-- hype edits,
-- avatar or agent videos,
-- any brief whose promise depends on moving shots rather than still frames.
+- 科幻预告片，
+- 由生成片段构建的电影感宣传片，
+- 嗨燃剪辑（hype edits），
+- 虚拟形象或 agent 视频，
+- 任何其承诺取决于运动镜头而非静态帧的简报。
 
-For these requests:
+对这些需求：
 
-- The `render_runtime` chosen at proposal (Remotion, HyperFrames, or FFmpeg) must be confirmed available up front if the planned visual treatment depends on it.
-- Still-image fallback is forbidden. Do not quietly convert the job into a Ken Burns teaser, animatic, or slide-based video.
-- FFmpeg-only fallback is forbidden when it changes the approved deliverable from motion-led video to still-led video.
-- **Silent runtime swap is forbidden.** If `render_runtime="hyperframes"` was locked and HyperFrames is unavailable, do NOT route to Remotion instead. Surface the blocker, propose options, get user approval, log a `render_runtime_selection` decision — then proceed.
-- Bubble critical issues immediately. If the chosen runtime is unavailable, fails to render, or provider clip generation fails in a way that blocks the approved treatment, stop and tell the user before proceeding.
-- Do not spend more tokens or time on downgraded output unless the user explicitly approves the downgrade as an animatic or proof-of-concept.
+- 如果计划的视觉处理依赖 proposal 时选定的 `render_runtime`（Remotion、HyperFrames 或 FFmpeg），必须事先确认其可用。
+- **禁止静态图回退。** 不得悄悄把任务降级成 Ken Burns 宣传片、动画分镜（animatic）或幻灯片式视频。
+- **禁止 FFmpeg-only 回退**，当它把已批准的交付物从动效主导视频变成静态图主导视频时。
+- **禁止静默切换运行时。** 如果锁定了 `render_runtime="hyperframes"` 而 HyperFrames 不可用，**不要**转而使用 Remotion。上报阻塞、提出选项、获得用户批准、记录一条 `render_runtime_selection` 决策——然后再继续。
+- 立即上报关键问题。如果选定的运行时不可用、渲染失败，或供应商片段生成失败且阻塞了已批准的处理方案，停下来先告诉用户再继续。
+- 除非用户明确批准将输出降级为动画分镜或概念验证，否则不要在降级输出上花费更多 token 或时间。
 
-**When Remotion is available**, the agent should design production plans around it:
-- Explainer videos with `flat-motion-graphics` playbook -> Remotion animated scenes, not Ken Burns
-- Data-driven videos -> Remotion stat cards and charts, not static image screenshots
-- Any pipeline using still images -> Remotion spring animations, not FFmpeg pan-and-zoom
-- **Screen demos of a CLI/terminal/install flow -> `TerminalScene` (synthetic screen recording), not OS-level capture.** See `.agents/skills/synthetic-screen-recording/SKILL.md`. Faster, deterministic, privacy-safe. Use real capture (`screen_recorder`, `cap_recorder`, `playwright-recording`) only when the demo is a real app UI or requires unpredictable live behavior.
+**当 Remotion 可用时**，agent 应围绕它设计生产方案：
+- 带 `flat-motion-graphics` 剧本的解说视频 -> Remotion 动画场景，而不是 Ken Burns
+- 数据驱动视频 -> Remotion 统计卡片和图表，而不是静态图片截图
+- 任何使用静态图的流水线 -> Remotion 弹簧动画，而不是 FFmpeg 平移缩放
+- **CLI/终端/安装流程的屏幕演示 -> `TerminalScene`（合成屏幕录制），而不是操作系统级采集。** 参见 `.agents/skills/synthetic-screen-recording/SKILL.md`。更快、确定性、隐私安全。仅当演示对象是真实应用 UI 或需要不可预测的实时行为时，才使用真实采集（`screen_recorder`、`cap_recorder`、`playwright-recording`）。
 
-### Remotion scene types available in `remotion-composer/`
+### `remotion-composer/` 中可用的 Remotion 场景类型
 
-See `remotion-composer/SCENE_TYPES.md` for the authoritative list and their cut schemas. Current scene types usable via `cut.type`:
-`text_card`, `stat_card`, `callout`, `comparison`, `hero_title`, `terminal_scene`, `anime_scene`, `bar_chart`, `line_chart`, `pie_chart`, `kpi_grid`, `progress_bar`. Overlay types include `section_title`, `stat_reveal`, `hero_title`, `provider_chip`.
+权威列表及其 cut schema 参见 `remotion-composer/SCENE_TYPES.md`。当前可通过 `cut.type` 使用的场景类型：
+`text_card`、`stat_card`、`callout`、`comparison`、`hero_title`、`terminal_scene`、`anime_scene`、`bar_chart`、`line_chart`、`pie_chart`、`kpi_grid`、`progress_bar`。叠加类型包括 `section_title`、`stat_reveal`、`hero_title`、`provider_chip`。
 
-These stock scene-types are the **templated** path — fast and reliable, but they are why videos look alike. For **hero work, prefer atelier mode** (hand-authored composition) over this catalog; read those types as a *mechanics codex*, not a menu to assemble. See "Composition Authoring Mode" above and `skills/meta/bespoke-composition.md`.
+这些现成场景类型是**模板化**路径——快速可靠，但它们正是视频千篇一律的原因。**英雄级作品请优先使用 atelier 模式**（手写合成）而非该目录；把那些类型当作*机制法典*来读，而不是供组装的菜单。参见上面的"合成创作模式"和 `skills/meta/bespoke-composition.md`。
 
-**When Remotion is NOT available** and `render_runtime="remotion"` was NOT locked, `video_compose` may use FFmpeg Ken Burns motion on still images. This still works but produces less engaging visuals. Mention this tradeoff in the proposal. When `render_runtime="remotion"` IS locked and Remotion is unavailable, that's a blocker — escalate, don't silently swap.
+**当 Remotion 不可用**且未锁定 `render_runtime="remotion"` 时，`video_compose` 可以在静态图上使用 FFmpeg Ken Burns 动效。这仍能工作，但视觉吸引力较低。在 proposal 中说明这个权衡。当 `render_runtime="remotion"` **已**锁定而 Remotion 不可用时，那是阻塞——升级上报，不要静默切换。
 
-When `render_runtime="hyperframes"` is locked and HyperFrames is unavailable (Node < 22, missing `ffmpeg`/`npx`, or `hyperframes doctor` reports issues), that's also a blocker. Do not substitute Remotion or FFmpeg without user approval + a logged `render_runtime_selection` decision.
+当 `render_runtime="hyperframes"` 已锁定而 HyperFrames 不可用时（Node < 22、缺少 `ffmpeg`/`npx`，或 `hyperframes doctor` 报告问题），同样也是阻塞。未经用户批准并记录一条 `render_runtime_selection` 决策，不得用 Remotion 或 FFmpeg 替代。
 
-Routing is automatic — `video_compose` reads `edit_decisions.render_runtime` and dispatches to the matching engine (`_render_via_hyperframes`, `_remotion_render`, or `_render_via_ffmpeg`). But the **agent must know both Remotion and HyperFrames exist at proposal time** so it can design the visual approach intentionally. Don't default to Remotion for motion-graphics-heavy concepts that HTML/GSAP would express more naturally, and don't default to HyperFrames for briefs that reuse the existing React scene stack.
+路由是自动的——`video_compose` 读取 `edit_decisions.render_runtime` 并分发给匹配的引擎（`_render_via_hyperframes`、`_remotion_render` 或 `_render_via_ffmpeg`）。但 **agent 在 proposal 时必须知道 Remotion 和 HyperFrames 两者都存在**，才能有意识地设计视觉方案。不要把重动态图形的概念默认丢给 Remotion（HTML/GSAP 表达起来更自然），也不要把复用现有 React 场景栈的简报默认丢给 HyperFrames。
 
-## Capability Discovery
+## 能力发现
 
-OpenMontage uses two layers for capability choice:
+OpenMontage 用两层来做能力选择：
 
-- selector tools: capability-level routing such as `tts_selector` and `video_selector`
-- provider tools: concrete tools discovered via the registry that call a specific backend
+- 选择器工具（selector tools）：能力级路由，如 `tts_selector` 和 `video_selector`
+- 供应商工具（provider tools）：通过注册表发现的、调用特定后端的具体工具
 
-Always inspect the registry first:
+始终先检查注册表：
 
 ```bash
 python -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.capability_catalog(), indent=2))"
 python -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_catalog(), indent=2))"
 ```
 
-For finalist tools inspect:
+对进入候选名单的工具，检查：
 
 - `capability`
 - `provider`
@@ -563,40 +595,40 @@ For finalist tools inspect:
 - `fallback_tools`
 - `related_skills`
 
-Do not rely on memory or old docs when the registry can answer it.
+注册表能回答的问题，不要依赖记忆或旧文档。
 
-## Tool Families
+## 工具家族
 
-**Do not maintain hardcoded tool lists.** Always query the registry at runtime:
+**不要维护硬编码的工具列表。** 始终在运行时查询注册表：
 
 ```bash
-# See all tools grouped by capability (TTS, video_generation, image_generation, etc.)
+# 查看按能力分组的全部工具（TTS、video_generation、image_generation 等）
 python -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.capability_catalog(), indent=2))"
 
-# See all tools grouped by provider (elevenlabs, openai, ffmpeg, etc.)
+# 查看按供应商分组的全部工具（elevenlabs、openai、ffmpeg 等）
 python -c "from plugins.openmontage.tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_catalog(), indent=2))"
 ```
 
-Key capability families to look for in the output:
+在输出中要查找的关键能力家族：
 
-- **tts** — Text-to-speech providers. Route via `tts_selector`.
-- **video_generation** — Video generation providers (cloud, local GPU, stock). Route via `video_selector`.
-- **image_generation** — Image generation providers (cloud, local GPU, stock). Route via `image_selector`.
-- **music_generation** — Music and sound effect generation.
-- **video_post** — Composition, stitching, trimming (FFmpeg-based, always local).
-- **audio_processing** — Mixing, enhancement (FFmpeg-based, always local).
-- **analysis** — Transcription, scene detection, frame sampling.
-- **avatar** — Talking head and lip sync generation.
-- **character_animation** — Local character specs, SVG rigs, pose libraries, action timelines, previews, and QA.
-- **enhancement** — Upscale, background removal, face enhance, color grading.
+- **tts** — 文字转语音供应商。通过 `tts_selector` 路由。
+- **video_generation** — 视频生成供应商（云、本地 GPU、素材库）。通过 `video_selector` 路由。
+- **image_generation** — 图像生成供应商（云、本地 GPU、素材库）。通过 `image_selector` 路由。
+- **music_generation** — 音乐与音效生成。
+- **video_post** — 合成、拼接、裁剪（基于 FFmpeg，始终本地）。
+- **audio_processing** — 混音、增强（基于 FFmpeg，始终本地）。
+- **analysis** — 转录、场景检测、抽帧采样。
+- **avatar** — 虚拟形象与唇形同步生成。
+- **character_animation** — 本地角色规格、SVG 绑定、姿势库、动作时间线、预览与 QA。
+- **enhancement** — 超分、背景移除、面部增强、调色。
 
-Each tool in the registry declares `best_for`, `install_instructions`, `runtime` (LOCAL, API, LOCAL_GPU, HYBRID), and `status`. Read these fields — do not assume tool strengths from memory.
+注册表中的每个工具都声明 `best_for`、`install_instructions`、`runtime`（LOCAL、API、LOCAL_GPU、HYBRID）和 `status`。读取这些字段——不要凭记忆臆断工具优势。
 
-### Tool Class Naming Convention
+### 工具类命名约定
 
-All tool classes use **PascalCase without a "Tool" suffix**. When importing tools in Python:
+所有工具类使用**不带 "Tool" 后缀的 PascalCase**。在 Python 中导入工具时：
 
-| Module | Class Name | NOT |
+| 模块 | 类名 | 不是 |
 |--------|-----------|-----|
 | `plugins.openmontage.tools.audio.music_gen` | `MusicGen` | ~~MusicGenTool~~ |
 | `plugins.openmontage.tools.video.video_compose` | `VideoCompose` | ~~VideoComposeTool~~ |
@@ -605,226 +637,226 @@ All tool classes use **PascalCase without a "Tool" suffix**. When importing tool
 | `plugins.openmontage.tools.analysis.transcriber` | `Transcriber` | ~~TranscriberTool~~ |
 | `plugins.openmontage.tools.subtitle.subtitle_gen` | `SubtitleGen` | ~~SubtitleGenTool~~ |
 
-When in doubt, check: `grep "^class " tools/<path>.py`
+拿不准时，检查：`grep "^class " tools/<path>.py`
 
-All tools call via `.execute(params_dict)` (returns `ToolResult` with `.success`, `.data`, `.error`), NOT `.run()`.
+所有工具都通过 `.execute(params_dict)` 调用（返回带 `.success`、`.data`、`.error` 的 `ToolResult`），**不是** `.run()`。
 
-Call pattern: `registry.get("video_selector").execute({...})` or `registry.execute("video_selector", {...})`.
-Do **not** import provider modules via stale paths like `plugins.openmontage.tools.tts` — use the registry or `plugins.openmontage.tools.audio.*` / `plugins.openmontage.tools.video.*` paths from `grep "^class "`.
+调用模式：`registry.get("video_selector").execute({...})` 或 `registry.execute("video_selector", {...})`。
+**不要**通过过时路径（如 `plugins.openmontage.tools.tts`）导入供应商模块——使用注册表，或 `grep "^class "` 得到的 `plugins.openmontage.tools.audio.*` / `plugins.openmontage.tools.video.*` 路径。
 
-### Selector Pattern
+### 选择器模式
 
-Three selector tools abstract multi-provider capabilities. **Selectors auto-discover providers from the registry.** Adding a new provider tool automatically makes it available through the selector — no selector code changes needed.
+三个选择器工具抽象了多供应商能力。**选择器从注册表自动发现供应商。** 新增一个供应商工具，它会自动通过选择器可用——无需改动选择器代码。
 
-| Selector | Routes to | How it discovers |
+| 选择器 | 路由到 | 如何发现 |
 |----------|-----------|-----------------|
-| `tts_selector` | All tools with `capability="tts"` (ElevenLabs, Google TTS, OpenAI, Piper) | `registry.get_by_capability("tts")` |
-| `image_selector` | All tools with `capability="image_generation"` (FLUX, Google Imagen, GPT Image, Recraft, etc.) | `registry.get_by_capability("image_generation")` |
-| `video_selector` | All tools with `capability="video_generation"` | `registry.get_by_capability("video_generation")` |
+| `tts_selector` | 所有 `capability="tts"` 的工具（ElevenLabs、Google TTS、OpenAI、Piper） | `registry.get_by_capability("tts")` |
+| `image_selector` | 所有 `capability="image_generation"` 的工具（FLUX、Google Imagen、GPT Image、Recraft 等） | `registry.get_by_capability("image_generation")` |
+| `video_selector` | 所有 `capability="video_generation"` 的工具 | `registry.get_by_capability("video_generation")` |
 
-Selectors route based on: user preference > availability > discovery order. They adapt input schemas between providers transparently.
+选择器的路由依据：用户偏好 > 可用性 > 发现顺序。它们在供应商之间透明地适配输入 schema。
 
-## User-Facing Planning Protocol
+## 面向用户的规划协议
 
-Before committing to execution, present:
+在承诺执行之前，呈现：
 
-1. `4-5` concept directions when the brief is still open.
-2. Recommended pipeline.
-3. Recommended tool path.
-4. Alternative tool paths that are actually available.
-5. Cost estimate and quality tradeoffs.
-6. **Music plan** — mandatory for every pipeline that has audio. See below.
-7. Production plan by stage.
-8. Approval gate before asset generation.
+1. 简报仍开放时给出 `4-5` 个概念方向。
+2. 推荐的流水线。
+3. 推荐的工具路径。
+4. 实际可用的备选工具路径。
+5. 成本估算与质量权衡。
+6. **音乐方案** — 对每个有音频的流水线都是强制的。见下文。
+7. 按 stage 的生产计划。
+8. 资产生成前的审批门。
 
-If a user prefers a specific vendor and that tool is available, surface it directly. Do not hide provider choice.
+如果用户偏好某个特定供应商且该工具可用，直接把它拿出来。不要隐藏供应商选择。
 
-### Music Plan (Mandatory)
+### 音乐方案（强制）
 
-Music is a critical part of any video. **Surface the music situation to the user at proposal/idea time** — do not silently defer it to the asset stage where a failure becomes expensive.
+音乐是任何视频的关键部分。**在 proposal/idea 阶段就把音乐情况呈现给用户**——不要静默推迟到资产阶段，那时失败会很昂贵。
 
-Check music availability in this order and present the options:
+按以下顺序检查音乐可用性并呈现选项：
 
-1. **User music library (`music_library/`):** Check if this folder exists and contains tracks. If so, list available tracks with durations and let the user pick one.
-2. **Music generation APIs:** Check which music tools are available via the registry (`registry.get_by_capability("music_generation")`). Report their status honestly — include quota status if known.
-3. **Royalty-free sources:** Note if the user can provide their own track (e.g., from YouTube Audio Library, Jamendo, or other free sources). Offer the `music_library/` drop path.
+1. **用户音乐库（`music_library/`）：** 检查这个文件夹是否存在并含有音轨。如果有，列出带时长的可用音轨，让用户挑一个。
+2. **音乐生成 API：** 通过注册表检查哪些音乐工具可用（`registry.get_by_capability("music_generation")`）。如实报告其状态——知道配额状态就包含在内。
+3. **免版权来源：** 提示用户是否可以自己提供音轨（例如来自 YouTube Audio Library、Jamendo 或其他免费来源）。提供 `music_library/` 放置路径。
 
-**Always present the user with explicit choices:**
-- Use a track from their library (which one?)
-- Provide a different track (drop it in `music_library/`)
-- Generate one via API (if available — name the provider and cost)
-- Proceed without music
+**始终向用户呈现明确的选项：**
+- 使用他们库中的音轨（哪一首？）
+- 提供另一条音轨（放进 `music_library/`）
+- 通过 API 生成（若可用——说明供应商和成本）
+- 无音乐继续
 
-**If no music source is available:** Tell the user explicitly. Do NOT let this surface as a surprise at the asset stage.
+**如果没有任何音乐来源：** 明确告诉用户。绝不让这在资产阶段作为意外浮出水面。
 
-Record the music decision in the proposal/brief artifact so the asset director knows what to do.
+把音乐决策记录在 proposal/brief 资产中，这样资产导演就知道该做什么。
 
-## Pipeline Asset Expectations
+## 流水线资产预期
 
-Each pipeline manifest's `tools_available` field declares what tools a stage can use. Use selectors for multi-provider capabilities — the selector handles routing to whatever is available. Read the pipeline manifest for the authoritative list per stage.
+每个流水线清单的 `tools_available` 字段声明一个 stage 可以使用哪些工具。多供应商能力使用选择器——选择器处理路由到任何可用的东西。每个 stage 的权威列表读流水线清单。
 
-## Stage Agents
+## Stage Agent
 
-Each stage produces one canonical artifact that becomes the contract for the next stage. The stage director skill teaches the agent HOW to produce it.
+每个 stage 产出一个规范资产（canonical artifact），成为下一个 stage 的契约。stage 导演技能教 agent 如何产出它。
 
-| Stage | Director Skill | Canonical output | Core quality bar |
+| Stage | 导演技能 | 规范输出 | 核心质量底线 |
 |------|---------------|------------------|------------------|
-| `idea` | `*-director.md` | `brief` | Clear hook, target platform, duration, tone, and user intent |
-| `script` | `*-director.md` | `script` | Structured sections, valid timing, coherent narration |
-| `scene_plan` | `*-director.md` | `scene_plan` | Ordered scenes, timings, asset requirements |
-| `assets` | `*-director.md` | `asset_manifest` | Provenance, paths, model/tool metadata, scene linkage |
-| `edit` | `*-director.md` | `edit_decisions` | Concrete cuts, overlays, subtitle/music decisions |
-| `compose` | `*-director.md` | `render_report` | Output paths, encoding profile, verification notes |
+| `idea` | `*-director.md` | `brief` | 清晰的钩子、目标平台、时长、语气和用户意图 |
+| `script` | `*-director.md` | `script` | 结构化小节、有效时长、连贯旁白 |
+| `scene_plan` | `*-director.md` | `scene_plan` | 有序场景、时长、资产需求 |
+| `assets` | `*-director.md` | `asset_manifest` | 出处、路径、模型/工具元数据、场景关联 |
+| `edit` | `*-director.md` | `edit_decisions` | 具体剪辑、叠加、字幕/音乐决策 |
+| `compose` | `*-director.md` | `render_report` | 输出路径、编码配置、验证说明 |
 
-Stage contract rules:
+Stage 契约规则：
 
-- A completed or awaiting-human checkpoint must include the stage's canonical artifact.
-- Canonical artifacts must validate against the JSON schema in `schemas/artifacts/`.
-- Non-canonical outputs such as media files belong in stage-specific directories.
-- Tools should record seeds/model versions for reproducibility.
+- `completed` 或 `awaiting_human` 检查点必须包含该 stage 的规范资产。
+- 规范资产必须通过 `schemas/artifacts/` 中的 JSON schema 校验。
+- 媒体文件等非规范输出属于 stage 专用目录。
+- 工具应记录种子/模型版本以保证可复现。
 
-## Reviewer Protocol
+## 评审协议
 
-The reviewer is a meta skill (`skills/meta/reviewer.md`) — advisory, never directly blocks progression.
+评审者是一个元技能（`skills/meta/reviewer.md`）——咨询性的，绝不直接阻塞推进。
 
-- Self-review after every stage execution, before checkpointing.
-- Load `review_focus` items from the pipeline manifest for the current stage.
-- Maximum two review rounds. After that, pass with warnings and move on.
-- Findings categorized: critical (must fix), suggestion (should fix), nitpick (nice-to-have).
-- Critical findings -> fix and re-review. Suggestions -> note and proceed.
-- Check playbook `quality_rules` as constraints, not suggestions.
+- 每个 stage 执行后、落检查点之前，自我评审。
+- 从流水线清单加载当前 stage 的 `review_focus` 项。
+- 最多两轮评审。之后带着警告通过并继续。
+- 发现分类：严重（critical，必须修复）、建议（suggestion，应该修复）、吹毛求疵（nitpick，可有可无）。
+- 严重发现 -> 修复后重新评审。建议 -> 记录并继续。
+- 把剧本（playbook）的 `quality_rules` 当作约束，而不是建议。
 
-## Human Checkpoint Protocol
+## 人工检查点协议
 
-The checkpoint protocol meta skill (`skills/meta/checkpoint-protocol.md`) teaches the agent when to pause:
+检查点协议元技能（`skills/meta/checkpoint-protocol.md`）教 agent 何时暂停：
 
-- Read `human_approval_default` from the pipeline manifest per stage. **The manifest value is binding** — never re-judge it. `lib/checkpoint.py` enforces this: a gated stage cannot be written `completed` without `human_approved=True`.
-- Typical gated stages: `idea`/`proposal`, `script`, `scene_plan`, **`assets`** (review the generated assets scene-by-scene — the Backlot board's filmstrip — before compose locks them in), and `publish` where the pipeline has one. Most pipelines auto-proceed on `edit` and `compose`, but not all (documentary-montage gates `edit`) — the manifest you loaded is the only authority.
-- When approval is required: write the checkpoint as `awaiting_human`, present artifact summary, review findings, and cost snapshot — then **END YOUR TURN**. Doing further pipeline work in the same response is a gate violation.
-- **Approval is per-gate.** An early "go ahead" never covers later gates; explicit full-run pre-authorization must be recorded as a `decision_log` entry (`category: "approval_policy"`) to count.
-- Wait for human to approve, request revision, or abort.
+- 从流水线清单按 stage 读取 `human_approval_default`。**清单值具有约束力**——绝不重新判定它。`lib/checkpoint.py` 强制执行：受门控的 stage 没有 `human_approved=True` 就不能写成 `completed`。
+- 典型的受门控 stage：`idea`/`proposal`、`script`、`scene_plan`、**`assets`**（在 compose 锁定它们之前逐场景评审生成的资产——即 Backlot 看板的胶片条（filmstrip）），以及存在 `publish` 的流水线中的 `publish`。大多数流水线在 `edit` 和 `compose` 上自动推进，但不是全部（documentary-montage 对 `edit` 设门）——你加载的清单是唯一权威。
+- 需要批准时：把检查点写成 `awaiting_human`，呈现资产摘要、评审发现和成本快照——然后**结束你的回合**。在同一回复中继续做流水线工作是违反门的。
+- **批准是按门生效的。** 早期的"继续吧"永远不覆盖后面的门；明确的整跑预先授权必须记录为 `decision_log` 条目（`category: "approval_policy"`）才算数。
+- 等待人类批准、要求修改或中止。
 
-## Communication Protocol
+## 通信协议
 
-Agents coordinate through canonical JSON artifacts, checkpoints, pipeline manifests, and the tool registry.
+Agent 通过规范 JSON 资产、检查点、流水线清单和工具注册表协调。
 
-Primary files:
+主要文件：
 
-- Artifact schemas: `schemas/artifacts/`
-- Checkpoint schema: `schemas/checkpoints/checkpoint.schema.json`
-- Pipeline manifest schema: `schemas/pipelines/pipeline_manifest.schema.json`
-- Pipeline manifests: `pipeline_defs/`
-- Style playbooks: `styles/*.yaml` (validated by `schemas/styles/playbook.schema.json`)
-- Tool contract: `tools/base_tool.py`
-- Tool registry: `tools/tool_registry.py`
-- Stage director skills: `skills/pipelines/<pipeline>/<stage>-director.md`
-- Meta skills: `skills/meta/*.md`
+- 资产 schema：`schemas/artifacts/`
+- 检查点 schema：`schemas/checkpoints/checkpoint.schema.json`
+- 流水线清单 schema：`schemas/pipelines/pipeline_manifest.schema.json`
+- 流水线清单：`pipeline_defs/`
+- 风格剧本：`styles/*.yaml`（由 `schemas/styles/playbook.schema.json` 校验）
+- 工具契约：`tools/base_tool.py`
+- 工具注册表：`tools/tool_registry.py`
+- Stage 导演技能：`skills/pipelines/<pipeline>/<stage>-director.md`
+- 元技能：`skills/meta/*.md`
 
-Checkpoint rules:
+检查点规则：
 
-- Checkpoints live at `projects/<project_id>/checkpoint_<stage>.json` (the project workspace — this is what the Backlot board watches).
-- `status` may be `completed`, `failed`, `awaiting_human`, or `in_progress`.
-- Write an `in_progress` checkpoint on entering each stage; during `assets`/`compose`, refresh `metadata.partial_progress` after each completed scene/asset unit — this powers live progress on the board.
-- `completed` and `awaiting_human` checkpoints must include the canonical artifact.
-- A gated stage (`human_approval_default: true`) can only be written `completed` with `human_approved=True` — the writer raises a GATE VIOLATION otherwise.
-- Superseded checkpoints are archived automatically to `projects/<project_id>/history/` — stage re-runs never destroy run history.
-- Invalid checkpoints or invalid canonical artifacts are contract violations and should fail fast.
+- 检查点位于 `projects/<project_id>/checkpoint_<stage>.json`（项目工作区——Backlot 看板监视的正是这个）。
+- `status` 可以是 `completed`、`failed`、`awaiting_human` 或 `in_progress`。
+- 进入每个 stage 时写入 `in_progress` 检查点；在 `assets`/`compose` 期间，每完成一个场景/资产单元就刷新 `metadata.partial_progress`——这驱动看板上的实时进度。
+- `completed` 和 `awaiting_human` 检查点必须包含规范资产。
+- 受门控的 stage（`human_approval_default: true`）只能以 `human_approved=True` 写成 `completed`——否则写入器会抛出 GATE VIOLATION。
+- 被取代的检查点自动归档到 `projects/<project_id>/history/`——stage 重跑永远不会销毁运行历史。
+- 无效检查点或无效规范资产是契约违规，应当快速失败。
 
-Pipeline manifest rules:
+流水线清单规则：
 
-- Pipelines are declarative YAML manifests in `pipeline_defs/`.
-- Stages declare: `skill` (director skill path), `produces`, `tools_available`, `review_focus`, `success_criteria`, `human_approval_default`.
-- Adding a new pipeline requires a manifest + stage director skills.
+- 流水线是 `pipeline_defs/` 中的声明式 YAML 清单。
+- Stage 声明：`skill`（导演技能路径）、`produces`、`tools_available`、`review_focus`、`success_criteria`、`human_approval_default`。
+- 新增流水线需要清单 + stage 导演技能。
 
-Tool rules:
+工具规则：
 
-- Every production tool must inherit from `BaseTool`.
-- Tool discovery flows through the registry, not ad hoc imports.
-- Support-envelope reporting is the source of truth for capability, status, and resource requirements.
+- 每个生产工具都必须继承 `BaseTool`。
+- 工具发现走注册表，不走临时导入。
+- 支持信封（support-envelope）报告是能力、状态和资源需求的权威来源。
 
-## Style Playbooks
+## 风格剧本
 
-| Playbook | Best For |
+| 剧本 | 最适合 |
 |----------|----------|
-| `clean-professional` | Corporate, educational, SaaS |
-| `premium-minimalist` | Investor updates, expert explainers, product narratives |
-| `flat-motion-graphics` | Social media, TikTok, startups |
-| `minimalist-diagram` | Technical deep-dives, architecture |
-| `ink-sketch` (Ink Theater) | Hand-drawn ink-on-white doodle animation; a character that draws itself, walks, dances; contraption explainers |
+| `clean-professional` | 企业、教育、SaaS |
+| `premium-minimalist` | 投资人更新、专家解说、产品叙事 |
+| `flat-motion-graphics` | 社交媒体、TikTok、初创公司 |
+| `minimalist-diagram` | 技术深挖、架构 |
+| `ink-sketch`（Ink Theater） | 手绘墨线白底涂鸦动画；自己画自己、行走、跳舞的角色；装置解说 |
 
-For custom, atelier, brand, launch, or hero work, read `skills/meta/taste-direction.md` before choosing a playbook. Carry its `taste_profile` into the proposal so later stages can preserve the design read, visual variance, motion intensity, information density, reference strategy, and anti-patterns.
+对于定制、atelier、品牌、发布或英雄级作品，在选择剧本前阅读 `skills/meta/taste-direction.md`。把它的 `taste_profile` 带进 proposal，让后续 stage 能保留设计读取、视觉方差、动效强度、信息密度、参考策略和反模式。
 
-### Hand-drawn "doodle" animation → Ink Theater / Ink Puppet
+### 手绘"涂鸦"动画 → Ink Theater / Ink Puppet
 
-For any brief that wants a **hand-drawn ink doodle** look — "a sketch that comes to life", "a pencil / stick figure that walks or dances", "a little character that acts out the idea", whiteboard-doodle explainers — use the **Ink Theater** engine + **Ink Puppet** mocap system (`skills/creative/ink-theater.md`, `ink-theater/README.md`). It is a **style + reusable engine, not a new pipeline**: illustration / contraption pieces run on the `animation` pipeline; a mocap character (draws itself → walks / dances / waves via `InkPuppet.choreograph([...])`) runs on `character-animation`. Cross-tool entry points: **`/ink-art`** (create a vector doodle from scratch) and **`/animated-drawing`** (animate a *supplied* drawing with mocap — raster; `skills/creative/animated-drawing.md`). Never hand-tune character motion — the agent only chooses named mocap clips.
+对于任何想要**手绘墨线涂鸦**外观的简报——"活过来的速写"、"会走路或跳舞的铅笔/火柴人"、"把想法演出来的小角色"、白板涂鸦解说——使用 **Ink Theater** 引擎 + **Ink Puppet** 动捕系统（`skills/creative/ink-theater.md`、`ink-theater/README.md`）。它是**一种风格 + 可复用引擎，不是新的流水线**：插画/装置类作品跑在 `animation` 流水线上；动捕角色（自己画自己 → 通过 `InkPuppet.choreograph([...])` 行走 / 跳舞 / 挥手）跑在 `character-animation` 上。跨工具入口：**`/ink-art`**（从零创建矢量涂鸦）和 **`/animated-drawing`**（用动捕动画化*用户提供的*图片——栅格；`skills/creative/animated-drawing.md`）。绝不手工微调角色动效——agent 只选择命名的动捕片段。
 
-## Layer Map
+## 层级地图（Layer Map）
 
-OpenMontage has three instruction layers:
+OpenMontage 有三层指令：
 
 1. `tools/`
-   What exists, what is available, cost, runtime, fallback, related skills.
+   存在什么、什么可用、成本、运行时、回退、相关技能。
 2. `skills/`
-   How OpenMontage wants those tools used in pipelines.
+   OpenMontage 希望这些工具在流水线中如何使用。
 3. `.agents/skills/`
-   Raw vendor or technology knowledge.
+   原始供应商或技术知识。
 
-Reading order:
+阅读顺序：
 
-1. registry / tool contract — discover what's available
-2. relevant pipeline or creative skill (Layer 2) — know HOW to use it in this context
-3. underlying vendor skill (Layer 3) — **mandatory before calling any generation tool**
+1. 注册表 / 工具契约 — 发现有什么可用
+2. 相关流水线或创意技能（Layer 2）— 知道在此情境下如何使用
+3. 底层供应商技能（Layer 3）— **调用任何生成工具之前强制阅读**
 
-**Prefer skills over source code for tool usage.** Skills exist precisely so you don't need implementation details in the common case. Layer 2 tells you *what* and *when*. Layer 3 tells you *how*. For authoring prompts, choosing parameters, or understanding usage patterns, you should be reading skills — not `.py` files.
+**工具使用优先读技能，而非源码。** 技能的存在正是为了让常见情况下你不需要实现细节。Layer 2 告诉你*做什么*和*何时*。Layer 3 告诉你*怎么做*。编写提示词、选择参数或理解使用模式时，你应该读技能——而不是 `.py` 文件。
 
-**Exception: debugging, audits, and verifying the governance contract.** When a skill and a tool disagree, or when something behaves differently than the skill claims, reading the tool source is fair game — that's often the only way to catch a silent-availability bug or a stale doc string. An audit that refuses to look at the implementation will miss exactly the bugs that matter most. If you do read source to debug, consider whether the finding belongs in a skill update afterward so the next agent doesn't need to repeat the dive.
+**例外：调试、审计和验证治理契约。** 当技能与工具不一致，或行为与技能声称的不同时，读工具源码是合理合法的——这往往是抓住静默可用性 bug 或过时 docstring 的唯一方法。拒绝看实现的审计会漏掉恰恰最重要的那些 bug。如果你确实读源码调试了，考虑这个发现是否应该随后更新到技能里，让下一个 agent 不必重复这次深挖。
 
-**Layer 3 is not optional.** Every generation tool (video, image, TTS, music) has an `agent_skills` field listing its Layer 3 skills. These skills contain provider-specific prompt engineering, parameter tuning, and quality techniques. Read them before writing prompts. The difference between a generic prompt and a skill-informed prompt is the difference between "usable" and "cinematic."
+**Layer 3 不是可选的。** 每个生成工具（视频、图像、TTS、音乐）都有一个 `agent_skills` 字段列出其 Layer 3 技能。这些技能包含供应商特定的提示词工程、参数调优和质量技巧。写提示词前先读它们。通用提示词与技能提示词之间的差别，就是"可用"与"电影感"之间的差别。
 
-Example: Before calling `kling_video`, read its `agent_skills` → `ai-video-gen` → get Kling-specific prompt structure, camera direction syntax, and quality keywords that the model responds to best.
+示例：调用 `kling_video` 之前，读它的 `agent_skills` → `ai-video-gen` → 获取 Kling 特定的提示词结构、镜头方向语法以及模型响应最好的质量关键词。
 
-### Layer 3 skills, by category
+### Layer 3 技能，按类别
 
-The `.agents/skills/` directory is large. When you're not coming in through a tool's `agent_skills` pointer, use this table to find the right file by *what you're trying to do*:
+`.agents/skills/` 目录很大。当你不是通过工具的 `agent_skills` 指针进来时，用这张表按*你想做什么*找到正确的文件：
 
-| Category | Skills |
+| 类别 | 技能 |
 |---|---|
-| **Composition runtime** | `remotion`, `remotion-best-practices`, `synthetic-screen-recording` (fake terminal/UI demos via Remotion TerminalScene) |
-| **Animation knowledge (generic)** | `gsap-core`, `gsap-timeline`, `gsap-plugins` (SplitText / MorphSVG / DrawSVG / MotionPath / Flip / CustomEase), `gsap-utils`, `gsap-react`, `gsap-performance`, `gsap-scrolltrigger`, `gsap-frameworks`, `framer-motion` (Disney 12 principles), `lottie-bodymovin` (Lottie export) |
-| **Character animation** | `character-rigging`, `svg-character-animation`, `pose-library-design`, `canvas-procedural-animation`, `character-animation-qa` |
-| **Image generation** | `bfl-api`, `flux-best-practices` |
-| **Video generation** | `seedance-2-0` (preferred premium default — cinematic, trailer, multi-shot, synced audio, lip-sync), `gemini-omni` (conversational video editing, reference tags, timecoded beats), `ai-video-gen`, `ltx2` |
-| **Audio** | `elevenlabs`, `music`, `sound-effects`, `acestep`, `text-to-speech`, `setup-api-key` |
-| **Speech-to-text** | `speech-to-text` (whisper `transcriber` — default, offline), `azure-speech-to-text` (optional cloud STT — tool `azure_stt`, preferred when `AZURE_SPEECH_KEY` is set) |
-| **Avatar / lip-sync** | `avatar-video`, `heygen`, `create-video`, `faceswap`, `video-translate`, `agents` |
-| **Capture** | `playwright-recording` (browser flows), `ffmpeg` (post) |
-| **Visualization** | `beautiful-mermaid`, `d3-viz`, `manim-composer`, `manimce-best-practices`, `manimgl-best-practices` |
-| **Media editing** | `video-edit`, `video-download`, `video-understand`, `video-toolkit`, `visual-style` |
+| **合成运行时** | `remotion`、`remotion-best-practices`、`synthetic-screen-recording`（通过 Remotion TerminalScene 伪造终端/UI 演示） |
+| **动画知识（通用）** | `gsap-core`、`gsap-timeline`、`gsap-plugins`（SplitText / MorphSVG / DrawSVG / MotionPath / Flip / CustomEase）、`gsap-utils`、`gsap-react`、`gsap-performance`、`gsap-scrolltrigger`、`gsap-frameworks`、`framer-motion`（迪士尼 12 原则）、`lottie-bodymovin`（Lottie 导出） |
+| **角色动画** | `character-rigging`、`svg-character-animation`、`pose-library-design`、`canvas-procedural-animation`、`character-animation-qa` |
+| **图像生成** | `bfl-api`、`flux-best-practices` |
+| **视频生成** | `seedance-2-0`（首选高级默认——电影感、预告片、多镜头、同步音频、唇形同步）、`gemini-omni`（对话式视频编辑、参考标签、时码节拍）、`ai-video-gen`、`ltx2` |
+| **音频** | `elevenlabs`、`music`、`sound-effects`、`acestep`、`text-to-speech`、`setup-api-key` |
+| **语音转文字** | `speech-to-text`（whisper `transcriber` — 默认、离线）、`azure-speech-to-text`（可选云 STT — 工具 `azure_stt`，设置了 `AZURE_SPEECH_KEY` 时首选） |
+| **虚拟形象 / 唇形同步** | `avatar-video`、`heygen`、`create-video`、`faceswap`、`video-translate`、`agents` |
+| **采集** | `playwright-recording`（浏览器流程）、`ffmpeg`（后期） |
+| **可视化** | `beautiful-mermaid`、`d3-viz`、`manim-composer`、`manimce-best-practices`、`manimgl-best-practices` |
+| **媒体编辑** | `video-edit`、`video-download`、`video-understand`、`video-toolkit`、`visual-style` |
 
-**When in doubt, read the category's meta routing file first:**
-- Picking an animation runtime? → `skills/meta/animation-runtime-selector.md` routes between Remotion primitives, GSAP plugins, framer-motion, Lottie, Manim, D3.
-- Picking a screen-recording mode (real capture vs synthetic terminal)? → `pipeline_defs/screen-demo.yaml` + `skills/pipelines/screen-demo/idea-director.md`.
+**拿不准时，先读该类别的元路由文件：**
+- 挑选动画运行时？→ `skills/meta/animation-runtime-selector.md` 在 Remotion 原语、GSAP 插件、framer-motion、Lottie、Manim、D3 之间路由。
+- 挑选屏幕录制模式（真实采集 vs 合成终端）？→ `pipeline_defs/screen-demo.yaml` + `skills/pipelines/screen-demo/idea-director.md`。
 
-## Quick Lookup
+## 快速查阅
 
-| Question | Where to look |
+| 问题 | 去哪里查 |
 |----------|---------------|
-| What tools exist? | `tools/tool_registry.py` and `registry.support_envelope()` |
-| What providers are available for a capability? | `registry.capability_catalog()` |
-| What tools exist for a vendor? | `registry.provider_catalog()` |
-| How does a tool actually work? | the tool's `usage_location` from the registry |
-| How should this pipeline stage behave? | `skills/pipelines/<pipeline>/...` |
-| What is the checkpoint/review policy? | `skills/meta/` |
+| 有哪些工具？ | `tools/tool_registry.py` 和 `registry.support_envelope()` |
+| 某个能力有哪些供应商可用？ | `registry.capability_catalog()` |
+| 某个厂商有哪些工具？ | `registry.provider_catalog()` |
+| 工具实际怎么工作？ | 注册表中工具的 `usage_location` |
+| 这个流水线 stage 应该怎么表现？ | `skills/pipelines/<pipeline>/...` |
+| 检查点/评审策略是什么？ | `skills/meta/` |
 
-## What Not To Do
+## 什么不该做
 
-- **Do not bypass the pipeline.** Never write ad-hoc scripts to call tools directly. All production goes through pipeline stages with director skills. See Rule Zero and **Pipeline Bypass Prohibition (HARD RULE)**. Repo-root `scripts/rerun_*.py` files are dev/dogfood utilities marked `OPENMONTAGE_NON_PRODUCTION_SCRIPT` — agents must not use them for production runs.
-- **Do not call generation tools without reading their Layer 3 skill.** Check the tool's `agent_skills` field, read the referenced skill, then craft your prompts using that guidance.
-- **Do not skip stage director skills.** Before executing any pipeline stage, read its director skill. The skill contains the quality bar, the workflow, and the review criteria.
-- Do not use deleted legacy names such as `tts_cloud`, `tts_engine`, or `video_gen`.
-- Do not hardcode provider names, API key names, or setup URLs. Read them from the registry's `install_instructions` and `dependencies` fields.
-- Do not begin asset generation before user approval on the production plan.
-- Do not hide degraded paths. Record substitutions and blocked options explicitly.
-- Do not present a single unavailable tool in isolation. Always show the full capability picture: "X of Y providers configured for this capability."
-- Do not skip the Provider Menu at preflight. The user must see what they have AND what they could unlock.
-- Do not change provider, model, or render path without telling the user first and getting approval when the change is material.
+- **不要绕过流水线。** 绝不编写临时脚本直接调用工具。所有生产都走带导演技能的流水线 stage。参见零号规则和**流水线绕行禁令（HARD RULE）**。仓库根目录的 `scripts/rerun_*.py` 文件是标记了 `OPENMONTAGE_NON_PRODUCTION_SCRIPT` 的开发/自用工具——agent 不得将其用于生产运行。
+- **不读 Layer 3 技能就不要调用生成工具。** 检查工具的 `agent_skills` 字段，阅读引用的技能，然后用该指导编写提示词。
+- **不要跳过 stage 导演技能。** 执行任何流水线 stage 之前，先读它的导演技能。技能里包含质量底线、工作流和评审标准。
+- 不要使用已删除的旧名称，如 `tts_cloud`、`tts_engine` 或 `video_gen`。
+- 不要硬编码供应商名称、API 密钥名称或设置 URL。从注册表的 `install_instructions` 和 `dependencies` 字段读取。
+- 生产方案未获用户批准前，不要开始资产生成。
+- 不要隐藏降级路径。显式记录替换项和受阻选项。
+- 不要孤立地呈现单个不可用工具。始终展示完整能力图景："该能力已配置 X of Y 供应商"。
+- 预检时不要跳过供应商菜单。用户必须看到自己拥有什么**以及**可能解锁什么。
+- 未经用户同意，不要更换供应商、模型或渲染路径；当变更是实质性的时，必须先告知并获得批准。

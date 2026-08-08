@@ -388,7 +388,32 @@ def detect_install_method(project_root: Optional[Path] = None) -> str:
         project_root = Path(__file__).parent.parent.resolve()
     if (project_root / ".git").is_dir():
         return "git"
+    # OpenMontage / agent-hub layout: hermes lives under ``…/agent-hub/src``
+    # inside a monorepo. That is a source checkout, not a pip package.
+    if _is_monorepo_source_checkout(project_root):
+        return "git"
     return "pip"
+
+
+def _is_monorepo_source_checkout(start: Optional[Path] = None) -> bool:
+    """True when Hermes runs from a nested ``src/`` inside a parent git repo.
+
+    Upstream assumes ``Path(__file__).parent.parent`` *is* the hermes-agent
+    git root. OpenMontage embeds the fork at ``agent-hub/src/``, so the
+    immediate project root has no ``.git`` and a naive check falls through
+    to ``pip`` + PyPI, producing phantom ``1 commit behind`` / ``pip install
+    not officially supported`` banner warnings.
+    """
+    root = (start or Path(__file__).parent.parent).resolve()
+    for parent in root.parents:
+        if not (parent / ".git").is_dir():
+            continue
+        # Prefer an explicit agent-hub marker; also accept any parent git
+        # that contains this hermes ``src`` tree (hermes_cli sibling).
+        if (parent / "agent-hub").is_dir() or (root / "hermes_cli").is_dir():
+            return True
+        return False
+    return False
 
 
 def stamp_install_method(method: str) -> None:

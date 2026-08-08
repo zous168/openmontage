@@ -25,7 +25,7 @@ def _seed_device() -> None:
     LocalDeviceAuthStore().save(
         DeviceAuth(
             user_id="user-1",
-            login_name="aw_seed_demo001",
+            login_name="aw_1d8c23200075fe43bf0881c5",
             tenant_id="tenant-1",
             tenant_name="Demo",
             device_id="dev-1",

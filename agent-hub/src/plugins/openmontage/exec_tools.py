@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
@@ -24,6 +23,34 @@ def _project_dir(project_id: str):
     return PROJECTS_DIR / project_id
 
 
+def _diagnostics_for(exc: BaseException, project_dir) -> dict[str, Any]:
+    """优先用异常自带 diagnostics；否则现场拍一张 runtime 快照。"""
+    diag = getattr(exc, "diagnostics", None)
+    if isinstance(diag, dict) and diag:
+        return diag
+    try:
+        from plugins.openmontage.backlot import stage_runner
+
+        return stage_runner.inspect_project_runtime(project_dir)
+    except Exception as snap_exc:
+        return {"snapshot_failed": str(snap_exc), "original_error": str(exc)}
+
+
+def _fail(message: str, project_dir, *, project_id: str, exc: BaseException | None = None, **extra: Any) -> str:
+    payload: dict[str, Any] = {"project_id": project_id, **extra}
+    if exc is not None:
+        payload["error_type"] = type(exc).__name__
+        payload["diagnostics"] = _diagnostics_for(exc, project_dir)
+    else:
+        try:
+            from plugins.openmontage.backlot import stage_runner
+
+            payload["diagnostics"] = stage_runner.inspect_project_runtime(project_dir)
+        except Exception:
+            pass
+    return _error(message, **payload)
+
+
 # ─── om_run ──────────────────────────────────────────────────────────
 
 OM_RUN_SCHEMA = {
@@ -32,6 +59,8 @@ OM_RUN_SCHEMA = {
         "启动 OpenMontage 项目的下一个阶段（或指定阶段的重跑）。"
         "立即返回 task_id —— 阶段是分钟级的，用 om_job 轮询进度，"
         "不要原地等待。stage 必须等于当前 next_stage，跳阶段会被拒绝。"
+        "失败时读返回的 diagnostics（busy/pid_alive/blockers/suggested_actions），"
+        "不要猜、不要 find 源码。"
     ),
     "parameters": {
         "type": "object",
@@ -70,31 +99,33 @@ def handle_run(args: dict, **_kw: Any) -> str:
             feedback=str(args.get("feedback") or "").strip() or None,
         )
     except stage_runner.StageRunError as exc:
-        # 契约违规（跳阶段、锁冲突、manifest 缺失）——原样回传，不要粉饰。
-        return _error(str(exc), project_id=project_id)
+        # 契约违规（跳阶段、锁冲突、manifest 缺失）——原样回传，附 diagnostics。
+        return _fail(str(exc), project_dir, project_id=project_id, exc=exc)
     except Exception as exc:
-        return _error(f"启动失败: {exc}", project_id=project_id)
+        return _fail(f"启动失败: {exc}", project_dir, project_id=project_id, exc=exc)
 
-    # prepare 已完成校验与加锁，spawn 交给事件循环后台跑。
+    # prepare 已完成校验与加锁；同步宿主（CLI）无事件循环时用后台线程调度。
     try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-    if loop is not None:
-        loop.create_task(stage_runner.run_task(task))
-        spawned = True
-    else:
-        # 无事件循环（同步宿主）：调用方需要自己驱动，如实告知而不是假装已启动。
-        spawned = False
+        stage_runner.schedule_run_task(task)
+    except Exception as exc:
+        stage_runner._release_lock(project_dir, task.task_id)
+        stage_runner._TASKS.pop(project_id, None)
+        return _fail(f"启动失败: {exc}", project_dir, project_id=project_id, exc=exc)
 
+    runtime = stage_runner.inspect_project_runtime(project_dir, reconcile=False)
     return _json(
         {
             "ok": True,
             "task_id": task.task_id,
             "project_id": project_id,
             "stage": task.stage,
-            "spawned": spawned,
-            "next": "用 om_job 轮询该 task_id；阶段完成后若配置了审批门会停在 awaiting_human",
+            "spawned": True,
+            "runtime": runtime,
+            "next": (
+                "用 om_job 轮询该 task_id（约每 15–60 秒一次，label 如「轮询 edit 进度」）；"
+                "不要自己 exec/terminal 跑阶段，不要写「等 90 秒查进度」假等待，不要空等 10/20 分钟。"
+                "完成后若配置了审批门会停在 awaiting_human"
+            ),
         }
     )
 
@@ -106,6 +137,9 @@ OM_JOB_SCHEMA = {
     "description": (
         "轮询 OpenMontage 阶段任务的状态与日志尾部。"
         "省略 task_id 则返回该项目最近的运行摘要。"
+        "每次调用必须填 label（如「轮询 research 进度」），不要复用上一次的 label。"
+        "两次 om_job 之间若需等待，用秒级间隔（约 15–60s），"
+        "不要空等 10/20 分钟；响应含 status/error/recovery/runtime/pid_alive。"
     ),
     "parameters": {
         "type": "object",
@@ -138,9 +172,11 @@ def handle_job(args: dict, **_kw: Any) -> str:
     task_id = str(args.get("task_id") or "").strip()
     if not task_id:
         try:
-            return _json({"ok": True, "runs": stage_runner.list_runs(project_dir)})
+            runs = stage_runner.list_runs(project_dir)
+            runtime = stage_runner.inspect_project_runtime(project_dir, reconcile=False)
+            return _json({"ok": True, "runs": runs, "runtime": runtime})
         except Exception as exc:
-            return _error(f"读取运行列表失败: {exc}")
+            return _fail(f"读取运行列表失败: {exc}", project_dir, project_id=project_id, exc=exc)
 
     try:
         payload = stage_runner.read_run_log(
@@ -150,9 +186,20 @@ def handle_job(args: dict, **_kw: Any) -> str:
             limit=int(args.get("log_limit") or 80),
         )
     except FileNotFoundError:
-        return _error(f"未找到任务: {task_id}")
+        return _fail(
+            f"未找到任务: {task_id}",
+            project_dir,
+            project_id=project_id,
+            task_id=task_id,
+        )
     except Exception as exc:
-        return _error(f"读取任务日志失败: {exc}")
+        return _fail(
+            f"读取任务日志失败: {exc}",
+            project_dir,
+            project_id=project_id,
+            exc=exc,
+            task_id=task_id,
+        )
     return _json({"ok": True, "task_id": task_id, **payload})
 
 
@@ -161,9 +208,11 @@ def handle_job(args: dict, **_kw: Any) -> str:
 OM_STATE_SCHEMA = {
     "name": "om_state",
     "description": (
-        "写入 OpenMontage 的项目状态：批准/驳回当前阶段，或追加决策记录。"
-        "决策日志是 append-only 的审计轨迹 —— 用户拍板的每个选择都要落这里，"
-        "后续阶段和复盘都靠它。"
+        "写入 OpenMontage 的项目状态：批准/驳回当前阶段、把磁盘上已有的规范产物"
+        "闭环成 completed checkpoint，或追加决策记录。"
+        "当 om_project 报告 orphan_on_disk / orphans 时，用 complete_from_disk，"
+        "不要去读 checkpoint.py 或 stage_runner.py。"
+        "失败时读 diagnostics.schema.errors / diagnostics.blockers，按 suggested_actions 行动。"
     ),
     "parameters": {
         "type": "object",
@@ -171,10 +220,17 @@ OM_STATE_SCHEMA = {
             "project_id": {"type": "string", "description": "项目 id"},
             "action": {
                 "type": "string",
-                "enum": ["approve", "reject", "append_decisions"],
-                "description": "approve=通过审批门续跑；reject=打回并附修改意见；append_decisions=记录用户拍板",
+                "enum": ["approve", "reject", "append_decisions", "complete_from_disk"],
+                "description": (
+                    "approve=通过审批门；reject=打回并附修改意见；"
+                    "complete_from_disk=把磁盘已有规范产物写入 completed "
+                    "（仅非门控 stage）；append_decisions=记录用户拍板"
+                ),
             },
-            "stage": {"type": "string", "description": "approve / reject 的目标阶段"},
+            "stage": {
+                "type": "string",
+                "description": "approve / reject / complete_from_disk 的目标阶段",
+            },
             "notes": {"type": "string", "description": "approve 时的备注"},
             "feedback": {"type": "string", "description": "reject 时的修改意见（必填）"},
             "decisions": {
@@ -208,7 +264,7 @@ def handle_state(args: dict, **_kw: Any) -> str:
         try:
             path = append_decisions(project_id, decisions)
         except Exception as exc:
-            return _error(f"写入决策日志失败: {exc}")
+            return _fail(f"写入决策日志失败: {exc}", project_dir, project_id=project_id, exc=exc)
         return _json({"ok": True, "action": action, "decision_log": str(path)})
 
     stage = str(args.get("stage") or "").strip()
@@ -223,7 +279,7 @@ def handle_state(args: dict, **_kw: Any) -> str:
                 project_dir, stage, notes=str(args.get("notes") or "")
             )
         except Exception as exc:
-            return _error(f"批准失败: {exc}")
+            return _fail(f"批准失败: {exc}", project_dir, project_id=project_id, exc=exc, stage=stage)
         return _json({"ok": True, "action": action, **_as_dict(result)})
 
     if action == "reject":
@@ -234,7 +290,20 @@ def handle_state(args: dict, **_kw: Any) -> str:
         try:
             result = stage_runner.reject_stage(project_dir, stage, feedback=feedback)
         except Exception as exc:
-            return _error(f"驳回失败: {exc}")
+            return _fail(f"驳回失败: {exc}", project_dir, project_id=project_id, exc=exc, stage=stage)
+        return _json({"ok": True, "action": action, **_as_dict(result)})
+
+    if action == "complete_from_disk":
+        try:
+            result = stage_runner.complete_stage_from_disk(project_dir, stage)
+        except Exception as exc:
+            return _fail(
+                f"complete_from_disk 失败: {exc}",
+                project_dir,
+                project_id=project_id,
+                exc=exc,
+                stage=stage,
+            )
         return _json({"ok": True, "action": action, **_as_dict(result)})
 
     return _error(f"未知 action: {action}")

@@ -244,6 +244,25 @@ def _sanitize_subprocess_env(base_env: dict | None, extra_env: dict | None = Non
     return sanitized
 
 
+def _is_wsl_bash(path: str) -> bool:
+    """True for the Windows Store / System32 WSL ``bash.exe`` shim.
+
+    That binary is a Linux environment: Windows drive paths like ``H:/work``
+    do not resolve (need ``/mnt/h/work``). Hermes terminal wrapping assumes
+    Git Bash / MSYS path semantics, so WSL must not win ``PATH`` lookup.
+    """
+    if not path:
+        return False
+    norm = os.path.normcase(os.path.abspath(path))
+    windir = os.path.normcase(os.environ.get("WINDIR", r"C:\Windows"))
+    local = os.path.normcase(os.environ.get("LOCALAPPDATA", ""))
+    if norm.startswith(os.path.join(windir, "system32") + os.sep):
+        return True
+    if local and norm.startswith(os.path.join(local, "microsoft", "windowsapps") + os.sep):
+        return True
+    return False
+
+
 def _find_bash() -> str:
     """Find bash for command execution."""
     if not _IS_WINDOWS:
@@ -278,10 +297,9 @@ def _find_bash() -> str:
             if os.path.isfile(candidate):
                 return candidate
 
-    found = shutil.which("bash")
-    if found:
-        return found
-
+    # Prefer Git for Windows over ``shutil.which("bash")``. On machines with
+    # WSL enabled, ``C:\\Windows\\System32\\bash.exe`` appears first on PATH
+    # and cannot ``cd`` to ``H:/...`` — every terminal call exits 126.
     for candidate in (
         os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Git", "bin", "bash.exe"),
         os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "Git", "bin", "bash.exe"),
@@ -290,10 +308,15 @@ def _find_bash() -> str:
         if candidate and os.path.isfile(candidate):
             return candidate
 
+    found = shutil.which("bash")
+    if found and not _is_wsl_bash(found):
+        return found
+
     raise RuntimeError(
         "Git Bash not found. Hermes Agent requires Git for Windows on Windows.\n"
         "Install it from: https://git-scm.com/download/win\n"
-        "Or set HERMES_GIT_BASH_PATH to your bash.exe location."
+        "Or set HERMES_GIT_BASH_PATH to your bash.exe location.\n"
+        "Note: WSL's System32 bash.exe is not supported for the terminal tool."
     )
 
 

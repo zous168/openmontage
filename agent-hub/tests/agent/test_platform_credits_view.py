@@ -14,7 +14,7 @@ def test_platform_credits_view_from_device_auth(monkeypatch):
         compute_point_tokens=100,
         tenant_name="演示商户",
         tenant_id="t-1",
-        login_name="aw_seed_demo001",
+        login_name="aw_1d8c23200075fe43bf0881c5",
     )
 
     class _Store:

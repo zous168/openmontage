@@ -317,7 +317,11 @@ async def ensure_runtime() -> None:
 def start_runtime_sync() -> None:
     """Called from plugin on_ready (sync). Watcher starts on first SSE via ensure_runtime."""
     from plugins.openmontage.lib.env_loader import load_env
+    from plugins.openmontage.backlot import stage_runner
+
     load_env(REPO_ROOT)
+    # Warm the background loop so om_run from sync CLI tool dispatch starts immediately.
+    stage_runner.ensure_background_loop()
 
 
 def _needs_ui_no_cache(path: str) -> bool:
@@ -793,7 +797,13 @@ def build_api_router() -> APIRouter:
         project_dir = _safe_project_dir(project_id)
         busy = await asyncio.to_thread(stage_runner._busy_or_none, project_dir)
         if busy:
-            raise HTTPException(status_code=409, detail=busy)
+            report = await asyncio.to_thread(
+                lambda: stage_runner.inspect_project_runtime(project_dir, reconcile=False),
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={"message": busy, "diagnostics": report},
+            )
         from plugins.openmontage.lib.pipeline_reset import PipelineResetError, reset_from_stage, reset_to_first_stage
 
         def _do_reset() -> dict:
@@ -821,8 +831,11 @@ def build_api_router() -> APIRouter:
                 feedback=payload.feedback,
             )
         except stage_runner.StageRunError as exc:
-            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
-        asyncio.create_task(stage_runner.run_task(task))
+            detail: Any = str(exc)
+            if getattr(exc, "diagnostics", None):
+                detail = {"message": str(exc), "diagnostics": exc.diagnostics}
+            raise HTTPException(status_code=exc.status, detail=detail) from exc
+        stage_runner.schedule_run_task(task)
         _invalidate_summary(project_id)
         hub.publish(project_id)
         return {
@@ -913,7 +926,10 @@ def build_api_router() -> APIRouter:
                 notes=payload.notes or "",
             )
         except stage_runner.StageRunError as exc:
-            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+            detail: Any = str(exc)
+            if getattr(exc, "diagnostics", None):
+                detail = {"message": str(exc), "diagnostics": exc.diagnostics}
+            raise HTTPException(status_code=exc.status, detail=detail) from exc
         _invalidate_summary(project_id)
         hub.publish(project_id)
         asyncio.create_task(stage_runner.auto_advance_chain(project_dir, from_stage=result["stage"]))
@@ -930,7 +946,10 @@ def build_api_router() -> APIRouter:
                 feedback=payload.feedback,
             )
         except stage_runner.StageRunError as exc:
-            raise HTTPException(status_code=exc.status, detail=str(exc)) from exc
+            detail = str(exc)
+            if getattr(exc, "diagnostics", None):
+                detail = {"message": str(exc), "diagnostics": exc.diagnostics}
+            raise HTTPException(status_code=exc.status, detail=detail) from exc
         _invalidate_summary(project_id)
         hub.publish(project_id)
         return result

@@ -2275,6 +2275,18 @@ def run_conversation(
                         agent._buffer_vprint(f"🔐 Copilot credentials refreshed after 401. Retrying request...")
                         continue
                 if (
+                    agent.api_mode == "chat_completions"
+                    and (agent.provider or "").strip().lower() == "official"
+                    and status_code == 401
+                    and not _retry.official_auth_retry_attempted
+                ):
+                    _retry.official_auth_retry_attempted = True
+                    if agent._try_refresh_official_client_credentials(force=True):
+                        agent._buffer_vprint(
+                            f"{agent.log_prefix}🔐 官方渠道设备 JWT 已刷新，正在重试请求..."
+                        )
+                        continue
+                if (
                     agent.api_mode == "anthropic_messages"
                     and status_code == 401
                     and hasattr(agent, '_anthropic_api_key')

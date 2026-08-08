@@ -15,16 +15,15 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 def test_agent_guide_has_introspection_hard_rule():
     guide = (ROOT / "AGENT_GUIDE.md").read_text(encoding="utf-8")
-    assert "Agent Introspection" in guide
-    assert "HARD RULE" in guide
+    assert "HARD RULE" in guide or "硬规则" in guide or "零号规则" in guide
     assert "plugins.openmontage.lib.project_status" in guide
     assert "Get-ChildItem" in guide
 
 
 def test_reviewer_mentions_introspection():
     body = (ROOT / "skills" / "meta" / "reviewer.md").read_text(encoding="utf-8")
-    assert "Improvised orchestration" in body
-    assert "plugins.openmontage.lib.project_status" in body
+    assert "临场编排" in body or "Improvised orchestration" in body
+    assert "project_status" in body
 
 
 @pytest.fixture
@@ -85,3 +84,74 @@ def test_cli_json_output(projects_root: Path, monkeypatch):
     payload = json.loads(proc.stdout)
     assert payload["project_id"] == "status-demo"
     assert payload["next_stage"] == "reference_analysis"
+
+
+def test_reference_analysis_artifact_exists_and_orphan(projects_root: Path):
+    from plugins.openmontage.lib.checkpoint import write_checkpoint
+    from plugins.openmontage.lib.project_status import build_project_status
+    from plugins.openmontage.tests.contracts.test_phase0_contracts import sample_artifact
+
+    project_dir = _minimal_project(projects_root)
+    brief = sample_artifact("video_analysis_brief")
+    (project_dir / "artifacts" / "video_analysis_brief.json").write_text(
+        json.dumps(brief), encoding="utf-8",
+    )
+    write_checkpoint(
+        projects_root,
+        "status-demo",
+        "reference_analysis",
+        "failed",
+        artifacts={},
+        pipeline_type="reference-driven",
+        error="aborted",
+    )
+
+    status = build_project_status("status-demo", projects_dir=projects_root)
+    row = next(s for s in status["stages"] if s["stage"] == "reference_analysis")
+    assert row["canonical_artifact"] == "video_analysis_brief"
+    assert row["artifact_exists"] is True
+    assert row["orphan_on_disk"] is True
+    assert row["suggested_action"] == "om_state complete_from_disk"
+    assert status["orphans"]
+    assert status["orphans"][0]["stage"] == "reference_analysis"
+    assert status["suggested_action"] == "om_state complete_from_disk"
+
+
+def test_gate_blocked_next_runnable(projects_root: Path):
+    from plugins.openmontage.lib.checkpoint import write_checkpoint
+    from plugins.openmontage.lib.project_status import build_project_status
+    from plugins.openmontage.tests.contracts.test_phase0_contracts import sample_artifact
+
+    _minimal_project(projects_root)
+    write_checkpoint(
+        projects_root,
+        "status-demo",
+        "reference_analysis",
+        "completed",
+        artifacts={"video_analysis_brief": sample_artifact("video_analysis_brief")},
+        pipeline_type="reference-driven",
+    )
+    write_checkpoint(
+        projects_root,
+        "status-demo",
+        "research",
+        "completed",
+        artifacts={"research_brief": sample_artifact("research_brief")},
+        pipeline_type="reference-driven",
+    )
+    write_checkpoint(
+        projects_root,
+        "status-demo",
+        "proposal",
+        "awaiting_human",
+        artifacts={"proposal_packet": sample_artifact("proposal_packet")},
+        pipeline_type="reference-driven",
+        human_approved=False,
+    )
+    status = build_project_status("status-demo", projects_dir=projects_root)
+    assert status["next_stage"] == "proposal"
+    assert status["gate_blocked"] is True
+    assert status["next_runnable_stage"] is None
+    assert status["suggested_action"] == "om_state approve"
+    prop = next(s for s in status["stages"] if s["stage"] == "proposal")
+    assert prop.get("gate_blocked") is True

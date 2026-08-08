@@ -32,7 +32,7 @@ def http(method: str, url: str, body: dict | None = None, headers: dict | None =
 
 
 def main() -> int:
-    login_body = {"login_name": "aw_seed_demo001", "password": "Seed@Pass123"}
+    login_body = {"login_name": "aw_1d8c23200075fe43bf0881c5", "password": "Seed@Pass123"}
     code, _ = http("POST", f"{BASE}/api/auth/login", login_body)
     if code != 200:
         print(f"FAIL login ({code})")

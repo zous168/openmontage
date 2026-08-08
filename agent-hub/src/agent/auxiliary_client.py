@@ -4017,12 +4017,27 @@ def resolve_provider_client(
                 provider,
             )
         base_url = (explicit_base_url or rt.get("base_url") or "").strip().rstrip("/")
-        if not api_key or not base_url:
+        if not base_url:
             logger.debug(
                 "resolve_provider_client: device_jwt provider %s missing jwt/base_url",
                 provider,
             )
             return None, None
+        try:
+            from core.platform.device.device_auth_service import (
+                build_official_device_jwt_token_provider,
+            )
+
+            api_key_provider = build_official_device_jwt_token_provider()
+        except Exception as exc:
+            logger.warning(
+                "resolve_provider_client: device_jwt token provider unavailable for %s: %s",
+                provider,
+                exc,
+            )
+            if not api_key:
+                return None, None
+            api_key_provider = api_key
         final_model = _normalize_resolved_model(
             model
             or get_official_default_model()
@@ -4040,8 +4055,8 @@ def resolve_provider_client(
         _headers = _apply_user_default_headers(None)
         if _headers:
             extra["default_headers"] = _headers
-        client = OpenAI(api_key=api_key, base_url=base_url, **extra)
-        client = _wrap_if_needed(client, final_model, base_url, api_key)
+        client = OpenAI(api_key=api_key_provider, base_url=base_url, **extra)
+        client = _wrap_if_needed(client, final_model, base_url, api_key_provider)
         logger.debug("resolve_provider_client: %s (%s)", provider, final_model)
         return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
                 else (client, final_model))

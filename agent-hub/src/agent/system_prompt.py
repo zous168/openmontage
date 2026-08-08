@@ -38,6 +38,7 @@ from agent.prompt_builder import (
     SKILLS_GUIDANCE,
     STEER_CHANNEL_NOTE,
     TASK_COMPLETION_GUIDANCE,
+    TOOL_INVOCATION_LABEL_GUIDANCE,
     TOOL_USE_ENFORCEMENT_GUIDANCE,
     TOOL_USE_ENFORCEMENT_MODELS,
 )
@@ -339,6 +340,13 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
                     stable_parts.append(_entry.platform_hint)
             except Exception:
                 pass
+
+    # Per-call ``label`` for the tool-progress UI.  Deliberately outside the
+    # ``_hermes_framework`` gate — lean business profiles render the same tool
+    # feed, and without this the model omits ``label`` and the UI degrades to
+    # raw argument previews.
+    if agent.valid_tool_names:
+        stable_parts.append(TOOL_INVOCATION_LABEL_GUIDANCE)
 
     # Profile-scoped skills index (respects ``skills.disabled``). Lean profiles
     # get a short header; full Hermes framework gets the mandatory block.

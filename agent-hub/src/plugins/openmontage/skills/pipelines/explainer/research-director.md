@@ -12,7 +12,7 @@
 
 | 层 | 资源 | 用途 |
 |-------|----------|---------|
-| Schema | `schemas/artifacts/research_brief.schema.json` | Artifact 校验 |
+| Schema | `om_director` → `artifact_contracts`（字段契约） | 写产物前对照；勿手翻 `*.schema.json` |
 | 用户输入 | 题材、受众线索、平台线索 | 调研范围 |
 | 工具 | 网络检索、网页抓取 | 执行调研 |
 
@@ -142,12 +142,11 @@ Q13: "[topic]" (comparison OR benchmark OR "vs") data
      → 找：可以做成视觉数据卡的对比数据。
 ```
 
-**对每个找到的数据点，记录：**
-- 具体的论断（不要含糊 —— 写"73% 的开发者使用 X"，不要写"多数开发者使用 X"）
-- 来源 URL 与来源名称
-- 可信度评级：`primary_source`（原始研究）、`secondary_source`（对研究的报道）、`anecdotal`（博文、观点）
-- 意外程度：目标受众会觉得它在意料之中，还是反直觉？
-- 它可以怎么用：`hook`、`stat_card`、`script_anchor`、`closing_punch`
+**对每个找到的数据点，写入 `data_points[]` 时必须用这些 JSON 键（禁止别名）：**
+- `claim`（具体论断，不要用 `stat` / `fact`）
+- `source_url`（URI，不要用 `source` / `url` 顶替）
+- `credibility`：`primary_source` | `secondary_source` | `anecdotal`
+- 可选：`source_name`、`surprise_factor`、`usable_as`（`hook` / `stat_card` / `script_anchor` / `closing_punch`）
 
 **最少 3 个数据点。目标 5-8 个。** 若题材本身数据稀少（例如哲学或创意类），就改找专家引语。
 
@@ -174,11 +173,11 @@ Q18: "[topic]" "wish I knew" OR "before you start" OR "nobody tells you"
      → 找：让人觉得有价值的内行知识。
 ```
 
-**从结果中解析：**
-- 5 个以上真实问题（不是生成的 —— 要取自真实的论坛帖子）
-- 常见误解及其正确答案（迷思 vs 事实）
-- 目标受众的知识水平（他们已经知道什么，什么对他们是新的）
-- 痛点与挫败感
+**写入 `audience_insights` 时必须用这些 JSON 键（禁止自造 marketing 字段）：**
+- `common_questions`: string[]，至少 3 条（真实论坛问题，不要用 `primary_segment`）
+- `misconceptions`: `{myth, reality, source?}` 数组
+- `knowledge_level`: string
+- 可选：`pain_points`: string[]
 
 ### 第 6 步：专家声音（可选但价值很高）
 
@@ -243,12 +242,17 @@ Q21: "[topic]" (explainer OR animation OR infographic OR diagram)
 
 ### 第 10 步：组装并提交
 
-按 schema 构建 `research_brief` artifact。包含：
+按**字段契约**构建 `research_brief`（顶层必填：`version`=`1.0`、`topic`、
+`research_date`、`landscape`、`data_points`、`audience_insights`、
+`angles_discovered`、`sources`）。可选但推荐：`research_summary`、`trending`、
+`reference_context`（reference-driven 时）。
 
-1. `research_summary` —— 一段话，概括那一个最重要的洞察。这是提案导演最先读的东西。
-2. 第 2-9 步的全部小节
+`landscape.existing_content` 至少 3 条，每条必填 `title`/`source`/`angle`/`what_it_covers`。
+`data_points` 每条必填 `claim`/`source_url`/`credibility`（**不要** `stat`/`source`/`relevance`）。
+`sources` 至少 5 条。
 
-提交之前按 `schemas/artifacts/research_brief.schema.json` 校验。
+提交前对照 `om_director` 返回的 `artifact_contracts`（或 stage prompt 第 7 节）自检；
+**不要**再去打开 `schemas/artifacts/research_brief.schema.json` 猜字段。
 
 ## 检索词构造规则
 

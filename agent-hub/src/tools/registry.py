@@ -148,6 +148,58 @@ def invalidate_check_fn_cache() -> None:
         _check_fn_cache.clear()
 
 
+_INVOCATION_LABEL_SCHEMA = {
+    "type": "string",
+    "description": (
+        "REQUIRED for this tool when listed in required[]. 3-8 words in the "
+        "user's language naming what THIS specific call is doing right now — "
+        "not the overall task, not the tool name, not a repeat of the user's "
+        "request. Examples: '写 in_progress 检查点', '检查 artifacts 目录', "
+        "'轮询 script 是否完成'. Never use '运行代码' or the tool name. "
+        "Display-only: it never changes what the tool does."
+    ),
+}
+
+# High-frequency / opaque tools: force the model to name each call in schema.
+_LABEL_REQUIRED_TOOLS = frozenset({
+    "execute_code",
+    "terminal",
+    "om_job",
+    "om_run",
+    "om_state",
+})
+
+
+def _with_invocation_label_schema(schema: dict) -> dict:
+    """Attach per-call ``label`` to every tool schema for UI display.
+
+    For high-frequency tools (``execute_code``, ``terminal``, ``om_*`` exec),
+    ``label`` is also added to ``required`` so the model is steered to fill it.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    out = dict(schema)
+    params = out.get("parameters")
+    if not isinstance(params, dict):
+        return out
+    params = dict(params)
+    props = params.get("properties")
+    if not isinstance(props, dict):
+        return out
+    if "label" in props:
+        return out
+    props = dict(props)
+    props["label"] = dict(_INVOCATION_LABEL_SCHEMA)
+    params["properties"] = props
+    tool_name = str(out.get("name") or "")
+    if tool_name in _LABEL_REQUIRED_TOOLS:
+        required = list(params.get("required") or [])
+        if "label" not in required:
+            required.append("label")
+        params["required"] = required
+    out["parameters"] = params
+    return out
+
 class ToolRegistry:
     """Singleton registry that collects tool schemas + handlers from tool files."""
 
@@ -380,7 +432,7 @@ class ToolRegistry:
                         "using static schema",
                         name, exc,
                     )
-            result.append({"type": "function", "function": schema_with_name})
+            result.append({"type": "function", "function": _with_invocation_label_schema(schema_with_name)})
         return result
 
     # ------------------------------------------------------------------
@@ -394,6 +446,9 @@ class ToolRegistry:
         * All exceptions are caught and returned as ``{"error": "..."}``
           for consistent error format.
         """
+        from agent.display import strip_tool_invocation_label
+
+        args = strip_tool_invocation_label(args)
         entry = self.get_entry(name)
         if not entry:
             return json.dumps({"error": f"Unknown tool: {name}"})

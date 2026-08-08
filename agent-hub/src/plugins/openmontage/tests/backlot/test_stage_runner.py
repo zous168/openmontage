@@ -461,6 +461,13 @@ class TestPrompt:
         assert "awaiting_human" in prompt
         assert "research" in prompt
         assert "END YOUR TURN" in prompt or "停止" in prompt
+        assert "规范产物字段契约" in prompt
+        assert "claim" in prompt  # research_brief data_points required key
+        assert "source_url" in prompt
+        assert "om_registry" in prompt
+        assert "om_checkpoint" in prompt
+        assert "Hermes 工具面" in prompt
+        assert "registry.execute" not in prompt
 
 
 class TestAutoAdvance:

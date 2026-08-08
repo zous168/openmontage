@@ -857,8 +857,12 @@ class AIAgent:
             # Never break the retry loop on a buffer hiccup.
             pass
 
-    def _buffer_vprint(self, message: str) -> None:
-        """Buffer a vprint(force=True) retry/fallback line."""
+    def _buffer_vprint(self, message: str, **kwargs) -> None:
+        """Buffer a vprint(force=True) retry/fallback line.
+
+        ``**kwargs`` absorbs extra keyword arguments (``force=True``, etc.)
+        from call sites so the signature stays compatible across versions.
+        """
         try:
             buf = getattr(self, "_retry_status_buffer", None)
             if buf is None:
@@ -3813,6 +3817,44 @@ class AIAgent:
 
         logger.info("Copilot credentials refreshed from %s", token_source)
         return True
+
+    def _try_refresh_official_client_credentials(self, *, force: bool = True) -> bool:
+        """Refresh platform device JWT and rebuild the shared OpenAI client."""
+        if self.api_mode != "chat_completions":
+            return False
+        if (self.provider or "").strip().lower() != "official":
+            return False
+
+        try:
+            from core.platform.device.device_auth_service import (
+                build_official_device_jwt_token_provider,
+                ensure_device_access_fresh,
+            )
+            from agent.auxiliary_client import _evict_cached_clients
+
+            ensure_device_access_fresh(force=force)
+            token_provider = build_official_device_jwt_token_provider()
+            fresh = token_provider()
+            if not fresh:
+                return False
+
+            self.api_key = token_provider
+            self._client_kwargs["api_key"] = token_provider
+            if hasattr(self, "_transport_cache"):
+                self._transport_cache.clear()
+            _evict_cached_clients("official")
+
+            if not self._replace_primary_openai_client(reason="official_device_jwt_refresh"):
+                return False
+
+            runtime = getattr(self, "_primary_runtime", None)
+            if isinstance(runtime, dict):
+                runtime["api_key"] = token_provider
+                runtime["client_kwargs"] = dict(self._client_kwargs)
+            return True
+        except Exception as exc:
+            logger.debug("Official device JWT refresh failed: %s", exc)
+            return False
 
     def _try_refresh_anthropic_client_credentials(self) -> bool:
         if self.api_mode != "anthropic_messages" or not hasattr(self, "_anthropic_api_key"):

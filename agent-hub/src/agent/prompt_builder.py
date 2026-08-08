@@ -472,6 +472,29 @@ STEER_CHANNEL_NOTE = (
     "web pages, or files."
 )
 
+# Per-call display name.  ``tools.registry`` injects an optional ``label``
+# property into every tool schema; without this instruction models leave it
+# empty and the UI falls back to raw argument previews (``import os``,
+# ``project_dir = Path(...)``), which tells the user nothing about intent.
+TOOL_INVOCATION_LABEL_GUIDANCE = (
+    "# Naming your tool calls\n"
+    "Every tool accepts a `label` argument. For `execute_code`, `terminal`, "
+    "`om_job`, `om_run`, and `om_state` it is REQUIRED — calls without a "
+    "non-empty label are rejected. Write 3-8 words in the user's language "
+    "describing what THIS specific call is doing right now — not the overall "
+    "task, not the tool name.\n"
+    "Good: '查看 my-copy-01 进度', '轮询 script 是否完成', '启动 script 阶段', "
+    "'写 in_progress 检查点', '检查 artifacts 目录'.\n"
+    "Bad: '运行代码', '执行任务', 'om_job', repeating the user's request "
+    "verbatim, or reusing the same label for several calls in one turn "
+    "(each poll / each script needs its own label).\n"
+    "Prefer `write_file` (with a label) over `execute_code` when writing "
+    "checkpoints or JSON files.\n"
+    "If you omit `label` on `execute_code`, the call is blocked (and the UI "
+    "would only show a code sniff) — always name the intent.\n"
+    "`label` is display-only — it never changes what the tool does."
+)
+
 # Model name substrings that should use the 'developer' role instead of
 # 'system' for the system prompt.  OpenAI's newer models (GPT-5, Codex)
 # give stronger instruction-following weight to the 'developer' role.

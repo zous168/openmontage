@@ -28,6 +28,8 @@ STAGES = ["research", "proposal", "idea", "script", "scene_plan",
           "assets", "edit", "compose", "publish"]
 
 CANONICAL_STAGE_ARTIFACTS = {
+    "reference_analysis": "video_analysis_brief",
+    "source_media_review": "source_media_review",
     "research": "research_brief",
     "proposal": "proposal_packet",
     "idea": "brief",

@@ -36,7 +36,7 @@ def hub_data(tmp_path, monkeypatch: pytest.MonkeyPatch):
 def _save_auth(*, expires_at: float) -> DeviceAuth:
     auth = DeviceAuth(
         user_id="user-1",
-        login_name="aw_seed_demo001",
+        login_name="aw_1d8c23200075fe43bf0881c5",
         tenant_id="tenant-1",
         tenant_name="Demo",
         device_id="dev-1",
@@ -59,7 +59,7 @@ def test_tp_z2_01_refresh_updates_access_token(monkeypatch: pytest.MonkeyPatch) 
             "refresh_token": "refresh-new",
             "expires_in": 7200,
             "token_type": "Bearer",
-            "user": {"id": "user-1", "login_name": "aw_seed_demo001", "role": "ai_worker"},
+            "user": {"id": "user-1", "login_name": "aw_1d8c23200075fe43bf0881c5", "role": "ai_worker"},
         },
     }
     mock_http = MagicMock()
@@ -103,7 +103,7 @@ def test_tp_z2_03_near_expiry_auto_refresh(hub_data, monkeypatch: pytest.MonkeyP
             "refresh_token": "refresh-refreshed",
             "expires_in": 3600,
             "token_type": "Bearer",
-            "user": {"id": "user-1", "login_name": "aw_seed_demo001", "role": "ai_worker"},
+            "user": {"id": "user-1", "login_name": "aw_1d8c23200075fe43bf0881c5", "role": "ai_worker"},
         },
     }
     mock_http = MagicMock()

@@ -216,9 +216,12 @@ def handle_pipeline(args: dict, **_kw: Any) -> str:
 OM_PROJECT_SCHEMA = {
     "name": "om_project",
     "description": (
-        "读取 OpenMontage 项目状态：next_stage、已完成阶段、产物路径、"
-        "本阶段该读哪份导演技能、工具调用痕迹。这是判断「进行到哪了」的"
-        "唯一权威来源 —— 不要靠翻文件目录猜。"
+        "读取 OpenMontage 项目状态：next_stage、next_runnable_stage、gate_blocked、"
+        "suggested_action、已完成阶段、产物路径、orphan、"
+        "runtime（busy/worker_active/pid_scope=hub/blockers）、导演技能路径。"
+        "这是判断「进行到哪了 / 为何卡住」的唯一权威来源 —— "
+        "不要靠翻文件目录猜；卡住时先读 runtime / suggested_action / orphans。"
+        "hub pid_alive≠阶段还在跑；以 work_done / worker_active / gate_blocked 为准。"
     ),
     "parameters": {
         "type": "object",
@@ -259,6 +262,30 @@ def handle_project(args: dict, **_kw: Any) -> str:
         return _error(f"项目不存在: {project_id}", projects_dir=str(PROJECTS_DIR))
     except Exception as exc:
         return _error(f"读取项目状态失败: {exc}")
+
+    try:
+        from plugins.openmontage.backlot import stage_runner
+
+        status["runtime"] = stage_runner.inspect_project_runtime(
+            PROJECTS_DIR / project_id,
+        )
+    except Exception as exc:
+        status["runtime"] = {"error": f"runtime 快照失败: {exc}"}
+
+    # busy 时改写顶层建议，避免仍推销 om_run start
+    runtime = status.get("runtime") if isinstance(status.get("runtime"), dict) else {}
+    if runtime.get("busy"):
+        actions = runtime.get("suggested_actions") or []
+        status["suggested_action"] = "om_job" if actions else "wait"
+        status["suggested_message"] = (
+            actions[0]
+            if actions
+            else "项目 busy；先 om_job / 读 runtime.blockers，不要强行 om_run。"
+        )
+        # work_done 僵尸应已被 reconcile；若仍 busy，优先跟 runtime 建议
+    elif runtime.get("busy") is False and status.get("suggested_action") == "om_run start":
+        pass  # 保持 project_status 的下一阶段建议
+
     return _json({"ok": True, **status})
 
 

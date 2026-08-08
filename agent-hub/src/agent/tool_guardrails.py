@@ -195,30 +195,9 @@ def classify_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str
     from ``_detect_tool_failure``; this function exists so standalone callers
     (tests, tooling) still get consistent behavior.
     """
-    if result is None:
-        return False, ""
-    if file_mutation_result_landed(tool_name, result):
-        return False, ""
+    from agent.display import _detect_tool_failure
 
-    if tool_name == "terminal":
-        data = safe_json_loads(result)
-        if isinstance(data, dict):
-            exit_code = data.get("exit_code")
-            if exit_code is not None and exit_code != 0:
-                return True, f" [exit {exit_code}]"
-        return False, ""
-
-    if tool_name == "memory":
-        data = safe_json_loads(result)
-        if isinstance(data, dict):
-            if data.get("success") is False and "exceed the limit" in data.get("error", ""):
-                return True, " [full]"
-
-    lower = result[:500].lower()
-    if '"error"' in lower or '"failed"' in lower or result.startswith("Error"):
-        return True, " [error]"
-
-    return False, ""
+    return _detect_tool_failure(tool_name, result)
 
 
 class ToolCallGuardrailController:

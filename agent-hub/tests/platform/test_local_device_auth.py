@@ -36,7 +36,7 @@ def test_tp_z1_04_save_load_includes_refresh_token(auth_dir: Path) -> None:
     store = LocalDeviceAuthStore()
     auth = DeviceAuth(
         user_id="user-1",
-        login_name="aw_seed_demo001",
+        login_name="aw_1d8c23200075fe43bf0881c5",
         tenant_id="tenant-1",
         tenant_name="Demo Tenant",
         device_id="device-1",
@@ -100,7 +100,7 @@ def test_tp_z1_06_tenant_id_from_control_server_response(
         refresh_token="refresh-cs",
         expires_in=7200,
         token_type="Bearer",
-        user={"id": "cs-user-42", "login_name": "aw_seed_demo001", "role": "ai_worker"},
+        user={"id": "cs-user-42", "login_name": "aw_1d8c23200075fe43bf0881c5", "role": "ai_worker"},
         tenant={
             "id": "cs-tenant-real",
             "name": "CS Tenant",
@@ -110,7 +110,7 @@ def test_tp_z1_06_tenant_id_from_control_server_response(
     )
 
     auth = save_from_control_server(
-        "aw_seed_demo001",
+        "aw_1d8c23200075fe43bf0881c5",
         result,
         device_id="device-cs",
     )
@@ -118,7 +118,7 @@ def test_tp_z1_06_tenant_id_from_control_server_response(
     assert auth.tenant_id == "cs-tenant-real"
     assert auth.tenant_name == "CS Tenant"
     assert auth.user_id == "cs-user-42"
-    assert auth.display_name == "aw_seed_demo001"  # 无 display_name 时回落 login_name
+    assert auth.display_name == "aw_1d8c23200075fe43bf0881c5"  # 无 display_name 时回落 login_name
     assert auth.refresh_token == "refresh-cs"
     assert auth.expires_at == fixed_now + 7200
 
@@ -137,7 +137,7 @@ def test_tp_z1_06b_tenant_id_from_user_when_tenant_object_missing(auth_dir: Path
         token_type="Bearer",
         user={
             "id": "cs-user-42",
-            "login_name": "aw_seed_demo001",
+            "login_name": "aw_1d8c23200075fe43bf0881c5",
             "role": "ai_worker",
             "tenant_id": "00000000-0000-0000-0000-000000000001",
             "display_name": "演示AI员工",
@@ -145,7 +145,7 @@ def test_tp_z1_06b_tenant_id_from_user_when_tenant_object_missing(auth_dir: Path
         tenant=None,
     )
 
-    auth = save_from_control_server("aw_seed_demo001", result, device_id="device-cs")
+    auth = save_from_control_server("aw_1d8c23200075fe43bf0881c5", result, device_id="device-cs")
 
     assert auth.tenant_id == "00000000-0000-0000-0000-000000000001"
     assert auth.tenant_name == "演示AI员工"

@@ -104,32 +104,134 @@ def _tool_trace_summary(project_dir: Path) -> dict[str, Any]:
     }
 
 
+def resolve_canonical_artifact_name(
+    stage: str,
+    *,
+    pipeline_type: str | None = None,
+    manifest: dict[str, Any] | None = None,
+) -> str | None:
+    """Manifest ``produces[0]`` wins; ``CANONICAL_STAGE_ARTIFACTS`` is fallback."""
+    mf = manifest
+    if mf is None and pipeline_type:
+        try:
+            from plugins.openmontage.lib.pipeline_loader import load_pipeline_readonly
+
+            mf = load_pipeline_readonly(pipeline_type)
+        except Exception:
+            mf = None
+    if isinstance(mf, dict):
+        for entry in mf.get("stages") or []:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("name") != stage:
+                continue
+            produces = entry.get("produces") or []
+            if produces:
+                return str(produces[0])
+            break
+    return CANONICAL_STAGE_ARTIFACTS.get(stage)
+
+
 def _stage_rows(
     project_dir: Path,
     project_id: str,
     pipeline_type: str,
     *,
     projects_dir: Path,
+    manifest: Optional[dict[str, Any]] = None,
 ) -> list[dict[str, Any]]:
     order = get_pipeline_stages(pipeline_type)
     rows: list[dict[str, Any]] = []
     for stage in order:
         cp = _read_checkpoint_raw(project_dir, stage)
-        artifact_name = CANONICAL_STAGE_ARTIFACTS.get(stage)
+        artifact_name = resolve_canonical_artifact_name(
+            stage, pipeline_type=pipeline_type, manifest=manifest,
+        )
         artifact_path = (
             project_dir / "artifacts" / f"{artifact_name}.json"
             if artifact_name
             else None
         )
-        rows.append({
+        exists = bool(artifact_path and artifact_path.is_file())
+        status = (cp or {}).get("status", "pending")
+        row: dict[str, Any] = {
             "stage": stage,
-            "status": (cp or {}).get("status", "pending"),
+            "status": status,
             "human_approved": (cp or {}).get("human_approved"),
             "timestamp": (cp or {}).get("timestamp"),
             "canonical_artifact": artifact_name,
-            "artifact_exists": bool(artifact_path and artifact_path.is_file()),
-        })
+            "artifact_exists": exists,
+        }
+        # Disk has the stage artifact but checkpoint never closed → orphan.
+        if exists and status not in ("completed", "awaiting_human"):
+            row["orphan_on_disk"] = True
+            row["suggested_action"] = "om_state complete_from_disk"
+            if artifact_path is not None:
+                row["orphan_artifact_path"] = _display_path(artifact_path)
+        elif status == "awaiting_human":
+            row["gate_blocked"] = True
+            row["suggested_action"] = "om_state approve"
+        rows.append(row)
     return rows
+
+
+def _project_progress_hints(
+    *,
+    next_stage: Optional[str],
+    stages: list[dict[str, Any]],
+    orphans: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """gate_blocked / next_runnable_stage / top-level suggested_action。"""
+    stage_by_name = {str(r.get("stage")): r for r in stages}
+    next_row = stage_by_name.get(next_stage or "") if next_stage else None
+    gate_blocked = bool(next_row and next_row.get("status") == "awaiting_human")
+
+    next_runnable: Optional[str] = None
+    if next_stage and not gate_blocked:
+        if next_row and next_row.get("orphan_on_disk"):
+            next_runnable = None  # 须先 complete_from_disk
+        else:
+            next_runnable = next_stage
+
+    if gate_blocked:
+        suggested = {
+            "action": "om_state approve",
+            "message": (
+                f"阶段 {next_stage} 等待人工批准（gate_blocked）；"
+                f"om_state(action='approve', stage={next_stage!r})，不要空转轮询。"
+            ),
+        }
+    elif orphans:
+        first = orphans[0]
+        suggested = {
+            "action": "om_state complete_from_disk",
+            "message": (
+                f"磁盘已有 orphan 产物（{first.get('stage')}/{first.get('artifact')}）；"
+                f"om_state(action='complete_from_disk', stage={first.get('stage')!r})。"
+            ),
+        }
+    elif next_runnable:
+        suggested = {
+            "action": "om_run start",
+            "message": f"下一可跑阶段是 {next_runnable}；om_run(action='start', stage=...) 或 om_director。",
+        }
+    elif next_stage is None:
+        suggested = {
+            "action": "done",
+            "message": "流水线阶段已全部完成。",
+        }
+    else:
+        suggested = {
+            "action": "om_project",
+            "message": "查看 stages / orphans / runtime 后再行动。",
+        }
+
+    return {
+        "gate_blocked": gate_blocked,
+        "next_runnable_stage": next_runnable,
+        "suggested_action": suggested.get("action"),
+        "suggested_message": suggested.get("message"),
+    }
 
 
 def build_project_status(
@@ -165,6 +267,28 @@ def build_project_status(
     if next_stage and manifest:
         director_skill = resolve_stage_skill_file(manifest, next_stage)
 
+    stages = _stage_rows(
+        project_dir,
+        project_id,
+        pipeline_type,
+        projects_dir=root,
+        manifest=manifest,
+    )
+    orphans = [
+        {
+            "stage": row["stage"],
+            "artifact": row.get("canonical_artifact"),
+            "path": row.get("orphan_artifact_path"),
+            "checkpoint_status": row.get("status"),
+            "suggested_action": row.get("suggested_action"),
+        }
+        for row in stages
+        if row.get("orphan_on_disk")
+    ]
+    hints = _project_progress_hints(
+        next_stage=next_stage, stages=stages, orphans=orphans,
+    )
+
     status: dict[str, Any] = {
         "project_id": project_id,
         "title": marker.get("title"),
@@ -173,8 +297,12 @@ def build_project_status(
         "project_dir": _display_path(project_dir),
         "completed_stages": completed,
         "next_stage": next_stage,
+        "gate_blocked": hints["gate_blocked"],
+        "next_runnable_stage": hints["next_runnable_stage"],
+        "suggested_action": hints["suggested_action"],
+        "suggested_message": hints["suggested_message"],
         "director_skill": director_skill,
-        "stages": _stage_rows(project_dir, project_id, pipeline_type, projects_dir=root),
+        "stages": stages,
         "artifacts": _artifact_paths(project_dir),
         "renders": _render_paths(project_dir),
         "tool_trace": _tool_trace_summary(project_dir),
@@ -189,6 +317,8 @@ def build_project_status(
             "audit": f"python -m lib.project_status {project_id} --audit",
         },
     }
+    if orphans:
+        status["orphans"] = orphans
 
     if include_audit:
         status["audit_findings"] = audit_project(project_dir, pipeline_type=pipeline_type)

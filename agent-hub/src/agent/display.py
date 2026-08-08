@@ -168,6 +168,56 @@ def _oneline(text: str) -> str:
     return " ".join(text.split())
 
 
+_TOOL_INVOCATION_LABEL_KEY = "label"
+
+
+def _default_tool_display_name(tool_name: str) -> str:
+    try:
+        from tools.ui_titles import resolve_tool_ui_title
+
+        return resolve_tool_ui_title(tool_name)
+    except Exception:
+        return tool_name.replace("_", " ")
+
+
+def extract_tool_invocation_label(args: dict | None) -> str:
+    """Return the model-supplied per-invocation label, if any."""
+    if not args:
+        return ""
+    raw = args.get(_TOOL_INVOCATION_LABEL_KEY)
+    if not isinstance(raw, str):
+        return ""
+    return raw.strip()
+
+
+def strip_tool_invocation_label(args: dict | None) -> dict:
+    """Remove display-only ``label`` before dispatching to tool handlers."""
+    if not args or _TOOL_INVOCATION_LABEL_KEY not in args:
+        return args or {}
+    cleaned = dict(args)
+    cleaned.pop(_TOOL_INVOCATION_LABEL_KEY, None)
+    return cleaned
+
+
+def _execute_code_preview_snippet(code: object, max_len: int = 48) -> str:
+    """No-label fallback: show what the script starts with, not a blank '运行代码'."""
+    text = str(code or "").strip()
+    if not text:
+        return _default_tool_display_name("execute_code")
+    snippet = ""
+    for line in text.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            continue
+        snippet = _oneline(s)
+        break
+    if not snippet:
+        snippet = _oneline(text)
+    if max_len > 0 and len(snippet) > max_len:
+        return snippet[: max_len - 3] + "..."
+    return snippet
+
+
 def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -> str | None:
     """Build a short preview of a tool call's primary argument for display.
 
@@ -178,6 +228,11 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         max_len = _tool_preview_max_len
     if not args:
         return None
+    label = extract_tool_invocation_label(args)
+    if label:
+        if max_len > 0 and len(label) > max_len:
+            return label[: max_len - 3] + "..."
+        return label
     primary_args = {
         "terminal": "command", "web_search": "query", "web_extract": "urls",
         "read_file": "path", "write_file": "path", "patch": "path",
@@ -239,6 +294,34 @@ def build_tool_preview(tool_name: str, args: dict, max_len: int | None = None) -
         if len(msg) > 20:
             msg = msg[:17] + "..."
         return f"to {target}: \"{msg}\""
+
+    if tool_name == "execute_code":
+        # Prefer label (handled above). Without it, surface a code sniff so the
+        # user can tell whether the model is probing paths vs doing real work.
+        limit = 48 if max_len is None or max_len <= 0 else min(max_len, 48)
+        return _execute_code_preview_snippet(args.get("code"), max_len=limit)
+
+    if tool_name == "om_run":
+        pid = str(args.get("project_id") or "").strip()
+        stage = str(args.get("stage") or "").strip()
+        if pid and stage:
+            return f"{pid}/{stage}"
+        return pid or None
+
+    if tool_name == "om_job":
+        tid = str(args.get("task_id") or "").strip()
+        pid = str(args.get("project_id") or "").strip()
+        short = (tid[:12] if tid else pid) or "task"
+        preview = f"轮询任务进度 {short}"
+        if max_len > 0 and len(preview) > max_len:
+            return preview[: max_len - 3] + "..."
+        return preview
+
+    if tool_name in {"om_director", "om_project", "om_state"}:
+        return str(args.get("project_id") or "").strip() or None
+
+    if tool_name == "om_preflight":
+        return "capabilities"
 
     key = primary_args.get(tool_name)
     if not key:
@@ -840,10 +923,18 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
             if data.get("success") is False and "exceed the limit" in data.get("error", ""):
                 return True, " [full]"
 
-    # Structured error in JSON result (any tool that surfaces {"error": ...}).
+    # Tools that speak the OpenMontage / ok-contract: only ok=false is failure.
+    # Business fields like stages[].status="failed" must NOT look like tool errors.
+    if isinstance(data, dict) and "ok" in data:
+        if data.get("ok") is False:
+            err = data.get("error") or data.get("message") or "error"
+            return True, f" [{_trim_error(str(err))}]"
+        return False, ""
+
+    # Structured error in JSON result (legacy tools using success=false).
     if isinstance(data, dict):
         err = data.get("error") or data.get("message")
-        if err and (data.get("success") is False or "error" in data):
+        if err and data.get("success") is False:
             return True, f" [{_trim_error(str(err))}]"
 
     # Generic heuristic for non-terminal tools
@@ -852,9 +943,14 @@ def _detect_tool_failure(tool_name: str, result: str | None) -> tuple[bool, str]
     if not isinstance(result, str):
         return False, ""
     lower = result[:500].lower()
-    if '"error"' in lower or '"failed"' in lower or result.startswith("Error"):
+    if result.startswith("Error"):
         return True, " [error]"
-
+    # Avoid matching business JSON that merely contains the words error/failed
+    # inside successful payloads (e.g. checkpoint status:"failed").
+    if '"ok": false' in lower or '"ok":false' in lower:
+        return True, " [error]"
+    if lower.startswith('"error"') or '"success": false' in lower or '"success":false' in lower:
+        return True, " [error]"
     return False, ""
 
 
@@ -907,6 +1003,14 @@ def get_cute_tool_message(
         if not is_failure:
             return line
         return f"{line}{failure_suffix}"
+
+    # A model-supplied label names THIS call better than any argument preview
+    # we could derive, so it wins over every per-tool branch below.
+    invocation_label = extract_tool_invocation_label(args)
+    if invocation_label:
+        return _wrap(
+            f"┊ {get_tool_emoji(tool_name)} {_trunc(invocation_label, 42)}  {dur}"
+        )
 
     if tool_name == "web_search":
         verb = "Parallel search" if _used_free_parallel(result) else "search"
@@ -1008,7 +1112,10 @@ def get_cute_tool_message(
     if tool_name == "skills_list":
         return _wrap(f"┊ 📚 skills    list {args.get('category', 'all')}  {dur}")
     if tool_name == "skill_view":
-        return _wrap(f"┊ 📚 skill     {_trunc(args.get('name', ''), 30)}  {dur}")
+        name = str(args.get("name", ""))
+        if name.startswith("openmontage:"):
+            return _wrap(f"┊ 📚 om_skill   {_trunc(name, 30)}  {dur}")
+        return _wrap(f"┊ 📚 skill     {_trunc(name, 30)}  {dur}")
     if tool_name == "image_generate":
         return _wrap(f"┊ 🎨 create    {_trunc(args.get('prompt', ''), 35)}  {dur}")
     if tool_name == "text_to_speech":
@@ -1028,10 +1135,26 @@ def get_cute_tool_message(
         if action == "list":
             return _wrap(f"┊ ⏰ cron      listing  {dur}")
         return _wrap(f"┊ ⏰ cron      {action} {args.get('job_id', '')}  {dur}")
+    if tool_name == "om_run":
+        pid = args.get("project_id", "")
+        stage = args.get("stage", "")
+        detail = f"{pid}/{stage}" if stage else str(pid)
+        return _wrap(f"┊ 🎬 om_run     {_trunc(detail, 35)}  {dur}")
+    if tool_name == "om_job":
+        # No model label → human fallback (never look like a raw tool name dump).
+        pid = str(args.get("project_id") or "").strip()
+        tid = str(args.get("task_id") or "").strip()
+        short = (tid[:12] if tid else pid) or "?"
+        return _wrap(f"┊ 📋 轮询任务进度 {_trunc(short, 24)}  {dur}")
+    if tool_name == "om_director":
+        return _wrap(f"┊ 🎬 director   {_trunc(args.get('project_id', ''), 35)}  {dur}")
+    if tool_name == "om_project":
+        return _wrap(f"┊ 📁 project    {_trunc(args.get('project_id', 'all'), 35)}  {dur}")
+    if tool_name == "om_preflight":
+        return _wrap(f"┊ ✓  preflight  capabilities  {dur}")
     if tool_name == "execute_code":
-        code = args.get("code", "")
-        first_line = code.strip().split("\n")[0] if code.strip() else ""
-        return _wrap(f"┊ 🐍 exec      {_trunc(first_line, 35)}  {dur}")
+        preview = build_tool_preview("execute_code", args, max_len=42) or ""
+        return _wrap(f"┊ 🐍 exec      {_trunc(preview, 42)}  {dur}")
     if tool_name == "delegate_task":
         tasks = args.get("tasks")
         if tasks and isinstance(tasks, list):

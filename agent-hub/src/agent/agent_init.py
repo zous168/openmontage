@@ -741,6 +741,21 @@ def init_agent(
                 }
             else:
                 client_kwargs = {"api_key": api_key, "base_url": base_url}
+            if agent.provider == "official":
+                try:
+                    from core.platform.device.device_auth_service import (
+                        build_official_device_jwt_token_provider,
+                    )
+
+                    client_kwargs["api_key"] = build_official_device_jwt_token_provider()
+                except Exception as _om_exc:  # noqa: BLE001 — never block startup
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).warning(
+                        "Official device JWT: failed to install per-request token "
+                        "provider (%s); falling back to static bearer.",
+                        _om_exc,
+                    )
             if _provider_timeout is not None:
                 client_kwargs["timeout"] = _provider_timeout
             if agent.provider == "copilot-acp":

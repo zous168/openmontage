@@ -22,6 +22,7 @@ def test_resolve_provider_client_device_jwt(_official_runtime):
     from agent import auxiliary_client as ac
 
     fake_client = MagicMock(name="OpenAI")
+    token_provider = MagicMock(return_value="jwt-device-test")
     with (
         patch(
             "hermes_cli.runtime_provider.resolve_runtime_provider",
@@ -30,6 +31,10 @@ def test_resolve_provider_client_device_jwt(_official_runtime):
         patch(
             "hermes_cli.official_gateway_models.get_official_default_model",
             return_value="MiniMax-M2.7",
+        ),
+        patch(
+            "core.platform.device.device_auth_service.build_official_device_jwt_token_provider",
+            return_value=token_provider,
         ),
         patch.object(ac, "OpenAI", return_value=fake_client) as openai_ctor,
         patch.object(ac, "_apply_user_default_headers", return_value=None),
@@ -42,7 +47,7 @@ def test_resolve_provider_client_device_jwt(_official_runtime):
     assert model == "MiniMax-M2.7"
     openai_ctor.assert_called_once()
     kwargs = openai_ctor.call_args.kwargs
-    assert kwargs["api_key"] == "jwt-device-test"
+    assert kwargs["api_key"] is token_provider
     assert kwargs["base_url"] == "http://gateway.example.com/v1"
 
 

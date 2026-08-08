@@ -297,6 +297,18 @@ def check_for_updates() -> Optional[int]:
     except Exception:
         pass
 
+    # OpenMontage / agent-hub monorepo: Hermes is vendored under agent-hub/src
+    # with no hermes-agent git root. Comparing VERSION to PyPI hermes-agent
+    # yields a phantom "1 commit behind" and recommends `uv pip install
+    # --upgrade hermes-agent`, which is wrong for this layout. Skip the check
+    # the same way docker does (return None → no banner badge).
+    try:
+        from hermes_cli.config import _is_monorepo_source_checkout
+        if _is_monorepo_source_checkout():
+            return None
+    except Exception:
+        pass
+
     # Read cache — invalidate if the embedded rev OR installed version has
     # changed since the last check. The version guard matters for pip installs:
     # `check_via_pypi()` compares against VERSION, so a `pip install --upgrade`

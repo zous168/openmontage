@@ -7,6 +7,7 @@ import contextlib
 import logging
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import replace
 
 from core.platform.control_server import (
@@ -194,8 +195,24 @@ def get_fresh_device_access_token() -> str:
     return (auth.access_token or "").strip()
 
 
-def ensure_device_access_fresh() -> None:
-    """Proactive refresh when access token is near expiry."""
+def build_official_device_jwt_token_provider() -> Callable[[], str]:
+    """OpenAI SDK 可用的 per-request JWT 供应器（官方 / device_jwt 渠道）。
+
+    每次出站请求前读盘 + 临近过期时 refresh，避免 CLI 长会话里静态
+    ``api_key`` 在 15 分钟 TTL 后持续 401。
+    """
+
+    def _provider() -> str:
+        return get_fresh_device_access_token()
+
+    return _provider
+
+
+def ensure_device_access_fresh(*, force: bool = False) -> None:
+    """Proactive refresh when access token is near expiry.
+
+    ``force=True``：忽略 5 分钟阈值（401 恢复路径用），仍走 refresh_token。
+    """
     global _last_refresh_failure_at
 
     with device_auth_store_lock:
@@ -204,10 +221,11 @@ def ensure_device_access_fresh() -> None:
         if auth is None or not auth.refresh_token:
             return
         remaining = auth.expires_at - time.time()
-        if remaining > REFRESH_THRESHOLD_SEC:
+        if not force and remaining > REFRESH_THRESHOLD_SEC:
             return
         if (
-            _last_refresh_failure_at
+            not force
+            and _last_refresh_failure_at
             and remaining > 0
             and (time.time() - _last_refresh_failure_at) < REFRESH_FAILURE_COOLDOWN_SEC
         ):
@@ -220,7 +238,7 @@ def ensure_device_access_fresh() -> None:
             if auth is None or not auth.refresh_token:
                 return
             remaining = auth.expires_at - time.time()
-            if remaining > REFRESH_THRESHOLD_SEC:
+            if not force and remaining > REFRESH_THRESHOLD_SEC:
                 return
             _log.info(
                 "device auth refresh start login=%s expires_in_sec=%.0f",

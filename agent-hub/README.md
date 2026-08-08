@@ -4,6 +4,8 @@ Hermes Agent **源码集成**后端：Gateway、Agent 运行时、CLI、插件�
 
 > **启动**：`.\scripts\start_dev.cmd`（dev / test / prod 三档），或仓库根统一入口 `scripts\start-agent-hub.ps1` → http://127.0.0.1:8642。停止 `.\scripts\stop_dev.ps1`，播种演示数据 `.\scripts\seed-demo.ps1`。总览见 [../scripts/README.md](../scripts/README.md)。
 >
+> **Agent CLI（默认对话，含 OpenMontage `om_*`）**：仓库根 `.\start_agent_cli.cmd`，或本目录 `.\scripts\start_agent_cli.cmd`（可选 `-Tui` / `-Query "..."`）。数据面默认仓库根 `.data`。
+>
 > **打包**：`..\scripts\build-hub.ps1 -Stage` → 单文件 `agent-hub.exe`（onefile，~133MB，作 MxAI sidecar）。冻结入口 `packaging\hub_entry.py` + `agent-hub.spec`。详见 [../docs/打包规范.md](../docs/打包规范.md)。
 
 ## 目录（`src/`）
@@ -60,7 +62,7 @@ uv sync
 $env:HUB_DATA_DIR = "C:\ProgramData\MarketingHub"
 $env:PYTHONPATH = ".\src"   # 从 agent-hub 目录运行
 # 开发 ai_worker 凭据（可选，配合 /login 页；默认见 .env.dev 种子）
-$env:HUB_DEV_SEED_AI_WORKER_LOGIN = "aw_seed_demo001"
+$env:HUB_DEV_SEED_AI_WORKER_LOGIN = "aw_1d8c23200075fe43bf0881c5"
 $env:HUB_DEV_SEED_PASSWORD = "Seed@Pass123"
 ```
 

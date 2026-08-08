@@ -28,11 +28,11 @@ def hub_data(tmp_path, monkeypatch: pytest.MonkeyPatch):
 def test_tp_z1_07_development_seed_login_200(hub_data, monkeypatch: pytest.MonkeyPatch) -> None:
     """TP-Z1-07: HUB_ENV=development + seed credentials → persisted session."""
     monkeypatch.setenv("HUB_ENV", "development")
-    monkeypatch.setenv("HUB_DEV_SEED_AI_WORKER_LOGIN", "aw_seed_demo001")
+    monkeypatch.setenv("HUB_DEV_SEED_AI_WORKER_LOGIN", "aw_1d8c23200075fe43bf0881c5")
     monkeypatch.setenv("HUB_DEV_SEED_PASSWORD", "Seed@Pass123")
 
-    auth = perform_device_login(login_name="aw_seed_demo001", password="Seed@Pass123")
-    assert auth.login_name == "aw_seed_demo001"
+    auth = perform_device_login(login_name="aw_1d8c23200075fe43bf0881c5", password="Seed@Pass123")
+    assert auth.login_name == "aw_1d8c23200075fe43bf0881c5"
     assert auth.tenant_id
     loaded = LocalDeviceAuthStore().load()
     assert loaded is not None
@@ -77,7 +77,7 @@ def test_tp_z1_09_wrong_password_401(hub_data, monkeypatch: pytest.MonkeyPatch) 
     """TP-Z1-09: wrong password → InvalidCredentialsError."""
     monkeypatch.setenv("HUB_ENV", "development")
     with pytest.raises(InvalidCredentialsError):
-        perform_device_login(login_name="aw_seed_demo001", password="wrong")
+        perform_device_login(login_name="aw_1d8c23200075fe43bf0881c5", password="wrong")
 
 
 def test_device_auth_login_route_development(hub_data, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,11 +87,11 @@ def test_device_auth_login_route_development(hub_data, monkeypatch: pytest.Monke
     client = TestClient(app)
     res = client.post(
         "/api/auth/login",
-        json={"login_name": "aw_seed_demo001", "password": "Seed@Pass123"},
+        json={"login_name": "aw_1d8c23200075fe43bf0881c5", "password": "Seed@Pass123"},
     )
     assert res.status_code == 200
     body = res.json()
-    assert body["login_name"] == "aw_seed_demo001"
+    assert body["login_name"] == "aw_1d8c23200075fe43bf0881c5"
     assert body["tenant_id"]
 
 

@@ -14,7 +14,7 @@ MODEL = "doubao-video-rpa-t2v"
 ADMIN_LOGIN = "seed.platform@control.local"
 ADMIN_PASSWORD = "Seed@Pass123"
 HUB_LOGINS = (
-    ("aw_seed_demo001", "Seed@Pass123"),
+    ("aw_1d8c23200075fe43bf0881c5", "Seed@Pass123"),
 )
 AUTH_PATH = Path(r"C:\Users\zhaoh\AppData\Local\MxAI 测试版\data\device\device_auth.json")
 MODEL_ID = "5907fe9f-ad4b-416a-b817-52ec3322f70a"

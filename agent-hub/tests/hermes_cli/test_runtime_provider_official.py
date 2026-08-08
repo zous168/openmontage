@@ -48,7 +48,7 @@ def hub_data(tmp_path, monkeypatch: pytest.MonkeyPatch):
 def _save_auth(*, access_token: str, expires_at: float | None = None) -> DeviceAuth:
     auth = DeviceAuth(
         user_id="user-1",
-        login_name="aw_seed_demo001",
+        login_name="aw_1d8c23200075fe43bf0881c5",
         tenant_id="tenant-1",
         tenant_name="Demo",
         device_id="dev-1",
@@ -101,7 +101,7 @@ def test_official_api_key_syncs_after_refresh(hub_data, monkeypatch: pytest.Monk
             "refresh_token": "refresh-new",
             "expires_in": 3600,
             "token_type": "Bearer",
-            "user": {"id": "user-1", "login_name": "aw_seed_demo001", "role": "ai_worker"},
+            "user": {"id": "user-1", "login_name": "aw_1d8c23200075fe43bf0881c5", "role": "ai_worker"},
         },
     }
     mock_http = MagicMock()

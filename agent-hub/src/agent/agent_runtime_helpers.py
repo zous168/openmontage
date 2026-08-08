@@ -1510,11 +1510,27 @@ def switch_model(agent, new_model, new_provider, api_key='', base_url='', api_mo
             agent._client_kwargs = {}
         else:
             effective_key = api_key or agent.api_key
+            if (new_provider or agent.provider or "").strip().lower() == "official":
+                try:
+                    from core.platform.device.device_auth_service import (
+                        build_official_device_jwt_token_provider,
+                    )
+
+                    effective_key = build_official_device_jwt_token_provider()
+                except Exception as _om_exc:  # noqa: BLE001
+                    import logging as _logging
+
+                    _logging.getLogger(__name__).warning(
+                        "Official device JWT: failed to install per-request token "
+                        "provider on switch (%s); using static bearer.",
+                        _om_exc,
+                    )
             effective_base = base_url or agent.base_url
             agent._client_kwargs = {
                 "api_key": effective_key,
                 "base_url": effective_base,
             }
+            agent.api_key = effective_key
             _sm_timeout = get_provider_request_timeout(agent.provider, agent.model)
             if _sm_timeout is not None:
                 agent._client_kwargs["timeout"] = _sm_timeout

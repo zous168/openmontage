@@ -90,6 +90,14 @@ def make_tool_call_id() -> str:
 
 def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
     """Build a human-readable title for a tool call."""
+    try:
+        from agent.display import extract_tool_invocation_label
+
+        label = extract_tool_invocation_label(args)
+        if label:
+            return label
+    except Exception:
+        pass
     if tool_name == "terminal":
         cmd = args.get("command", "")
         if len(cmd) > 80:
@@ -132,6 +140,14 @@ def build_tool_title(tool_name: str, args: Dict[str, Any]) -> str:
         target = str(args.get("target") or "memory").strip() or "memory"
         return f"memory {action}: {target}"
     if tool_name == "execute_code":
+        try:
+            from agent.display import build_tool_preview
+
+            preview = build_tool_preview("execute_code", args, max_len=70)
+            if preview:
+                return f"python: {preview}"
+        except Exception:
+            pass
         code = str(args.get("code") or "").strip()
         first_line = next((line.strip() for line in code.splitlines() if line.strip()), "")
         if first_line:

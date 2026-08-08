@@ -57,6 +57,22 @@ SHA 不可考的原因：这份代码在并入本仓库前没有独立的 `.git`
 **鉴权**：新增 `core/platform/device`（本机 IPC + 设备鉴权）与
 `hermes_cli/dashboard_auth`，`HERMES_DASHBOARD_GATED` 默认开启。上游无此机制。
 
+### 并入后的内核改动
+
+并入 OpenMontage 之后对 `src/` 内核所做的改动，逐条登记在此。这些与 MxAI 遗留无关，
+多数是上游本身就有的缺陷，将来对齐上游时应优先尝试回推而不是保留分叉。
+
+| 文件 | 改动 | 上游是否也有此问题 |
+|---|---|---|
+| `src/tools/environments/local.py` | `_find_bash()` 优先 Git for Windows，并排除 WSL 的 `bash.exe`（新增 `_is_wsl_bash()`） | 是，建议回推 |
+
+**`_find_bash()` 的 WSL 问题**：装了 WSL 的 Windows 机器上，`C:\Windows\System32\bash.exe`
+排在 `PATH` 最前，`shutil.which("bash")` 会选中它。那是个 Linux 环境，认 `/mnt/h/...`
+而不认 `H:/...`，于是 `_wrap_command()` 里的 `builtin cd -- ... || exit 126` 每次都失败，
+**所有** terminal 工具调用一律返回 exit 126。Git Bash 对 `H:\work` 和 `H:/work` 两种写法
+都接受（都解析为 `/h/work`），所以问题不在路径分隔符，只在选错了 bash。
+回归测试见 `tests/tools/test_find_bash_windows.py`。
+
 ## OpenMontage 并入形态
 
 OpenMontage 源码位于 `src/plugins/openmontage/`，作为 `kind: backend` 插件自动加载。

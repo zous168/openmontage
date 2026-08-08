@@ -58,7 +58,7 @@ def test_tp_z1_02_success_parses_tokens_and_tenant(monkeypatch: pytest.MonkeyPat
             "token_type": "Bearer",
             "user": {
                 "id": "user-1",
-                "login_name": "aw_seed_demo001",
+                "login_name": "aw_1d8c23200075fe43bf0881c5",
                 "role": "ai_worker",
             },
             "tenant": {
@@ -75,7 +75,7 @@ def test_tp_z1_02_success_parses_tokens_and_tenant(monkeypatch: pytest.MonkeyPat
 
     result = client.device_login(
         "Seed@Pass123",
-        login_name="aw_seed_demo001",
+        login_name="aw_1d8c23200075fe43bf0881c5",
         device_id="device-1",
         app_version="1.0.0",
         device_os="Windows-10.0.26200",
@@ -84,7 +84,7 @@ def test_tp_z1_02_success_parses_tokens_and_tenant(monkeypatch: pytest.MonkeyPat
     mock_post.assert_called_once_with(
         f"{_BASE}/api/hub/auth/login",
         json={
-            "login_name": "aw_seed_demo001",
+            "login_name": "aw_1d8c23200075fe43bf0881c5",
             "password": "Seed@Pass123",
             "device_id": "device-1",
             "app_version": "1.0.0",
@@ -96,7 +96,7 @@ def test_tp_z1_02_success_parses_tokens_and_tenant(monkeypatch: pytest.MonkeyPat
     assert result.refresh_token == "refresh-xyz"
     assert result.expires_in == 3600
     assert result.token_type == "Bearer"
-    assert result.user["login_name"] == "aw_seed_demo001"
+    assert result.user["login_name"] == "aw_1d8c23200075fe43bf0881c5"
     assert result.tenant is not None
     assert result.tenant["id"] == "tenant-1"
     assert result.tenant["name"] == "Demo Tenant"
@@ -339,7 +339,7 @@ def test_tp_z1_02b_tenant_id_on_user_when_tenant_object_missing(
             "token_type": "Bearer",
             "user": {
                 "id": "user-1",
-                "login_name": "aw_seed_demo001",
+                "login_name": "aw_1d8c23200075fe43bf0881c5",
                 "role": "ai_worker",
                 "tenant_id": "00000000-0000-0000-0000-000000000001",
                 "display_name": "演示AI员工",
@@ -348,7 +348,7 @@ def test_tp_z1_02b_tenant_id_on_user_when_tenant_object_missing(
     }
     client, _ = _client_with_mock_post(monkeypatch, _mock_response(200, payload))
 
-    result = client.device_login("Seed@Pass123", login_name="aw_seed_demo001")
+    result = client.device_login("Seed@Pass123", login_name="aw_1d8c23200075fe43bf0881c5")
 
     assert result.tenant is not None
     assert result.tenant["id"] == "00000000-0000-0000-0000-000000000001"

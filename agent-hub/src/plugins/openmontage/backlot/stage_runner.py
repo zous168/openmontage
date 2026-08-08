@@ -23,6 +23,7 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -36,6 +37,11 @@ from plugins.openmontage.backlot.agent_executor import execute_stage_agent
 # Backlot had no logging at all: a rejected run or a halted auto-advance left
 # nothing on disk, so "the board just stopped" was unattributable after the fact.
 log = logging.getLogger("backlot.stage")
+
+# Dedicated loop for om_run / sync callers when no asyncio loop is running (CLI).
+_bg_loop: Optional[asyncio.AbstractEventLoop] = None
+_bg_thread: Optional[threading.Thread] = None
+_bg_lock = threading.Lock()
 
 RUNS_DIRNAME = "runs"
 LOCK_FILENAME = ".run.lock"
@@ -58,6 +64,10 @@ class StageRunError(Exception):
     """Bad request (400) — stage order violation, missing checkpoint, etc."""
 
     status = 400
+
+    def __init__(self, message: str, *, diagnostics: Optional[dict] = None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
 
 
 class StageBusyError(StageRunError):
@@ -154,24 +164,45 @@ def _interrupt_agent(task: "RunTask", reason: str = "") -> None:
 
 
 def _pid_alive(pid: int) -> bool:
-    if pid <= 0:
+    if not isinstance(pid, int) or pid <= 0:
         return False
     try:
         import psutil  # type: ignore
 
-        return psutil.pid_exists(pid)
+        return bool(psutil.pid_exists(pid))
     except ImportError:
         pass
     if os.name == "nt":
         try:
+            import ctypes
+
+            # Prefer OpenProcess — ``tasklist`` text matching ``f"PID {pid}"``
+            # is brittle across locales and previously false-positived.
+            PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid),
+            )
+            if handle:
+                ctypes.windll.kernel32.CloseHandle(handle)
+                return True
+            return False
+        except Exception:
+            pass
+        try:
             out = subprocess.run(
-                ["tasklist", "/FI", f"PID eq {pid}"],
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
                 capture_output=True,
                 check=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            text = (out.stdout or b"").decode("utf-8", errors="replace")
-            return f"PID {pid}" in text
+            text = (out.stdout or b"").decode("utf-8", errors="replace").strip()
+            if not text or text.upper().startswith("INFO:"):
+                return False
+            for row in text.splitlines():
+                cols = [c.strip().strip('"') for c in row.split(",")]
+                if len(cols) >= 2 and cols[1] == str(pid):
+                    return True
+            return False
         except OSError:
             return False
     try:
@@ -222,8 +253,10 @@ def _acquire_lock(project_dir: Path, task: RunTask) -> None:
     path = _lock_path(project_dir)
     existing = _read_json(path)
     if existing and not _lock_is_stale(existing, project_dir):
+        report = inspect_project_runtime(project_dir, reconcile=False)
         raise StageBusyError(
-            f"该项目已有任务 {existing.get('task_id')} 在运行，请等待完成"
+            f"该项目已有任务 {existing.get('task_id')} 在运行，请等待完成",
+            diagnostics=report,
         )
     lock = {
         "task_id": task.task_id,
@@ -469,12 +502,19 @@ def _reconcile_orphan_runs(project_dir: Path) -> None:
         if state.get("status") not in ("queued", "running"):
             continue
         pid = state.get("pid")
-        if isinstance(pid, int) and pid > 0 and _pid_alive(pid):
+        try:
+            pid_i = int(pid) if pid is not None else 0
+        except (TypeError, ValueError):
+            pid_i = 0
+        if pid_i > 0 and _pid_alive(pid_i):
             continue
         task_id = state.get("task_id", "")
         task = _TASKS.get(project_dir.name)
+        # 内存里还挂着同 task，但 pid 已死 → 清掉内存占位，继续回收磁盘。
         if task and task.task_id == task_id and task.status in ("queued", "running"):
-            continue
+            if pid_i > 0 and _pid_alive(pid_i):
+                continue
+            _TASKS.pop(project_dir.name, None)
         _finalize_reconciled(project_dir, state, interrupted=True)
         _patch_stuck_in_progress(
             RunTask(
@@ -491,6 +531,7 @@ def _reconcile_orphan_runs(project_dir: Path) -> None:
 
 def _list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
     _reconcile_orphan_runs(project_dir)
+    _reconcile_work_done_runs(project_dir)
     return _read_runs_from_disk(project_dir, limit=limit)
 
 
@@ -499,16 +540,288 @@ def list_runs(project_dir: Path, *, limit: int = 8) -> list[dict]:
     return _list_runs(project_dir, limit=limit)
 
 
-def read_run_log(project_dir: Path, task_id: str, *, offset: int = 0, limit: int = 200) -> dict:
+def _stage_disk_truth(project_dir: Path, stage: str) -> dict[str, Any]:
+    """对照 checkpoint + 规范产物，给出该 stage 的磁盘真相（与 run.status 解耦）。"""
+    stage = str(stage or "").strip()
+    out: dict[str, Any] = {
+        "stage": stage or None,
+        "checkpoint_status": None,
+        "artifact": None,
+        "artifact_exists": False,
+        "work_done": False,
+        "gate_blocked": False,
+    }
+    if not stage:
+        return out
+    marker = _read_json(project_dir / "project.json") or {}
+    pipeline_type = str(marker.get("pipeline_type") or "")
+    from plugins.openmontage.lib.checkpoint import read_checkpoint
+    from plugins.openmontage.lib.project_status import resolve_canonical_artifact_name
+
+    try:
+        cp = read_checkpoint(PROJECTS_DIR, project_dir.name, stage)
+    except Exception:
+        cp = None
+    cp_status = (cp or {}).get("status") if isinstance(cp, dict) else None
+    out["checkpoint_status"] = cp_status
+    out["gate_blocked"] = cp_status == "awaiting_human"
+
+    artifact_name = resolve_canonical_artifact_name(
+        stage, pipeline_type=pipeline_type or None,
+    )
+    out["artifact"] = artifact_name
+    if artifact_name:
+        art_path = project_dir / "artifacts" / f"{artifact_name}.json"
+        out["artifact_exists"] = art_path.is_file()
+
+    # 阶段工作在磁盘上已闭环：checkpoint 终态，或产物在且 checkpoint 非失败中
+    if cp_status in ("completed", "awaiting_human"):
+        out["work_done"] = True
+    return out
+
+
+def _memory_task_active(project_dir: Path, task_id: str) -> bool:
+    """该 task 是否仍有内存态 RunTask（in-process agent 会话未返回）。"""
+    mem = _TASKS.get(project_dir.name)
+    if mem is None:
+        return False
+    if mem.task_id != task_id:
+        return False
+    return mem.status in ("queued", "running")
+
+
+def _agent_live(project_dir: Path, task_id: str) -> bool:
+    mem = _TASKS.get(project_dir.name)
+    if mem is None or mem.task_id != task_id:
+        return False
+    return mem.agent is not None and mem.status in ("queued", "running")
+
+
+def _run_activity(project_dir: Path, task_id: str, state: dict) -> dict[str, Any]:
+    """拆开 hub pid 与真实 agent 活动（in-process 下 pid 永远是 hub）。"""
+    try:
+        pid_i = int(state.get("pid") or 0)
+    except (TypeError, ValueError):
+        pid_i = 0
+    hub_alive = _pid_alive(pid_i) if pid_i > 0 else False
+    mem_active = _memory_task_active(project_dir, task_id)
+    agent_live = _agent_live(project_dir, task_id)
     log_path = project_dir / RUNS_DIRNAME / f"{task_id}.log"
-    if not log_path.is_file():
-        raise StageRunError("日志文件不存在")
-    raw = log_path.read_bytes().decode("utf-8", errors="replace")
-    lines = render_run_log(raw)
+    log_age_s: Optional[float] = None
+    if log_path.is_file():
+        try:
+            log_age_s = max(0.0, time.time() - log_path.stat().st_mtime)
+        except OSError:
+            log_age_s = None
+    # hub pid 存活 ≠ worker 在干活；以内存任务 / live agent / 近期日志为准
+    worker_active = bool(mem_active or agent_live)
+    if not worker_active and log_age_s is not None and log_age_s < 45.0:
+        worker_active = str(state.get("status") or "") in ("queued", "running")
     return {
+        "pid": pid_i or None,
+        "pid_scope": "hub",  # in-process executor: runs record hub pid
+        "hub_pid_alive": hub_alive,
+        "memory_task_active": mem_active,
+        "agent_live": agent_live,
+        "log_age_seconds": log_age_s,
+        "worker_active": worker_active,
+        # 兼容旧字段：勿再把 hub 存活当成「阶段还在跑」
+        "pid_alive": worker_active,
+    }
+
+
+def _suggested_action_for_run(
+    *,
+    run_status: str,
+    truth: dict[str, Any],
+    activity: dict[str, Any],
+) -> dict[str, Any]:
+    """给编排大脑的可执行建议（停轮询 / 审批 / 继续等）。"""
+    stage = truth.get("stage")
+    if truth.get("gate_blocked"):
+        return {
+            "action": "om_state approve",
+            "message": (
+                f"阶段 {stage} 已 awaiting_human，停止轮询本 task；"
+                f"用 om_state(action='approve', stage={stage!r}) 或 Backlot 批准。"
+            ),
+        }
+    if truth.get("work_done"):
+        return {
+            "action": "stop_polling",
+            "message": (
+                f"阶段 {stage} 磁盘工作已闭环"
+                f"（checkpoint={truth.get('checkpoint_status')}），"
+                "停止对本 task_id 空转轮询；等 run finalize 或直接推进 next_stage。"
+            ),
+        }
+    if run_status in ("failed", "aborted"):
+        if truth.get("artifact_exists") and truth.get("checkpoint_status") not in (
+            "completed",
+            "awaiting_human",
+        ):
+            return {
+                "action": "om_state complete_from_disk",
+                "message": (
+                    f"产物已在磁盘但 checkpoint 仍是 {truth.get('checkpoint_status') or 'pending'}；"
+                    f"om_state(action='complete_from_disk', stage={stage!r})。"
+                ),
+            }
+        return {
+            "action": "om_run retry or inspect diagnostics",
+            "message": "任务已失败；读 error/diagnostics 后决定重跑或修复。",
+        }
+    if run_status == "succeeded":
+        return {
+            "action": "stop_polling",
+            "message": "任务已成功，停止轮询；用 om_project 看 next_stage。",
+        }
+    if activity.get("worker_active"):
+        return {
+            "action": "om_job continue",
+            "message": "阶段仍在推进（worker_active）；约 15–60s 后再 om_job。",
+        }
+    return {
+        "action": "om_job continue",
+        "message": "run 仍标 running 但未见 worker 活动；再查一次 om_job/runtime，勿空等数分钟。",
+    }
+
+
+def _enrich_run_truth(project_dir: Path, state: dict) -> dict[str, Any]:
+    """把 run 元数据与磁盘 checkpoint/产物对齐，供 om_job 返回。"""
+    task_id = str(state.get("task_id") or "")
+    stage = str(state.get("stage") or "")
+    run_status = str(state.get("status") or "")
+    truth = _stage_disk_truth(project_dir, stage)
+    activity = _run_activity(project_dir, task_id, state)
+    suggestion = _suggested_action_for_run(
+        run_status=run_status, truth=truth, activity=activity,
+    )
+    return {
+        "run_status": run_status,
+        "checkpoint_status": truth.get("checkpoint_status"),
+        "artifact": truth.get("artifact"),
+        "artifact_exists": truth.get("artifact_exists"),
+        "work_done": truth.get("work_done"),
+        "gate_blocked": truth.get("gate_blocked"),
+        **activity,
+        "suggested_action": suggestion.get("action"),
+        "suggested_message": suggestion.get("message"),
+    }
+
+
+def _reconcile_work_done_runs(project_dir: Path) -> None:
+    """checkpoint 已闭环但 runs 仍标 running（常因 hub pid 永不 stale）时回收。
+
+    hub 进程 pid 一直活着，``_reconcile_orphan_runs`` 不会回收这类僵尸。
+    有内存态时 interrupt；无论有无内存，都 finalize 磁盘 run 并释放锁，
+    避免 busy 永久挡住 om_run / approve。
+    """
+    for state in _read_runs_from_disk(project_dir, limit=KEEP_RUNS):
+        if state.get("status") not in ("queued", "running"):
+            continue
+        stage = str(state.get("stage") or "")
+        tid = str(state.get("task_id") or "")
+        if not stage or not tid:
+            continue
+        truth = _stage_disk_truth(project_dir, stage)
+        if not truth.get("work_done"):
+            continue
+        mem = _TASKS.get(project_dir.name)
+        if mem and mem.task_id == tid and mem.status in ("queued", "running"):
+            _interrupt_agent(mem, "stage checkpoint already closed on disk")
+            # 标终态，使 busy 不再认这笔内存任务（agent 收尾可异步）
+            mem.status = "succeeded"
+            mem.error = None
+            mem.finished_at = _now_iso()
+        log.info(
+            "reconcile.work_done project=%s task=%s stage=%s checkpoint=%s",
+            project_dir.name, tid, stage, truth.get("checkpoint_status"),
+        )
+        _finalize_reconciled(project_dir, state, interrupted=False)
+    _reconcile_lock(project_dir)
+
+
+def read_run_log(project_dir: Path, task_id: str, *, offset: int = 0, limit: int = 200) -> dict:
+    """Return run metadata + a log window. Prefer this over reading runs/*.json by hand."""
+    # 先按磁盘真相回收「已完成却仍 running」的谎言状态
+    _reconcile_work_done_runs(project_dir)
+    state = _read_run(project_dir, task_id) or {}
+    log_path = project_dir / RUNS_DIRNAME / f"{task_id}.log"
+    lines: list[str] = []
+    if log_path.is_file():
+        raw = log_path.read_bytes().decode("utf-8", errors="replace")
+        lines = render_run_log(raw)
+    elif not state:
+        raise StageRunError("日志文件不存在")
+
+    next_offset = min(offset + limit, len(lines))
+    truth = _enrich_run_truth(project_dir, state) if state else {}
+    payload: dict[str, Any] = {
+        "task_id": task_id,
+        # 兼容旧字段
+        "status": state.get("status"),
+        "stage": state.get("stage"),
+        "error": state.get("error"),
+        "started_at": state.get("started_at"),
+        "finished_at": state.get("finished_at"),
+        "exit_code": state.get("exit_code"),
         "offset": offset,
+        "next_offset": next_offset,
         "total": len(lines),
         "lines": lines[offset:offset + limit],
+        # 真相字段（编排应以这些为准，勿只看 status+pid_alive）
+        **truth,
+    }
+    recovery = _recovery_hint_for_run(project_dir, state)
+    if recovery:
+        payload["recovery"] = recovery
+    elif truth.get("work_done") and str(state.get("status") or "") in ("queued", "running"):
+        payload["recovery"] = {
+            "work_done_on_disk": True,
+            "stage": state.get("stage"),
+            "checkpoint_status": truth.get("checkpoint_status"),
+            "suggested_action": truth.get("suggested_action"),
+            "message": truth.get("suggested_message"),
+        }
+    if str(state.get("status") or "") in ("queued", "running", "failed", "aborted"):
+        payload["runtime"] = inspect_project_runtime(project_dir, reconcile=False)
+    elif truth.get("work_done"):
+        # succeeded 也附带精简 runtime，方便确认 busy 已清
+        payload["runtime"] = inspect_project_runtime(project_dir, reconcile=False)
+    return payload
+
+
+def _recovery_hint_for_run(project_dir: Path, state: dict) -> Optional[dict]:
+    """When a run ended but the stage artifact sits orphaned on disk, tell om_* how to close it."""
+    status = str(state.get("status") or "")
+    stage = str(state.get("stage") or "").strip()
+    if not stage:
+        return None
+    truth = _stage_disk_truth(project_dir, stage)
+    # running 但已 work_done → 由 read_run_log 的 recovery 分支处理
+    if status in ("queued", "running") and truth.get("work_done"):
+        return None
+    if status not in ("failed", "aborted", "succeeded"):
+        return None
+    if truth.get("work_done"):
+        return None
+    if not truth.get("artifact_exists"):
+        return None
+    artifact_name = truth.get("artifact")
+    cp_status = truth.get("checkpoint_status")
+    return {
+        "orphan_on_disk": True,
+        "stage": stage,
+        "artifact": artifact_name,
+        "checkpoint_status": cp_status or "pending",
+        "suggested_action": "om_state complete_from_disk",
+        "message": (
+            f"阶段 {stage} 的规范产物 {artifact_name}.json 已在磁盘，"
+            f"但 checkpoint 仍是 {cp_status or 'pending'}。"
+            f"请调用 om_state(action='complete_from_disk', project_id={project_dir.name!r}, "
+            f"stage={stage!r}) 闭环；不要去读 checkpoint.py / stage_runner.py。"
+        ),
     }
 
 
@@ -681,6 +994,58 @@ def _prepare_stage_run(
     return task
 
 
+def ensure_background_loop() -> asyncio.AbstractEventLoop:
+    """Start (once) a daemon thread running a dedicated asyncio event loop."""
+    global _bg_loop, _bg_thread
+    with _bg_lock:
+        if _bg_loop is not None and _bg_loop.is_running():
+            return _bg_loop
+        loop = asyncio.new_event_loop()
+
+        def _runner() -> None:
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        thread = threading.Thread(
+            target=_runner,
+            name="openmontage-stage-runner",
+            daemon=True,
+        )
+        thread.start()
+        _bg_loop = loop
+        _bg_thread = thread
+        return loop
+
+
+def schedule_run_task(task: RunTask, *, chain: bool = True) -> None:
+    """Schedule ``run_task`` on the current loop or the background runner loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None:
+        loop.create_task(run_task(task, chain=chain))
+        return
+
+    bg_loop = ensure_background_loop()
+    future = asyncio.run_coroutine_threadsafe(run_task(task, chain=chain), bg_loop)
+
+    def _log_failure(done: "asyncio.Future[None]") -> None:
+        try:
+            done.result()
+        except Exception as exc:
+            log.exception(
+                "run_task failed project=%s stage=%s task=%s: %s",
+                task.project_id,
+                task.stage,
+                task.task_id,
+                exc,
+            )
+
+    future.add_done_callback(_log_failure)
+
+
 async def run_task(task: RunTask, *, chain: bool = True) -> None:
     """核心协程：in-process AIAgent → 等待结束 → 定终态。"""
     runs = _runs_dir(task.project_dir)
@@ -848,7 +1213,14 @@ def _patch_stuck_in_progress(task: RunTask) -> None:
     且无更新状态，补写 failed（保留 artifacts，rail 显示失败而非永续进行中）。"""
     from plugins.openmontage.lib.checkpoint import read_checkpoint, write_checkpoint
 
-    cp = read_checkpoint(PROJECTS_DIR, task.project_id, task.stage)
+    try:
+        cp = read_checkpoint(PROJECTS_DIR, task.project_id, task.stage)
+    except Exception as exc:
+        log.warning(
+            "patch_stuck.read_checkpoint_failed project=%s stage=%s: %s",
+            task.project_id, task.stage, exc,
+        )
+        return
     if not cp or cp.get("status") != "in_progress":
         return
     try:
@@ -857,8 +1229,8 @@ def _patch_stuck_in_progress(task: RunTask) -> None:
             task.project_id,
             task.stage,
             "failed",
-            artifacts=cp.get("artifacts") or {},
-            pipeline_type=task.pipeline_type,
+            artifacts=cp.get("artifacts") if isinstance(cp.get("artifacts"), dict) else {},
+            pipeline_type=task.pipeline_type or cp.get("pipeline_type"),
             checkpoint_policy=cp.get("checkpoint_policy", "guided"),
             error=task.error or f"运行被 {task.status}",
             metadata={**(cp.get("metadata") or {}), "runner_aborted": task.status},
@@ -954,7 +1326,16 @@ def _parse_ts(iso: Any) -> float:
 def _finalize_reconciled(project_dir: Path, state: dict, *, interrupted: bool) -> None:
     from plugins.openmontage.lib.checkpoint import read_checkpoint
 
-    cp = read_checkpoint(PROJECTS_DIR, project_dir.name, state.get("stage", ""))
+    # 残缺 checkpoint（缺 artifacts 字典等）不能阻断孤儿 run 回收，
+    # 否则磁盘会永远卡在 running，om_run / complete_from_disk 全被 busy 挡住。
+    cp = None
+    try:
+        cp = read_checkpoint(PROJECTS_DIR, project_dir.name, state.get("stage", ""))
+    except Exception as exc:
+        log.warning(
+            "reconcile.read_checkpoint_failed project=%s stage=%s: %s",
+            project_dir.name, state.get("stage"), exc,
+        )
     if cp and cp.get("status") in ("completed", "awaiting_human", "failed"):
         state["status"] = "succeeded"
         state["error"] = None
@@ -1007,8 +1388,8 @@ def build_stage_prompt(
             # 不要沉默：prompt 声称"全文已粘贴"，贴空块会让 agent 自己去
             # Grep/Read 翻技能，白烧若干轮。说清楚它得自己读。
             skill_text = (
-                f"（技能文件未找到：{skill_path} —— 请先用 Read 打开该路径，"
-                f"找不到再用 Glob 在 skills/ 下搜索同名文件）"
+                f"（技能文件未找到：{skill_path} —— 请用 skill_view 或确认导演技能路径；"
+                f"不要用 search_files / terminal 翻仓库）"
             )
 
     gated = bool(get_stage_human_approval_default(manifest, stage))
@@ -1035,9 +1416,24 @@ def build_stage_prompt(
     feedback_text = f"\n{feedback}\n" if feedback else "（无）"
     parameters_text = json.dumps(parameters or {}, ensure_ascii=False)
 
-    from plugins.openmontage.lib.python_runtime import python_invocation_hint
+    # 规范产物字段契约：导演技能常只说「按 schema 校验」却不列 JSON 键名，
+    # 模型会自造 stat/source 等别名。把契约摘要钉进 prompt，从源头对齐。
+    produces = [
+        str(p) for p in (stage_block.get("produces") or []) if isinstance(p, str) and p
+    ]
+    artifact_contracts: list[dict] = []
+    for art_name in produces:
+        try:
+            from plugins.openmontage.schemas.artifacts import summarize_artifact_schema
 
-    om_python = python_invocation_hint()
+            artifact_contracts.append(summarize_artifact_schema(art_name))
+        except Exception as exc:
+            artifact_contracts.append({"artifact": art_name, "error": str(exc)})
+    contracts_text = (
+        json.dumps(artifact_contracts, ensure_ascii=False, indent=1)[:14000]
+        if artifact_contracts
+        else "（本阶段无规范产物）"
+    )
 
     return f"""【角色】你是 OpenMontage 的无头流水线 agent，执行且只执行一个阶段。
 项目: {project_id} 「{title}」  流水线: {pipeline_type}
@@ -1051,12 +1447,16 @@ def build_stage_prompt(
 - 只做这一个阶段。绝不串联多个阶段、绝不改写其他阶段的 checkpoint。
 - 结束时输出一行便于服务端定位: agent_run_summary: <status> — <一句话>
 
-【Python 运行时 — 强制】
-所有 registry 工具调用必须使用仓库解释器，禁止用 Cursor/宿主默认 python：
-  {om_python} -c "..."
-preflight 示例：
-  {om_python} -c "from tools.tool_registry import registry; import json; registry.discover(); print(json.dumps(registry.provider_menu_summary(), indent=2))"
-若 video_selector 显示 unavailable 但本机已装 diffusers，先检查是否误用了其它 venv 的 python。
+【Hermes 工具面 — 强制】
+你只有 openmontage_stage + skills_view。禁止 terminal / execute_code / read_file /
+write_file / search_files / python -c。一律用：
+  - om_registry(action="menu"|"catalog"|"execute", tool=..., params={{...}}, label=...)
+  - om_checkpoint(status=..., artifacts={{...}}, label=...)
+  - om_artifact_read(artifact=... 或 path=..., label=...)
+  - om_artifact_write(path="artifacts/....json", content={{...}}, label=...)
+  - om_decision_append(decisions=[...], label=...)
+  - skill_view（必要时只读补技能）
+project_id 默认取自运行环境（{project_id}）；stage 默认 {stage}。
 
 【必读材料】
 1. 阶段导演技能（本阶段唯一执行规程，全文已粘贴）:
@@ -1064,34 +1464,36 @@ preflight 示例：
    --- 技能全文开始 ---
    {skill_text}
    --- 技能全文结束 ---
-2. 项目状态（lib.project_status；get_next_stage 必须等于 {stage}）:
+2. 项目状态（get_next_stage 必须等于 {stage}）:
    {json.dumps(status, ensure_ascii=False, indent=1)[:12000]}
 3. 流水线 manifest 中本阶段定义:
    {json.dumps(stage_block, ensure_ascii=False, indent=1)[:6000]}
-4. 前置 artifacts（仓库相对路径，优先用 Read 读取）:
+4. 前置 artifacts（用 om_artifact_read 读取，不要 Read/search_files）:
    {artifact_list}
 5. 上次审阅反馈（页面驳回时产生，必须逐条回应）:
    {feedback_text}
 6. 用户附加参数:
    {parameters_text}
+7. 规范产物字段契约（写入 artifacts / checkpoint 前必须一字不差对齐；
+   禁止自造字段名；不要再去打开 *.schema.json）:
+   {contracts_text}
 
 【执行规程（强制）】
-1. 进入阶段先写 in_progress checkpoint（lib.checkpoint.write_checkpoint，
-   pipeline_dir=lib.paths.PROJECTS_DIR, pipeline_type='{pipeline_type}',
-   status='in_progress', artifacts={{}}，可带 metadata.partial_progress）。
-2. 用注册表工具执行（``registry.execute(name, {{...}})`` 或 ``registry.get(name).execute(...)`` 的 {om_python} -c 单行调用，
-   符合 AGENT_GUIDE「Allowed python -c」）。工具调用自动写入 events.jsonl。
-   禁止写脚本串联、禁止直接编辑 projects/ 下的 checkpoint/artifacts/decision_log。
-3. 完成后:
+1. 进入阶段先 om_checkpoint(status='in_progress', artifacts={{}}, label=...)，
+   可带 metadata.partial_progress。
+2. 用 om_registry(action='execute', tool=..., params={{...}}) 跑注册表工具。
+   本阶段 tools_available 非空时只能调用名单内工具。禁止脚本串联、禁止直接
+   编辑 checkpoint / decision_log。
+3. 规范产物可先 om_artifact_write 落到 artifacts/，再写入 checkpoint.artifacts。
+4. 完成后:
    - 本阶段 human_approval_default: {gated}
-   - gated: 写 status='awaiting_human'，带齐规范 artifact，human_approved 保持
-     False，决策以 user_approved=false 追加，然后停止（END YOUR TURN）——
-     人类在 Backlot 页面批准或驳回。
-   - 非 gated: 写 status='completed'。
-   - 永远不要对 gated 阶段写 completed + human_approved=False（checkpoint 库
-     会拒绝，GATE VIOLATION）。
-4. 任何失败: 写 status='failed' + error（≤400 字符，简述原因），不要留下 in_progress。
-5. 时间预算 {wall_time_minutes} 分钟（服务端到点中断）。 参考成本提示 ${budget_usd}（无硬性 CLI 预算杀进程）。
+   - gated: om_checkpoint(status='awaiting_human', artifacts=...), human_approved
+     保持 False，决策以 user_approved=false 经 om_decision_append 追加，然后停止
+     （END YOUR TURN）——人类在 Backlot 页面批准或驳回。
+   - 非 gated: om_checkpoint(status='completed', artifacts=...).
+   - 永远不要对 gated 阶段写 completed + human_approved=False（库会 GATE VIOLATION）。
+5. 任何失败: om_checkpoint(status='failed', error=≤400字)，不要留下 in_progress。
+6. 时间预算 {wall_time_minutes} 分钟（服务端到点中断）。参考成本提示 ${budget_usd}。
    稳步推进，频繁 checkpoint。
 """
 
@@ -1101,27 +1503,272 @@ preflight 示例：
 # ---------------------------------------------------------------------------
 
 
-def _busy_or_none(project_dir: Path) -> Optional[str]:
-    _reconcile_orphan_runs(project_dir)
-    task = _TASKS.get(project_dir.name)
-    if task and task.status in ("queued", "running"):
-        pid = task.pid if isinstance(task.pid, int) else 0
-        if pid > 0 and not _pid_alive(pid):
-            # 内存里仍标 running 但 hub pid 已死 —— 视为孤儿，勿阻塞批准/驳回。
-            _TASKS.pop(project_dir.name, None)
-            _reconcile_lock(project_dir)
-        else:
-            return f"该项目已有任务 {task.task_id} 在运行，请等待完成"
-    # 磁盘上的 running 状态（服务重启后 reconcile 尚未接回/标记）同样视为 busy。
-    for state in _list_runs(project_dir, limit=KEEP_RUNS):
+def inspect_project_runtime(project_dir: Path, *, reconcile: bool = True) -> dict[str, Any]:
+    """结构化运行时快照 —— om_* 失败时原样回传，避免猜 busy / 僵尸进程。
+
+    默认会先 reconcile 孤儿 run + work_done 僵尸（与 ``_busy_or_none`` 同副作用）。
+    pid 字段语义：runs/lock 记的是 hub pid；``pid_alive``/``worker_active`` 表示
+    真实 worker，勿把 hub 存活当成阶段还在跑。
+    """
+    project_id = project_dir.name
+    if reconcile:
+        _reconcile_orphan_runs(project_dir)
+        _reconcile_work_done_runs(project_dir)
+        task = _TASKS.get(project_id)
+        if task and task.status in ("queued", "running"):
+            mem_pid = task.pid if isinstance(task.pid, int) else 0
+            # hub pid 永活时不要靠「pid 死了」清内存；仅当确无 worker 迹象
+            # 且磁盘 checkpoint 已闭环时，上面 work_done 已处理。
+            if mem_pid > 0 and not _pid_alive(mem_pid):
+                _TASKS.pop(project_id, None)
+                _reconcile_lock(project_dir)
+        for state in _read_runs_from_disk(project_dir, limit=KEEP_RUNS):
+            if state.get("status") not in ("queued", "running"):
+                continue
+            try:
+                pid_i = int(state.get("pid") or 0)
+            except (TypeError, ValueError):
+                pid_i = 0
+            # hub pid 仍活时保留（work_done 僵尸已由 _reconcile_work_done_runs 处理）
+            if pid_i > 0 and _pid_alive(pid_i):
+                continue
+            _finalize_reconciled(project_dir, state, interrupted=True)
+        _reconcile_lock(project_dir)
+
+    lock_raw = _read_json(_lock_path(project_dir))
+    lock_info: Optional[dict[str, Any]] = None
+    if isinstance(lock_raw, dict):
+        try:
+            lock_pid = int(lock_raw.get("pid") or 0)
+        except (TypeError, ValueError):
+            lock_pid = 0
+        lock_stage = str(lock_raw.get("stage") or "")
+        lock_truth = _stage_disk_truth(project_dir, lock_stage) if lock_stage else {}
+        hub_alive = _pid_alive(lock_pid) if lock_pid > 0 else False
+        stale = _lock_is_stale(lock_raw, project_dir)
+        # work_done 阶段的锁不挡 busy（即便 hub pid 仍活）
+        blocks_busy = bool(
+            not stale
+            and not lock_truth.get("work_done")
+            and (
+                hub_alive
+                or _memory_task_active(project_dir, str(lock_raw.get("task_id") or ""))
+            )
+        )
+        lock_info = {
+            "path": LOCK_FILENAME,
+            "exists": True,
+            "task_id": lock_raw.get("task_id"),
+            "stage": lock_raw.get("stage"),
+            "pid": lock_pid or None,
+            "pid_scope": "hub",
+            "hub_pid_alive": hub_alive,
+            "pid_alive": hub_alive,  # lock 层仍报 hub；busy 看 blocks_busy
+            "started_at": lock_raw.get("started_at"),
+            "expires_at": lock_raw.get("expires_at"),
+            "stale": stale,
+            "work_done": lock_truth.get("work_done"),
+            "blocks_busy": blocks_busy,
+        }
+
+    memory_task: Optional[dict[str, Any]] = None
+    task = _TASKS.get(project_id)
+    mem_blocks_busy = False
+    if task is not None:
+        mem_pid = task.pid if isinstance(task.pid, int) else 0
+        mem_truth = _stage_disk_truth(project_dir, task.stage)
+        hub_alive = _pid_alive(mem_pid) if mem_pid > 0 else False
+        agent_live = task.agent is not None and task.status in ("queued", "running")
+        mem_blocks_busy = bool(
+            task.status in ("queued", "running") and not mem_truth.get("work_done")
+        )
+        memory_task = {
+            "task_id": task.task_id,
+            "stage": task.stage,
+            "status": task.status,
+            "pid": mem_pid or None,
+            "pid_scope": "hub",
+            "hub_pid_alive": hub_alive,
+            "agent_live": agent_live,
+            # 内存态 queued/running 即视为 worker（编排侧应轮询）；≠ hub pid 存活
+            "worker_active": task.status in ("queued", "running"),
+            "pid_alive": task.status in ("queued", "running"),
+            "work_done": mem_truth.get("work_done"),
+            "checkpoint_status": mem_truth.get("checkpoint_status"),
+            "error": task.error,
+            "started_at": task.started_at,
+            "finished_at": task.finished_at,
+        }
+
+    disk_active: list[dict[str, Any]] = []
+    for state in _read_runs_from_disk(project_dir, limit=KEEP_RUNS):
         if state.get("status") not in ("queued", "running"):
             continue
-        pid = state.get("pid")
-        if isinstance(pid, int) and pid > 0 and not _pid_alive(pid):
-            _finalize_reconciled(project_dir, state, interrupted=True)
-            continue
-        return "该项目已有任务在运行（磁盘残留 running，请等待回收），请等待完成"
-    return None
+        stage = str(state.get("stage") or "")
+        st_truth = _stage_disk_truth(project_dir, stage)
+        if st_truth.get("work_done"):
+            continue  # 不计入 busy
+        act = _run_activity(project_dir, str(state.get("task_id") or ""), state)
+        disk_active.append({
+            "task_id": state.get("task_id"),
+            "stage": state.get("stage"),
+            "status": state.get("status"),
+            "pid": act.get("pid"),
+            "pid_scope": "hub",
+            "hub_pid_alive": act.get("hub_pid_alive"),
+            "worker_active": act.get("worker_active"),
+            "pid_alive": act.get("pid_alive"),
+            "work_done": False,
+            "checkpoint_status": st_truth.get("checkpoint_status"),
+            "error": state.get("error"),
+            "started_at": state.get("started_at"),
+            "finished_at": state.get("finished_at"),
+        })
+
+    blockers: list[dict[str, Any]] = []
+    busy_message: Optional[str] = None
+
+    if mem_blocks_busy and task is not None and memory_task is not None:
+        busy_message = f"该项目已有任务 {task.task_id} 在运行，请等待完成"
+        blockers.append({
+            "source": "memory",
+            "task_id": task.task_id,
+            "stage": task.stage,
+            "status": task.status,
+            "pid": memory_task.get("pid"),
+            "pid_scope": "hub",
+            "pid_alive": memory_task.get("pid_alive"),
+            "worker_active": memory_task.get("worker_active"),
+            "work_done": memory_task.get("work_done"),
+        })
+    elif disk_active:
+        first = disk_active[0]
+        busy_message = (
+            f"该项目已有任务 {first.get('task_id')} 在运行"
+            f"（磁盘 status={first.get('status')} worker_active={first.get('worker_active')}），"
+            "请用 om_job 轮询"
+        )
+        for entry in disk_active:
+            blockers.append({"source": "disk", **entry})
+    elif lock_info and lock_info.get("blocks_busy"):
+        busy_message = (
+            f"该项目已有任务 {lock_info.get('task_id')} 在运行，请等待完成"
+        )
+        blockers.append({"source": "lock", **lock_info})
+
+    suggested: list[str] = []
+    if busy_message:
+        tid = next((b.get("task_id") for b in blockers if b.get("task_id")), None)
+        stage_hint = next((b.get("stage") for b in blockers if b.get("stage")), None)
+        truth = _stage_disk_truth(project_dir, str(stage_hint or "")) if stage_hint else {}
+        worker = any(b.get("worker_active") or b.get("pid_alive") for b in blockers)
+        if truth.get("gate_blocked"):
+            suggested.append(
+                f"om_state(action='approve', project_id={project_id!r}, "
+                f"stage={stage_hint!r})  # gate_blocked，停止对本 task 空转轮询"
+            )
+        elif worker and tid:
+            suggested.append(
+                f"om_job(project_id={project_id!r}, task_id={tid!r}) 轮询进度；"
+                "任务仍在跑时不要 complete_from_disk / approve"
+            )
+        else:
+            suggested.append(
+                "未见 worker_active —— 再调 om_project/om_job 确认 runtime.busy；"
+                "仍 busy 则把本 diagnostics 原样反馈，不要 find/读 stage_runner 源码"
+            )
+        suggested.append("不要用 terminal/execute_code 手工改 .run.lock 或 runs/*.json")
+    else:
+        suggested.append(f"om_project(project_id={project_id!r})")
+        suggested.append(
+            f"om_run(action='start', project_id={project_id!r}, stage=...)"
+        )
+
+    report: dict[str, Any] = {
+        "project_id": project_id,
+        "busy": busy_message is not None,
+        "busy_message": busy_message,
+        "lock": lock_info,
+        "memory_task": memory_task,
+        "disk_active_runs": disk_active,
+        "blockers": blockers,
+        "suggested_actions": suggested,
+    }
+    if busy_message:
+        log.warning(
+            "runtime.busy project=%s message=%s blockers=%s",
+            project_id,
+            busy_message,
+            json.dumps(blockers, ensure_ascii=False, default=str),
+        )
+    else:
+        log.info(
+            "runtime.idle project=%s has_lock=%s disk_active=%d",
+            project_id,
+            bool(lock_info),
+            len(disk_active),
+        )
+    return report
+
+
+def _schema_validation_diagnostics(artifact_name: str, exc: BaseException) -> dict[str, Any]:
+    """展开 jsonschema 错误，供 om_state 原样返回，无需再找 schema 文件。"""
+    try:
+        import jsonschema
+    except ImportError:
+        jsonschema = None  # type: ignore
+
+    if jsonschema is not None and isinstance(exc, jsonschema.ValidationError):
+        errors = [{
+            "message": exc.message,
+            "path": list(exc.absolute_path),
+            "schema_path": list(exc.absolute_schema_path),
+            "validator": exc.validator,
+            "validator_value": exc.validator_value,
+        }]
+        # 附带同级更多错误（最多 8 条），避免只看到第一个
+        try:
+            from plugins.openmontage.schemas.artifacts import load_schema
+
+            schema = load_schema(artifact_name)
+            Validator = jsonschema.validators.validator_for(schema)
+            Validator.check_schema(schema)
+            validator = Validator(schema)
+            for err in list(validator.iter_errors(exc.instance))[:8]:
+                item = {
+                    "message": err.message,
+                    "path": list(err.absolute_path),
+                    "schema_path": list(err.absolute_schema_path),
+                    "validator": err.validator,
+                    "validator_value": err.validator_value,
+                }
+                if item not in errors:
+                    errors.append(item)
+        except Exception:
+            pass
+        return {
+            "artifact": artifact_name,
+            "message": exc.message,
+            "path": list(exc.absolute_path),
+            "errors": errors[:8],
+        }
+    return {"artifact": artifact_name, "message": str(exc), "errors": [{"message": str(exc)}]}
+
+
+def _busy_or_none(project_dir: Path) -> Optional[str]:
+    """兼容旧调用方：返回 busy 文案或 None。完整信息见 ``inspect_project_runtime``。"""
+    return inspect_project_runtime(project_dir).get("busy_message")
+
+
+def _require_not_busy(project_dir: Path) -> dict[str, Any]:
+    """若项目 busy 则抛 ``StageBusyError``（带 diagnostics）；否则返回 runtime 报告。"""
+    report = inspect_project_runtime(project_dir)
+    if report.get("busy"):
+        raise StageBusyError(
+            str(report.get("busy_message") or "项目忙碌"),
+            diagnostics=report,
+        )
+    return report
 
 
 def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
@@ -1133,12 +1780,14 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
 
     project_id = project_dir.name
     log.info("approve.request project=%s stage=%s", project_id, stage)
-    busy = _busy_or_none(project_dir)
-    if busy:
+    try:
+        _require_not_busy(project_dir)
+    except StageBusyError as exc:
         log.warning(
-            "approve.rejected project=%s stage=%s reason=busy: %s", project_id, stage, busy,
+            "approve.rejected project=%s stage=%s reason=busy: %s",
+            project_id, stage, exc,
         )
-        raise StageBusyError(busy)
+        raise
 
     cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
     if not cp or cp.get("status") != "awaiting_human":
@@ -1178,6 +1827,190 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
         # 不静默：镜像不了的决策仍会让 audit 报 drift，调用方必须知道。
         result["unmirrored_decisions"] = skipped
     return result
+
+
+def complete_stage_from_disk(project_dir: Path, stage: str) -> dict:
+    """Adopt an orphan stage artifact on disk into a completed checkpoint.
+
+    Used when a run failed / aborted but the canonical artifact was already
+    written (e.g. video_analysis_brief.json). Gated stages cannot skip human
+    approval via this path — they must use awaiting_human + approve.
+    """
+    from plugins.openmontage.lib.checkpoint import get_next_stage, read_checkpoint, write_checkpoint
+    from plugins.openmontage.lib.pipeline_loader import load_pipeline_readonly
+    from plugins.openmontage.lib.project_status import resolve_canonical_artifact_name
+    from plugins.openmontage.schemas.artifacts import validate_artifact
+
+    project_id = project_dir.name
+    log.info("complete_from_disk.request project=%s stage=%s", project_id, stage)
+
+    # 已闭环：先于 busy 检查返回，避免「checkpoint 已 completed 却被僵尸 busy 挡住」
+    try:
+        existing_cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
+    except Exception as exc:
+        raise StageRunError(
+            f"读取 checkpoint 失败: {exc}",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "suggested_actions": [
+                    "checkpoint 可能畸形；可 om_run 重跑该 stage，或把本 diagnostics 反馈给开发",
+                ],
+            },
+        ) from exc
+    existing_status = (existing_cp or {}).get("status")
+    if existing_status in ("completed", "awaiting_human"):
+        next_stage = get_next_stage(
+            PROJECTS_DIR,
+            project_id,
+            (existing_cp or {}).get("pipeline_type"),
+        )
+        return {
+            "ok": True,
+            "stage": stage,
+            "status": existing_status,
+            "already_done": True,
+            "next_stage": next_stage,
+            "suggested_action": "stop_polling",
+            "message": (
+                f"阶段 {stage} 已是 {existing_status}，无需 complete_from_disk；"
+                "停止轮询，用 om_project 看 next_stage / gate。"
+            ),
+        }
+
+    _require_not_busy(project_dir)
+
+    marker = _read_json(project_dir / "project.json") or {}
+    pipeline_type = str(marker.get("pipeline_type") or "")
+    if not pipeline_type:
+        raise StageRunError(
+            "project.json 缺少 pipeline_type",
+            diagnostics={"project_id": project_id, "stage": stage},
+        )
+
+    try:
+        manifest = load_pipeline_readonly(pipeline_type)
+    except Exception as exc:
+        raise StageRunError(
+            f"无法加载流水线清单: {exc}",
+            diagnostics={"project_id": project_id, "pipeline_type": pipeline_type},
+        ) from exc
+
+    if _stage_requires_human_gate(manifest, stage):
+        raise StageRunError(
+            f"阶段 {stage!r} 设有人工审批门，不能用 complete_from_disk 跳过。"
+            "请写 awaiting_human 后走 om_state approve / Backlot 批准按钮。",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "gated": True,
+                "suggested_actions": [
+                    "写 awaiting_human checkpoint 后 om_state approve",
+                    "不要 complete_from_disk 门控阶段",
+                ],
+            },
+        )
+
+    artifact_name = resolve_canonical_artifact_name(
+        stage, pipeline_type=pipeline_type, manifest=manifest,
+    )
+    if not artifact_name:
+        raise StageRunError(
+            f"阶段 {stage!r} 没有规范产物映射",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "pipeline_type": pipeline_type,
+            },
+        )
+
+    artifact_path = project_dir / "artifacts" / f"{artifact_name}.json"
+    if not artifact_path.is_file():
+        raise StageRunError(
+            f"磁盘上找不到规范产物: {artifact_path.name}",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "artifact": artifact_name,
+                "expected_path": str(artifact_path),
+                "suggested_actions": [
+                    f"om_run 重跑 {stage}",
+                    "不要去找 schema 文件猜字段",
+                ],
+            },
+        )
+
+    try:
+        payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise StageRunError(
+            f"读取产物失败: {exc}",
+            diagnostics={"artifact": artifact_name, "path": str(artifact_path)},
+        ) from exc
+    if not isinstance(payload, dict):
+        raise StageRunError(
+            "产物 JSON 必须是 object",
+            diagnostics={"artifact": artifact_name, "got_type": type(payload).__name__},
+        )
+
+    try:
+        validate_artifact(artifact_name, payload)
+    except Exception as exc:
+        schema_diag = _schema_validation_diagnostics(artifact_name, exc)
+        expected = None
+        try:
+            from plugins.openmontage.schemas.artifacts import summarize_artifact_schema
+
+            expected = summarize_artifact_schema(artifact_name)
+        except Exception as sum_exc:
+            expected = {"artifact": artifact_name, "error": str(sum_exc)}
+        raise StageRunError(
+            f"产物 schema 校验失败: {schema_diag.get('message') or exc}",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "artifact": artifact_name,
+                "path": str(artifact_path),
+                "schema": schema_diag,
+                "expected": expected,
+                "suggested_actions": [
+                    "按 diagnostics.expected 的 required / items.required 改字段名"
+                    "（不要自造 stat/source 等别名）",
+                    "或 om_run 重跑该 stage，prompt 已含同一字段契约",
+                    "不要 search_files 找 *.schema.json",
+                ],
+            },
+        ) from exc
+
+    cp = existing_cp
+
+    write_checkpoint(
+        PROJECTS_DIR,
+        project_id,
+        stage,
+        "completed",
+        artifacts={artifact_name: payload},
+        pipeline_type=pipeline_type,
+        checkpoint_policy=(cp or {}).get("checkpoint_policy", "guided"),
+        human_approved=False,
+        metadata={
+            **((cp or {}).get("metadata") or {}),
+            "completed_via": "complete_from_disk",
+            "orphan_artifact": artifact_name,
+        },
+    )
+    next_stage = get_next_stage(PROJECTS_DIR, project_id, pipeline_type)
+    log.info(
+        "complete_from_disk.done project=%s stage=%s artifact=%s next=%s",
+        project_id, stage, artifact_name, next_stage,
+    )
+    return {
+        "ok": True,
+        "stage": stage,
+        "status": "completed",
+        "artifact": artifact_name,
+        "next_stage": next_stage,
+    }
 
 
 def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[dict], list[str]]:
@@ -1276,12 +2109,14 @@ def reject_stage(project_dir: Path, stage: str, *, feedback: str) -> dict:
 
     project_id = project_dir.name
     log.info("reject.request project=%s stage=%s", project_id, stage)
-    busy = _busy_or_none(project_dir)
-    if busy:
+    try:
+        _require_not_busy(project_dir)
+    except StageBusyError as exc:
         log.warning(
-            "reject.rejected project=%s stage=%s reason=busy: %s", project_id, stage, busy,
+            "reject.rejected project=%s stage=%s reason=busy: %s",
+            project_id, stage, exc,
         )
-        raise StageBusyError(busy)
+        raise
 
     cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
     if not cp or cp.get("status") != "awaiting_human":

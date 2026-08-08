@@ -26,6 +26,36 @@ log = logging.getLogger("backlot.stage.agent")
 
 LogAppend = Callable[[dict[str, Any]], None]
 
+# 无头 stage 只开放专用生产工具面 + 只读 skill_view：
+# - openmontage_stage → om_registry / om_checkpoint / om_artifact_* / om_decision_append
+# - skills_view → 必要时只读 skill_view（导演全文已在 prompt）
+# 故意不含：file、terminal、execute_code、编排用 openmontage(om_run/om_job)…
+_HEADLESS_STAGE_TOOLSET_ORDER: tuple[str, ...] = (
+    "openmontage_stage",
+    "skills_view",
+)
+
+
+def _filter_stage_toolsets(enabled_toolsets: list[str]) -> list[str]:
+    """兼容旧名：解析无头 stage 最终启用的 toolset 列表。"""
+    return _resolve_stage_toolsets(enabled_toolsets)
+
+
+def _resolve_stage_toolsets(available_toolsets: list[str] | None = None) -> list[str]:
+    """无头 stage：固定 allowlist（不依赖平台 cli 是否列出插件 toolset）。
+
+    ``openmontage_stage`` 由插件动态注册，常不在 ``platform_toolsets.cli`` 里；
+    若再与平台配置取交集会被静默丢掉。编排用 ``openmontage`` 永不进入此面。
+    """
+    from plugins.openmontage.bridge import TOOLSET as OM_TOOLSET
+
+    chosen = list(_HEADLESS_STAGE_TOOLSET_ORDER)
+    if OM_TOOLSET in chosen:
+        chosen = [ts for ts in chosen if ts != OM_TOOLSET]
+    # available_toolsets 仅作可观测性；不裁剪固定面
+    _ = available_toolsets
+    return chosen
+
 
 def _tool_result_text(result: Any) -> str:
     if result is None:
@@ -113,10 +143,13 @@ def _build_agent(
     reasoning_config = GatewayRunner._load_reasoning_config()
     model = _resolve_gateway_model()
     user_config = _load_gateway_config()
-    # Prefer cli toolsets (terminal/files) — same surface as interactive OM work.
-    enabled_toolsets = sorted(_get_platform_tools(user_config, "cli"))
-    if not enabled_toolsets:
-        enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+    # 平台配置只作「哪些 toolset 本机开了」的交集来源；最终面由
+    # _resolve_stage_toolsets allowlist 决定（不是整份 cli）。
+    platform_toolsets = sorted(_get_platform_tools(user_config, "cli"))
+    if not platform_toolsets:
+        platform_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+    enabled_toolsets = _resolve_stage_toolsets(platform_toolsets)
+    log.info("headless stage toolsets=%s", enabled_toolsets)
 
     max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
     fallback_model = GatewayRunner._load_fallback_model()
@@ -199,6 +232,8 @@ def run_agent_conversation(
     log_fh: Any,
     agent_holder: list,
     project_cwd: Optional[Path] = None,
+    project_id: Optional[str] = None,
+    stage: Optional[str] = None,
     on_agent_ready: Optional[Callable[[Any], None]] = None,
 ) -> dict[str, Any]:
     """Synchronously build AIAgent and run one conversation.
@@ -221,8 +256,17 @@ def run_agent_conversation(
     # Non-interactive: never hang on approvals / shell hooks.
     prev_yolo = os.environ.get("HERMES_YOLO_MODE")
     prev_hooks = os.environ.get("HERMES_ACCEPT_HOOKS")
+    prev_headless = os.environ.get("OPENMONTAGE_HEADLESS_STAGE")
+    prev_project = os.environ.get("OPENMONTAGE_HEADLESS_PROJECT")
+    prev_stage = os.environ.get("OPENMONTAGE_HEADLESS_STAGE_NAME")
     os.environ["HERMES_YOLO_MODE"] = "1"
     os.environ["HERMES_ACCEPT_HOOKS"] = "1"
+    # Skip interactive session-brief injection (om_run/om_job polling guidance).
+    os.environ["OPENMONTAGE_HEADLESS_STAGE"] = "1"
+    if project_id:
+        os.environ["OPENMONTAGE_HEADLESS_PROJECT"] = str(project_id)
+    if stage:
+        os.environ["OPENMONTAGE_HEADLESS_STAGE_NAME"] = str(stage)
 
     approval_token = None
     prev_cwd = None
@@ -358,6 +402,18 @@ def run_agent_conversation(
             os.environ.pop("HERMES_ACCEPT_HOOKS", None)
         else:
             os.environ["HERMES_ACCEPT_HOOKS"] = prev_hooks
+        if prev_headless is None:
+            os.environ.pop("OPENMONTAGE_HEADLESS_STAGE", None)
+        else:
+            os.environ["OPENMONTAGE_HEADLESS_STAGE"] = prev_headless
+        if prev_project is None:
+            os.environ.pop("OPENMONTAGE_HEADLESS_PROJECT", None)
+        else:
+            os.environ["OPENMONTAGE_HEADLESS_PROJECT"] = prev_project
+        if prev_stage is None:
+            os.environ.pop("OPENMONTAGE_HEADLESS_STAGE_NAME", None)
+        else:
+            os.environ["OPENMONTAGE_HEADLESS_STAGE_NAME"] = prev_stage
 
 
 async def execute_stage_agent(task: Any, log_fh: Any) -> int:
@@ -382,6 +438,8 @@ async def execute_stage_agent(task: Any, log_fh: Any) -> int:
             log_fh=log_fh,
             agent_holder=holder,
             project_cwd=REPO_ROOT,
+            project_id=getattr(task, "project_id", None),
+            stage=getattr(task, "stage", None),
             on_agent_ready=_on_ready,
         )
 

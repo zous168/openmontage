@@ -36,6 +36,7 @@ class _RecordingCtx:
         self.skills: list[str] = []
         self.skill_paths: list[Path] = []
         self.hooks: list[str] = []
+        self.middleware: list[str] = []
         self.routes: list[tuple[str, object]] = []
 
     def register_tool(self, name, **_kw):  # noqa: ANN001
@@ -49,6 +50,10 @@ class _RecordingCtx:
     def register_hook(self, hook_name, callback):  # noqa: ANN001
         assert callable(callback)
         self.hooks.append(hook_name)
+
+    def register_middleware(self, kind, callback):  # noqa: ANN001
+        assert callable(callback)
+        self.middleware.append(kind)
 
     def register_routes(self, router, *, prefix="", tags=None):  # noqa: ANN001
         self.routes.append((prefix, router))
@@ -78,6 +83,90 @@ def test_manifest_matches_registered_tools(registered):
 def test_registers_governance_hooks(registered):
     assert "pre_tool_call" in registered.hooks
     assert "post_tool_call" in registered.hooks
+    assert "pre_llm_call" in registered.hooks
+    assert "llm_request" in registered.middleware
+
+
+def test_session_brief_extracts_from_agent_guide():
+    """session-brief 标记是送达通道的唯一真源；删掉会让按需注入静默失效。"""
+    from plugins.openmontage.skills import load_session_brief, pre_llm_call
+
+    brief = load_session_brief()
+    assert brief, "AGENT_GUIDE.md 缺少 om:session-brief 标记块"
+    assert "om_preflight" in brief
+    assert 'skill_view("openmontage:agent-guide")' in brief
+    assert "om_director" in brief
+    assert "不是 Hermes 全局" in brief or "插件" in brief
+
+    # 无意图（问候）→ 不注入
+    assert pre_llm_call(is_first_turn=True, user_message="hi") is None
+    assert pre_llm_call(is_first_turn=True, user_message="你好") is None
+    assert pre_llm_call() is None
+
+    # 有 OM/视频意图 → 注入
+    hit = pre_llm_call(
+        is_first_turn=True,
+        user_message="帮我做一个短视频",
+        session_id="test-brief-intent-1",
+    )
+    assert isinstance(hit, dict) and hit.get("context") == brief
+    # 同一会话只注入一次
+    assert (
+        pre_llm_call(
+            user_message="继续做这个视频项目",
+            session_id="test-brief-intent-1",
+        )
+        is None
+    )
+
+
+def test_pre_llm_call_skips_brief_in_headless_stage(monkeypatch):
+    """无头阶段 agent 不得注入编排大脑的 om_run/om_job 轮询简报。"""
+    from plugins.openmontage.skills import pre_llm_call
+
+    monkeypatch.setenv("OPENMONTAGE_HEADLESS_STAGE", "1")
+    assert (
+        pre_llm_call(is_first_turn=True, user_message="帮我做一个短视频") is None
+    )
+
+
+def test_message_looks_like_openmontage_intent():
+    from plugins.openmontage.skills import message_looks_like_openmontage_intent as looks
+
+    assert looks("hi") is False
+    assert looks("Hello!") is False
+    assert looks("你好") is False
+    assert looks("在吗") is False
+    assert looks("帮我做一个短视频") is True
+    assert looks("查一下 my-copy-01 的 om_project") is True
+    assert looks("continue research pipeline") is True
+
+
+def test_filter_stage_toolsets_drops_openmontage():
+    """无头阶段只给 openmontage_stage + skills_view，永不含编排 openmontage。"""
+    from plugins.openmontage.backlot.agent_executor import (
+        _HEADLESS_STAGE_TOOLSET_ORDER,
+        _filter_stage_toolsets,
+        _resolve_stage_toolsets,
+    )
+    from plugins.openmontage.bridge import TOOLSET
+    from plugins.openmontage.stage_tools import TOOLSET as STAGE_TOOLSET
+
+    filtered = _filter_stage_toolsets(["terminal", TOOLSET, "file", "browser", "web"])
+    assert TOOLSET not in filtered
+    assert filtered == list(_HEADLESS_STAGE_TOOLSET_ORDER)
+    assert STAGE_TOOLSET in filtered
+    assert "file" not in filtered
+    assert "terminal" not in filtered
+    assert "code_execution" not in filtered
+    assert "browser" not in filtered
+
+    # 固定面，不依赖平台交集
+    assert _resolve_stage_toolsets(["skills"]) == list(_HEADLESS_STAGE_TOOLSET_ORDER)
+    assert _resolve_stage_toolsets([TOOLSET, "browser"]) == list(
+        _HEADLESS_STAGE_TOOLSET_ORDER
+    )
+    assert TOOLSET not in _resolve_stage_toolsets(None)
 
 
 def test_registers_backlot_routes(registered):
@@ -296,7 +385,10 @@ def test_unknown_pipeline_reports_alternatives():
     ],
 )
 def test_blocks_pipeline_bypass_scripts(command):
-    verdict = pre_tool_call(tool_name="terminal", args={"command": command})
+    verdict = pre_tool_call(
+        tool_name="terminal",
+        args={"label": "跑脚本", "command": command},
+    )
     assert verdict is not None, f"Rule Zero 应拦下绕流水线的脚本: {command}"
     assert verdict["action"] == "block"
     assert "Rule Zero" in verdict["message"]
@@ -308,7 +400,179 @@ def test_blocks_pipeline_bypass_scripts(command):
 )
 def test_allows_ordinary_commands(command):
     """对照组：正常命令必须放行，否则治理就成了瘫痪。"""
-    assert pre_tool_call(tool_name="terminal", args={"command": command}) is None
+    assert (
+        pre_tool_call(
+            tool_name="terminal",
+            args={"label": "检查环境", "command": command},
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "from plugins.openmontage.backlot import stage_runner\nstage_runner.prepare_stage_run(...)",
+        "import plugins.openmontage.backlot.stage_runner as sr\nsr.schedule_run_task(t)",
+    ],
+)
+def test_blocks_execute_code_pipeline_imports(code):
+    verdict = pre_tool_call(
+        tool_name="execute_code",
+        args={"label": "探测 stage_runner", "code": code},
+    )
+    assert verdict is not None
+    assert verdict["action"] == "block"
+    assert "om_run" in verdict["message"]
+
+
+def test_allows_innocent_execute_code():
+    assert (
+        pre_tool_call(
+            tool_name="execute_code",
+            args={"label": "算一加一", "code": "print(1+1)"},
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize("tool_name", ["execute_code", "terminal", "om_job"])
+def test_blocks_missing_invocation_label(tool_name):
+    args = {
+        "execute_code": {"code": "print(1)"},
+        "terminal": {"command": "ls"},
+        "om_job": {"project_id": "demo", "task_id": "abc"},
+    }[tool_name]
+    verdict = pre_tool_call(tool_name=tool_name, args=args)
+    assert verdict is not None
+    assert verdict["action"] == "block"
+    assert "label" in verdict["message"].lower()
+
+
+def test_blocks_blank_invocation_label():
+    verdict = pre_tool_call(
+        tool_name="execute_code",
+        args={"label": "   ", "code": "print(1)"},
+    )
+    assert verdict is not None and verdict["action"] == "block"
+
+
+def test_allows_read_file_project_artifact():
+    """项目 artifacts 产物内容仍可 read_file（进度本身走 om_project）。"""
+    assert (
+        pre_tool_call(
+            tool_name="read_file",
+            args={
+                "path": r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\artifacts\video_analysis_brief.json",
+            },
+        )
+        is None
+    )
+
+
+def test_blocks_read_file_openmontage_source():
+    """插件源码必须走 om_*，禁止 read_file 浏览。"""
+    verdict = pre_tool_call(
+        tool_name="read_file",
+        args={
+            "path": r"H:\work\OpenMontage\agent-hub\src\plugins\openmontage\lib\checkpoint.py",
+        },
+    )
+    assert verdict is not None and verdict["action"] == "block"
+    assert "om_" in verdict["message"]
+
+
+def test_blocks_read_file_meta_skill():
+    verdict = pre_tool_call(
+        tool_name="read_file",
+        args={
+            "path": r"H:\work\OpenMontage\agent-hub\src\plugins\openmontage\skills\meta\video-reference-analyst.md",
+            "label": "读元技能 video-reference-analyst",
+        },
+    )
+    assert verdict is not None and verdict["action"] == "block"
+    assert "skill_view" in verdict["message"]
+
+
+def test_blocks_read_file_project_meta_and_checkpoint():
+    for path in (
+        r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\meta.json",
+        r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\checkpoint_research.json",
+        r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\checkpoints\research.json",
+        r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\runs\abc123.json",
+        r"H:\work\OpenMontage\.data\montage\projects\my-copy-01\.run.lock",
+    ):
+        verdict = pre_tool_call(tool_name="read_file", args={"path": path})
+        assert verdict is not None and verdict["action"] == "block", path
+        assert "om_project" in verdict["message"] or "om_job" in verdict["message"]
+
+
+def test_allows_read_file_layer3_agent_skills():
+    assert (
+        pre_tool_call(
+            tool_name="read_file",
+            args={"path": r"H:\work\OpenMontage\.agents\skills\ffmpeg\SKILL.md"},
+        )
+        is None
+    )
+
+
+def test_blocks_wait_10min_label():
+    verdict = pre_tool_call(
+        tool_name="om_job",
+        args={
+            "project_id": "demo",
+            "task_id": "abc",
+            "label": "Wait 10min poll reference analysis 5",
+        },
+    )
+    assert verdict is not None and verdict["action"] == "block"
+    assert "15" in verdict["message"] or "60" in verdict["message"] or "轮询" in verdict["message"]
+
+
+def test_blocks_fake_wait_90s_label_from_user_log():
+    """用户日志实证：label「等 90 秒查 edit 重跑进度」却只跑 0.1s。"""
+    for label in (
+        "等 90 秒查 edit 重跑进度",
+        "等 90 秒查 compose 进度",
+        "等 90 秒查 publish 收尾",
+        "wait 90s check edit progress",
+    ):
+        verdict = pre_tool_call(
+            tool_name="om_job",
+            args={"project_id": "demo", "task_id": "abc", "label": label},
+        )
+        assert verdict is not None and verdict["action"] == "block", label
+        assert "假等待" in verdict["message"] or "om_job" in verdict["message"]
+
+    allowed = pre_tool_call(
+        tool_name="om_job",
+        args={
+            "project_id": "demo",
+            "task_id": "abc",
+            "label": "轮询 edit 进度",
+        },
+    )
+    assert allowed is None
+
+
+def test_blocks_poll_sleep_in_execute_code():
+    verdict = pre_tool_call(
+        tool_name="execute_code",
+        args={
+            "label": "等进度",
+            "code": "import time; time.sleep(90)",
+        },
+    )
+    assert verdict is not None and verdict["action"] == "block"
+
+
+def test_blocks_long_sleep_terminal():
+    verdict = pre_tool_call(
+        tool_name="terminal",
+        args={"label": "空等", "command": "sleep 600"},
+    )
+    assert verdict is not None and verdict["action"] == "block"
 
 
 def test_blocks_stage_skipping(tmp_path, monkeypatch):
@@ -350,3 +614,181 @@ def test_blocks_stage_skipping(tmp_path, monkeypatch):
 def test_omitting_stage_is_allowed():
     """不指定 stage 就是跑 next_stage，天然不可能跳。"""
     assert pre_tool_call(tool_name="om_run", args={"project_id": "whatever"}) is None
+
+
+def test_om_run_spawns_without_asyncio_loop(tmp_path, monkeypatch):
+    """CLI 同步工具上下文没有事件循环时，om_run 仍应调度后台 run_task。"""
+    import json
+
+    from plugins.openmontage.backlot import stage_runner
+    from plugins.openmontage.exec_tools import handle_run
+
+    project_id = "spawn-smoke"
+    projects_root = tmp_path / "projects"
+    project_dir = projects_root / project_id
+    project_dir.mkdir(parents=True)
+    (project_dir / "project.json").write_text(
+        json.dumps({"pipeline_type": "reference-driven"}),
+        encoding="utf-8",
+    )
+
+    import plugins.openmontage.lib.paths as paths_mod
+    import plugins.openmontage.lib.project_status as status_mod
+
+    monkeypatch.setattr(paths_mod, "PROJECTS_DIR", projects_root)
+    monkeypatch.setattr(
+        status_mod,
+        "build_project_status",
+        lambda _pid: {"next_stage": "reference_analysis"},
+    )
+
+    scheduled: list[str] = []
+
+    def fake_prepare(project_dir, **kwargs):
+        task = stage_runner.RunTask(
+            task_id="task123",
+            project_dir=project_dir,
+            project_id=project_id,
+            stage="reference_analysis",
+            pipeline_type="reference-driven",
+        )
+        stage_runner._TASKS[project_id] = task
+        return task
+
+    def fake_schedule(task, *, chain=True):
+        scheduled.append(task.task_id)
+
+    monkeypatch.setattr(stage_runner, "prepare_stage_run", fake_prepare)
+    monkeypatch.setattr(stage_runner, "schedule_run_task", fake_schedule)
+
+    payload = json.loads(handle_run({"project_id": project_id}))
+    assert payload["ok"] is True
+    assert payload["spawned"] is True
+    assert scheduled == ["task123"]
+
+
+# ─── 能力收口：从工具列表拿掉读文件 ───────────────────────────────────
+
+
+def test_capability_lock_strips_read_file_from_llm_request():
+    from plugins.openmontage.capability_lock import (
+        llm_request_middleware,
+        mark_session_lockdown,
+        reset_lockdown_state_for_tests,
+        tools_to_strip,
+    )
+
+    reset_lockdown_state_for_tests()
+    sid = "lock-strip-1"
+    mark_session_lockdown(sid, reason="test")
+    banned = tools_to_strip(sid)
+    assert "read_file" in banned
+    assert "search_files" in banned
+    assert "terminal" in banned
+    assert "execute_code" in banned
+
+    request = {
+        "model": "x",
+        "tools": [
+            {"type": "function", "function": {"name": "om_job", "parameters": {}}},
+            {"type": "function", "function": {"name": "read_file", "parameters": {}}},
+            {"type": "function", "function": {"name": "search_files", "parameters": {}}},
+            {"type": "function", "function": {"name": "terminal", "parameters": {}}},
+            {"type": "function", "function": {"name": "execute_code", "parameters": {}}},
+            {"type": "function", "function": {"name": "write_file", "parameters": {}}},
+        ],
+    }
+    out = llm_request_middleware(request=request, session_id=sid)
+    assert out is not None
+    names = [t["function"]["name"] for t in out["request"]["tools"]]
+    assert names == ["om_job", "write_file"]
+    reset_lockdown_state_for_tests()
+
+
+def test_capability_lock_blocks_read_file_at_pre_tool(monkeypatch):
+    from plugins.openmontage.capability_lock import (
+        mark_session_lockdown,
+        reset_lockdown_state_for_tests,
+    )
+
+    reset_lockdown_state_for_tests()
+    sid = "lock-block-1"
+    mark_session_lockdown(sid, reason="test")
+    blocked = pre_tool_call(
+        tool_name="read_file",
+        args={"path": "projects/x/artifacts/a.json"},
+        session_id=sid,
+    )
+    assert blocked is not None and blocked["action"] == "block"
+    assert "能力收口" in blocked["message"]
+    blocked_term = pre_tool_call(
+        tool_name="terminal",
+        args={"command": "ls", "label": "列目录"},
+        session_id=sid,
+    )
+    assert blocked_term is not None and blocked_term["action"] == "block"
+    reset_lockdown_state_for_tests()
+
+
+def test_capability_lock_unified_strips_terminal_without_busy():
+    """锁定即统一拿掉 terminal/execute_code，不依赖跨进程 busy。"""
+    from plugins.openmontage.capability_lock import (
+        mark_session_lockdown,
+        reset_lockdown_state_for_tests,
+        tools_to_strip,
+    )
+
+    reset_lockdown_state_for_tests()
+    sid = "lock-unified-1"
+    mark_session_lockdown(sid, reason="test")
+    banned = tools_to_strip(sid)
+    assert "terminal" in banned
+    assert "execute_code" in banned
+    assert "read_file" in banned
+    reset_lockdown_state_for_tests()
+
+
+def test_capability_lock_skips_headless(monkeypatch):
+    from plugins.openmontage.capability_lock import (
+        mark_session_lockdown,
+        reset_lockdown_state_for_tests,
+        tools_to_strip,
+    )
+
+    reset_lockdown_state_for_tests()
+    monkeypatch.setenv("OPENMONTAGE_HEADLESS_STAGE", "1")
+    mark_session_lockdown("headless-sess", reason="test")
+    assert tools_to_strip("headless-sess") == frozenset()
+    reset_lockdown_state_for_tests()
+
+
+def test_om_intent_activates_lockdown():
+    from plugins.openmontage.capability_lock import (
+        is_session_locked,
+        reset_lockdown_state_for_tests,
+    )
+    from plugins.openmontage.skills import pre_llm_call
+
+    reset_lockdown_state_for_tests()
+    sid = "lock-intent-1"
+    pre_llm_call(
+        is_first_turn=True,
+        user_message="帮我做一个短视频",
+        session_id=sid,
+    )
+    assert is_session_locked(sid)
+    reset_lockdown_state_for_tests()
+
+
+def test_greeting_does_not_lockdown():
+    from plugins.openmontage.capability_lock import (
+        is_session_locked,
+        reset_lockdown_state_for_tests,
+    )
+    from plugins.openmontage.skills import pre_llm_call
+
+    reset_lockdown_state_for_tests()
+    sid = "lock-hi-1"
+    assert pre_llm_call(user_message="hi", session_id=sid) is None
+    assert not is_session_locked(sid)
+    reset_lockdown_state_for_tests()

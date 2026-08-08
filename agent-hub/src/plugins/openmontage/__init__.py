@@ -18,9 +18,11 @@
 from __future__ import annotations
 
 from plugins.openmontage.bridge import READONLY_TOOLS, TOOLSET, check_available
+from plugins.openmontage.capability_lock import llm_request_middleware
 from plugins.openmontage.exec_tools import EXEC_TOOLS
 from plugins.openmontage.governance import post_tool_call, pre_tool_call
-from plugins.openmontage.skills import DIRECTOR_TOOLS, register_skills
+from plugins.openmontage.skills import DIRECTOR_TOOLS, pre_llm_call, register_skills
+from plugins.openmontage.stage_tools import STAGE_TOOLS, TOOLSET as STAGE_TOOLSET
 
 __all__ = ["register", "on_ready"]
 
@@ -33,6 +35,11 @@ _EMOJI = {
     "om_run": "▶️",
     "om_job": "⏳",
     "om_state": "📝",
+    "om_registry": "🧰",
+    "om_checkpoint": "📌",
+    "om_artifact_read": "📖",
+    "om_artifact_write": "💾",
+    "om_decision_append": "🧾",
 }
 
 
@@ -48,12 +55,29 @@ def register(ctx) -> None:  # noqa: ANN001  (ctx 类型由宿主提供)
             emoji=_EMOJI.get(name, "🎬"),
         )
 
+    # 无头 stage 专用面：与编排 openmontage 拆开，避免无头拿到 om_run/om_job
+    for name, schema, handler in STAGE_TOOLS:
+        ctx.register_tool(
+            name=name,
+            toolset=STAGE_TOOLSET,
+            schema=schema,
+            handler=handler,
+            check_fn=check_available,
+            emoji=_EMOJI.get(name, "🎬"),
+        )
+
     register_skills(ctx)
 
     # 硬规则运行时化：文档里的 "HARD RULE" 只在被读到时生效，
     # 挂到 pre_tool_call 上才是真拦得住。理由见 governance.py。
     ctx.register_hook("pre_tool_call", pre_tool_call)
     ctx.register_hook("post_tool_call", post_tool_call)
+    # 按需注入 AGENT_GUIDE 顶部 session-brief：仅当用户消息像 OM/视频
+    # 意图时才注入，避免问候触发 onboarding / om_preflight（见 skills.py）。
+    ctx.register_hook("pre_llm_call", pre_llm_call)
+    # 能力收口：OM 生产会话从发往模型的 tools 列表拿掉 read_file 等
+    # （见 capability_lock.py）。比「拦调用」更早 —— 模型根本看不见工具。
+    ctx.register_middleware("llm_request", llm_request_middleware)
 
     from plugins.openmontage.backlot.server import (
         build_api_router,
