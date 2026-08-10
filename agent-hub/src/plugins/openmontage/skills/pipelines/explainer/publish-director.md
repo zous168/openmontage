@@ -86,9 +86,12 @@
 ### 第 5 步：打包导出
 
 用 `export_bundle` 工具（capability `publish`）确定性地完成打包 ——
-把最终的 `video_path`（来自 `render_report`）、`title`，以及你准备好的元数据
+把最终的 `video_path`（**必须**来自 `render_report.outputs[].path`，可为
+`projects/<id>/renders/…` 或项目相对 `renders/…`；工具会解析）、`title`，以及你准备好的元数据
 （`description`、`tags`、`hashtags`、`chapters`，以及可选的 `subtitles_path` 和
 `thumbnail_path`/`thumbnail_concept`）传给它。
+`subtitles_path` 仅在磁盘上**已有** `.srt` 时传入（常见：`assets/audio/*.srt` 或
+`assets/subtitles.srt`）；没有就省略——**禁止**臆造 `renders/subtitles.srt`。
 它会布置好导出目录、写出元数据文件，并在 `data["publish_log"]` 中返回一份
 符合 schema 的 `publish_log`（`status: "exported"`），由你把它作为本阶段的
 artifact 持久化。

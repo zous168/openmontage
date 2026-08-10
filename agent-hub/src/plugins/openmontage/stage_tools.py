@@ -237,6 +237,11 @@ def handle_registry(args: dict, **_kw: Any) -> str:
     if "project_id" not in params:
         params = {**params, "project_id": project_id}
 
+    # 把 render_report / 项目相对路径解析成真实绝对路径，避免 LLM 猜路径
+    from plugins.openmontage.lib.project_media import rewrite_path_params
+
+    params = rewrite_path_params(params, project_id=project_id)
+
     result = registry.execute(tool_name, params)
     payload = _tool_result_payload(result)
     return _json({
@@ -359,8 +364,9 @@ def handle_checkpoint(args: dict, **_kw: Any) -> str:
 OM_ARTIFACT_READ_SCHEMA = {
     "name": "om_artifact_read",
     "description": (
-        "读取当前项目内产物（artifacts/ 或其它项目相对路径）。"
-        "用 artifact 名（如 research_brief）或相对 path；禁止读仓库源码。"
+        "读取当前项目内产物（artifacts/ 或 assets|renders|exports 等相对路径）。"
+        "优先用 artifact 规范名（如 research_brief）；"
+        "禁止读 checkpoint_*.json / runs/ / .run.lock / 仓库源码。"
     ),
     "parameters": {
         "type": "object",
@@ -372,13 +378,78 @@ OM_ARTIFACT_READ_SCHEMA = {
             },
             "path": {
                 "type": "string",
-                "description": "项目相对路径（与 artifact 二选一）",
+                "description": (
+                    "项目相对路径（与 artifact 二选一）；"
+                    "勿传 checkpoint_*.json"
+                ),
             },
             "label": {"type": "string"},
         },
         "required": ["label"],
     },
 }
+
+
+def _pipeline_type_for_project(project_id: str) -> str:
+    marker = _project_dir(project_id) / "project.json"
+    if not marker.is_file():
+        return ""
+    try:
+        return str(
+            json.loads(marker.read_text(encoding="utf-8")).get("pipeline_type") or ""
+        )
+    except (OSError, json.JSONDecodeError):
+        return ""
+
+
+def _stage_from_checkpoint_path(*, name: str, rel_norm: str) -> str | None:
+    """从 checkpoint_research.json / checkpoints/... 推出 stage 名。"""
+    lower = name.lower()
+    if lower.startswith("checkpoint_") and lower.endswith(".json"):
+        return lower[len("checkpoint_") : -len(".json")] or None
+    if rel_norm.startswith("checkpoints/"):
+        stem = Path(rel_norm.split("/", 1)[1]).stem.lower()
+        if stem.startswith("checkpoint_"):
+            return stem[len("checkpoint_") :] or None
+        return stem or None
+    return None
+
+
+def _suggest_artifact_for_blocked_checkpoint(
+    project_id: str, *, name: str, rel_norm: str
+) -> str | None:
+    stage = _stage_from_checkpoint_path(name=name, rel_norm=rel_norm)
+    if not stage:
+        return None
+    try:
+        from plugins.openmontage.lib.project_status import resolve_canonical_artifact_name
+
+        pipeline_type = _pipeline_type_for_project(project_id) or None
+        return resolve_canonical_artifact_name(stage, pipeline_type=pipeline_type)
+    except Exception:
+        return None
+
+
+def _blocked_checkpoint_read_error(
+    project_id: str, *, name: str, rel_norm: str
+) -> str:
+    base = (
+        "禁止直接读 checkpoint / runs / .run.lock；"
+        "写状态用 om_checkpoint，读产物用 artifacts/"
+    )
+    suggested = _suggest_artifact_for_blocked_checkpoint(
+        project_id, name=name, rel_norm=rel_norm
+    )
+    if suggested:
+        return (
+            f"{base}。"
+            f"若要读该阶段交付内容，请用 "
+            f'om_artifact_read(artifact="{suggested}", label="读{suggested}")'
+        )
+    return (
+        f"{base}。"
+        "若要读上游交付内容，请用 om_artifact_read(artifact=<规范产物名>, label=...)"
+    )
 
 
 def handle_artifact_read(args: dict, **_kw: Any) -> str:
@@ -417,8 +488,9 @@ def handle_artifact_read(args: dict, **_kw: Any) -> str:
         or rel_norm.startswith("checkpoints/")
     ):
         return _error(
-            "禁止直接读 checkpoint / runs / .run.lock；"
-            "写状态用 om_checkpoint，读产物用 artifacts/"
+            _blocked_checkpoint_read_error(
+                project_id, name=name, rel_norm=rel_norm
+            )
         )
 
     if not target.is_file():

@@ -143,7 +143,7 @@ def test_message_looks_like_openmontage_intent():
 
 
 def test_filter_stage_toolsets_drops_openmontage():
-    """无头阶段只给 openmontage_stage + skills_view，永不含编排 openmontage。"""
+    """无头阶段：openmontage_stage + web + skills_view；永不含编排 openmontage。"""
     from plugins.openmontage.backlot.agent_executor import (
         _HEADLESS_STAGE_TOOLSET_ORDER,
         _filter_stage_toolsets,
@@ -156,6 +156,7 @@ def test_filter_stage_toolsets_drops_openmontage():
     assert TOOLSET not in filtered
     assert filtered == list(_HEADLESS_STAGE_TOOLSET_ORDER)
     assert STAGE_TOOLSET in filtered
+    assert "web" in filtered
     assert "file" not in filtered
     assert "terminal" not in filtered
     assert "code_execution" not in filtered
@@ -167,6 +168,7 @@ def test_filter_stage_toolsets_drops_openmontage():
         _HEADLESS_STAGE_TOOLSET_ORDER
     )
     assert TOOLSET not in _resolve_stage_toolsets(None)
+    assert "web" in _HEADLESS_STAGE_TOOLSET_ORDER
 
 
 def test_registers_backlot_routes(registered):

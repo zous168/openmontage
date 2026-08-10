@@ -860,7 +860,7 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
     }
   };
 
-  const loadLogForRun = async (run: RunState) => {
+  const loadLogForRun = async (run: RunState, mode: "failure" | "full" = "full") => {
     setRunDetailsOpen(true);
     setBusy(true);
     setErr(null);
@@ -868,7 +868,7 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
       const res = await getJSON(
         `/api/project/${encodeURIComponent(state.project_id)}/stage/run/${run.task_id}/log?offset=0&limit=2000`,
       );
-      const lines = filterRunLogLines((res.lines ?? []) as string[]);
+      const lines = filterRunLogLines((res.lines ?? []) as string[], {mode});
       setLogText(lines.join("\n") || runLogHint || "（日志为空）");
     } catch (e) {
       setErr(String((e as Error).message || e));
@@ -880,15 +880,16 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
   const openFailureDetails = async () => {
     setRunDetailsOpen(true);
     if (logRun?.task_id) {
-      await loadLogForRun(logRun);
+      await loadLogForRun(logRun, "failure");
       return;
     }
     if (runLogHint) setLogText(runLogHint);
   };
 
   const loadLog = async () => {
-    if (!activeRun) return;
-    await loadLogForRun(activeRun);
+    const run = activeRun ?? logRun;
+    if (!run) return;
+    await loadLogForRun(run, "full");
   };
 
   return (
@@ -912,14 +913,15 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
             </>
           )}
           {st.status === "in_progress" && activeRun && (
-            <>
-              <button className="fs-btn" onClick={cancel} disabled={busy}>取消运行</button>
-              <button className="fs-btn" onClick={loadLog} disabled={busy}>运行日志</button>
-            </>
+            <button className="fs-btn" onClick={cancel} disabled={busy}>取消运行</button>
           )}
-          {st.status === "failed" && (
-            <button className="fs-btn" onClick={() => void openFailureDetails()} disabled={busy}>
-              {STRINGS.viewFailureDetails}
+          {logRun?.task_id && (
+            <button
+              className="fs-btn"
+              onClick={() => void (st.status === "failed" ? openFailureDetails() : loadLog())}
+              disabled={busy}
+            >
+              {st.status === "failed" ? STRINGS.viewFailureDetails : STRINGS.viewRunLog}
             </button>
           )}
           {runTarget && (
@@ -957,7 +959,10 @@ export function StageDrawer({state, stage, isInput, projectSettings, settings, o
 
       {runDetailsOpen && logText && (
         <div className="fs-ops-log-wrap">
-          <div className="fs-ops-log-label">运行日志</div>
+          <div className="fs-ops-log-label">
+            {STRINGS.viewRunLog}
+            {logRun?.task_id ? ` · ${logRun.task_id.slice(0, 8)}` : ""}
+          </div>
           <pre className="fs-ops-log">{logText}</pre>
         </div>
       )}

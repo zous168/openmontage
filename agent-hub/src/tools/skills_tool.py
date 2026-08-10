@@ -1087,7 +1087,11 @@ def skill_view(
                     "success": False,
                     "error": f"Skill '{name}' not found.",
                     "available_skills": available,
-                    "hint": "Use skills_list to see all available skills",
+                    "hint": (
+                        "Use skills_list to see all available skills. "
+                        "Plugin skills require a qualified name "
+                        "(e.g. openmontage:video-reference-analyst)."
+                    ),
                 },
                 ensure_ascii=False,
             )

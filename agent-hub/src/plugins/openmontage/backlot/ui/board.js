@@ -804,12 +804,31 @@ function renderStageArtifactBlock(name, artifact, s) {
 }
 
 /** Stage drawer — per-stage review + artifacts only (not project summary). */
+function latestRunForStage(s, stageName) {
+  return (s.runs || []).find((r) => r.stage === stageName);
+}
+
 function renderDrawer(s) {
   if (!selectedStage) return null;
   const st = s.stages.find((x) => x.name === selectedStage);
   if (!st) return null;
 
   const body = el("div", { class: "drawer-body" });
+  const stageRun = latestRunForStage(s, st.name);
+
+  if (st.status === "failed") {
+    const err = st.error || stageRun?.error || t("failed");
+    body.append(el("div", { class: "notice", style: "margin-bottom:12px;border-color:var(--red)" },
+      el("span", { style: "color:var(--red);font-weight:600" }, t("failed")),
+      el("span", {}, String(err).slice(0, 400)),
+      stageRun ? el("button", {
+        type: "button",
+        class: "run-btn run-btn-ghost",
+        style: "margin-left:auto",
+        onclick: () => openRunLogModal(stageRun),
+      }, t("stageRunLog")) : null,
+    ));
+  }
 
   if (st.review) {
     const metrics = reviewMetrics(st.review);
@@ -841,6 +860,15 @@ function renderDrawer(s) {
       st.gate_skipped ? el("span", { class: "gate-chip" }, t("gateSkipped")) : null,
       st.versions > 1 ? el("span", { class: "ver-chip" }, `v${st.versions}`) : null,
       st.timestamp ? el("span", { class: "meta", style: "font-family:var(--mono);font-size:calc(10.5px * var(--fs-scale));color:var(--text-3)" }, st.timestamp) : null,
+      stageRun ? el("button", {
+        type: "button",
+        class: "run-btn run-btn-ghost",
+        style: "margin-left:8px",
+        onclick: (e) => {
+          e.stopPropagation();
+          openRunLogModal(stageRun);
+        },
+      }, t("stageRunLog")) : null,
       el("span", { class: "close", onclick: () => toggleDrawer(st.name) }, t("close")),
     ),
     body,

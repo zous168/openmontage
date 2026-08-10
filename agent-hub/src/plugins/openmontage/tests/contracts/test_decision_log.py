@@ -133,3 +133,20 @@ def test_suggest_next_decision_id(projects_root: Path):
         "decisions": [{"decision_id": "d-007"}],
     }), encoding="utf-8")
     assert suggest_next_decision_id(p) == "d-008"
+
+
+def test_load_decision_log_accepts_utf8_bom(projects_root: Path):
+    from plugins.openmontage.lib.decision_log import load_decision_log
+
+    p = _project(projects_root)
+    payload = {
+        "version": "1.0",
+        "project_id": p.name,
+        "decisions": [],
+    }
+    # 模拟 PowerShell Set-Content -Encoding utf8
+    raw = b"\xef\xbb\xbf" + json.dumps(payload).encode("utf-8")
+    (p / "decision_log.json").write_bytes(raw)
+    loaded = load_decision_log(p)
+    assert loaded["project_id"] == p.name
+    assert loaded["decisions"] == []

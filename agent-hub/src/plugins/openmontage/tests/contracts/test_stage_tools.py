@@ -94,6 +94,32 @@ def test_artifact_read_blocks_checkpoint(headless_env):
         "label": "读检查点",
     }))
     assert blocked["ok"] is False
+    err = str(blocked.get("error") or blocked.get("message") or blocked)
+    assert "禁止直接读 checkpoint" in err
+    assert 'artifact="research_brief"' in err
+    assert "om_artifact_read" in err
+
+
+def test_artifact_read_blocks_checkpoint_reference_analysis(headless_env, monkeypatch):
+    """reference_analysis → video_analysis_brief 提示。"""
+    from plugins.openmontage.lib.checkpoint import init_project
+
+    root = headless_env
+    init_project(
+        "ref-hint-01",
+        title="Ref Hint",
+        pipeline_type="reference-driven",
+        pipeline_dir=root,
+    )
+    monkeypatch.setenv("OPENMONTAGE_HEADLESS_PROJECT", "ref-hint-01")
+    monkeypatch.setenv("OPENMONTAGE_HEADLESS_STAGE_NAME", "research")
+    blocked = _payload(handle_artifact_read({
+        "path": "checkpoint_reference_analysis.json",
+        "label": "误读参考分析检查点",
+    }))
+    assert blocked["ok"] is False
+    err = str(blocked.get("error") or blocked.get("message") or blocked)
+    assert 'artifact="video_analysis_brief"' in err
 
 
 def test_project_id_mismatch(headless_env):

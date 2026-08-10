@@ -339,6 +339,7 @@
         "end_seconds": { "type": "number", "minimum": 0 },
         "kind": {
           "type": "string",
+          "description": "Beat category. Camera moves (push/pull/pan/tilt/zoom/dolly/truck/crane) MUST use kind=camera — do not invent verbs as kind values.",
           "enum": [
             "action", "micro_motion", "cut", "transition", "overlay", "camera",
             "vfx", "dialogue", "speech", "hold", "object_interaction"

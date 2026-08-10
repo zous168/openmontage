@@ -320,15 +320,12 @@ class TestApproveReject:
         }
         assert all(d["user_approved"] for d in mirrored)
 
-    def test_approve_skips_schema_invalid_source_decision(
+    def test_approve_mirrors_invalid_category_and_clears_drift(
         self, projects_root, project_dir,
     ):
-        """日志里已存在 schema 不合法的决策时，批准不得整单 500。
+        """历史脏 category 必须能被同键镜像清账；不得再 skip 后 completed→drift。"""
+        from plugins.openmontage.lib.production_audit import check_approval_gate_drift
 
-        无头 agent 带 bypassPermissions 运行，可以绕过 append_decisions /
-        write_checkpoint 的校验直接落盘（真实 E2E 里就出现过自造 category）。
-        批准要么清账要么如实上报，绝不能半途炸在 checkpoint 已写之后。
-        """
         write_checkpoint(
             projects_root, "film", "research", "completed",
             artifacts={"research_brief": sample_artifact("research_brief")},
@@ -361,9 +358,97 @@ class TestApproveReject:
 
         result = stage_runner_mod.approve_stage(project_dir, "script")
         assert result["status"] == "completed"
-        assert any("d-bogus" in s for s in result.get("unmirrored_decisions", []))
+        assert "unmirrored_decisions" not in result
         cp = read_checkpoint(projects_root, "film", "script")
         assert cp["human_approved"] is True
+
+        decisions = load_decision_log(project_dir)["decisions"]
+        mirrored = [d for d in decisions if d["decision_id"].startswith("wa-")]
+        assert len(mirrored) == 1
+        assert mirrored[0]["category"] == "totally_made_up_category"
+        assert mirrored[0]["subject"] == "自造类别"
+        assert mirrored[0]["user_approved"] is True
+        assert check_approval_gate_drift(project_dir) == []
+
+    def test_approve_refuses_structurally_broken_pending_decision(
+        self, projects_root, project_dir,
+    ):
+        """缺 options 等结构性错误：拒绝批准，保持 awaiting_human。"""
+        write_checkpoint(
+            projects_root, "film", "research", "completed",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE, human_approved=True,
+        )
+        write_checkpoint(
+            projects_root, "film", "script", "awaiting_human",
+            artifacts={"script": sample_artifact("script")},
+            pipeline_type=PIPELINE,
+        )
+        log_path = project_dir / "decision_log.json"
+        log_path.write_text(json.dumps({
+            "version": "1.0",
+            "project_id": "film",
+            "decisions": [{
+                "decision_id": "d-broken",
+                "stage": "script",
+                "category": "playbook_selection",
+                "subject": "坏结构",
+                # 有 options 字段但条目缺必填 — 镜像会原样带上并校验失败
+                "options_considered": [{"option_id": "x"}],
+                "selected": "x",
+                "reason": "坏 options",
+                "user_visible": True,
+                "user_approved": False,
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+
+        with pytest.raises(stage_runner_mod.StageRunError) as exc:
+            stage_runner_mod.approve_stage(project_dir, "script")
+        assert "无法镜像清账" in str(exc.value)
+        cp = read_checkpoint(projects_root, "film", "script")
+        assert cp["status"] == "awaiting_human"
+        assert not cp.get("human_approved")
+
+    def test_repair_approval_drift_clears_historical_skip(
+        self, projects_root, project_dir,
+    ):
+        """已 completed 但漏镜像时，repair_approval_drift 可清账。"""
+        from plugins.openmontage.lib.production_audit import check_approval_gate_drift
+
+        write_checkpoint(
+            projects_root, "film", "research", "completed",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE, human_approved=True,
+        )
+        write_checkpoint(
+            projects_root, "film", "script", "completed",
+            artifacts={"script": sample_artifact("script")},
+            pipeline_type=PIPELINE, human_approved=True,
+        )
+        log_path = project_dir / "decision_log.json"
+        log_path.write_text(json.dumps({
+            "version": "1.0",
+            "project_id": "film",
+            "decisions": [{
+                "decision_id": "d-009",
+                "stage": "script",
+                "category": "scene_visual_strategy",
+                "subject": "分镜视觉策略",
+                "options_considered": [
+                    {"option_id": "a", "label": "A", "score": 1, "reason": "x"},
+                ],
+                "selected": "a",
+                "reason": "历史脏 category",
+                "user_visible": True,
+                "user_approved": False,
+            }],
+        }, ensure_ascii=False), encoding="utf-8")
+        assert check_approval_gate_drift(project_dir)
+
+        result = stage_runner_mod.repair_approval_drift(project_dir, "script")
+        assert result["repaired"] == 1
+        assert result["drift_remaining"] == []
+        assert check_approval_gate_drift(project_dir) == []
 
     def test_approve_appends_decisions_before_checkpoint(
         self, projects_root, project_dir, monkeypatch,
@@ -467,7 +552,65 @@ class TestPrompt:
         assert "om_registry" in prompt
         assert "om_checkpoint" in prompt
         assert "Hermes 工具面" in prompt
+        assert "web_search" in prompt
+        assert "web_extract" in prompt
+        assert "禁止因「注册表无 web」" in prompt
         assert "registry.execute" not in prompt
+        assert "禁止 path=checkpoint_*.json" in prompt
+        assert "禁止读 checkpoint_*.json" in prompt
+
+    def test_reference_analysis_prompt_embeds_video_reference_analyst(
+        self, projects_root,
+    ):
+        from plugins.openmontage.lib.pipeline_loader import load_pipeline_readonly
+
+        ref_dir = init_project(
+            "ref-prompt", title="Ref", pipeline_type="reference-driven",
+            pipeline_dir=projects_root,
+        )
+        manifest = load_pipeline_readonly("reference-driven")
+        prompt = stage_runner_mod.build_stage_prompt(
+            ref_dir, "reference_analysis",
+            manifest=manifest,
+            wall_time_minutes=10, budget_usd=1.0,
+        )
+        assert "openmontage:video-reference-analyst" in prompt
+        assert "元技能" in prompt
+        assert "om_registry" in prompt
+
+    def test_prompt_lists_copyable_om_artifact_read_for_upstream(
+        self, projects_root, project_dir,
+    ):
+        from plugins.openmontage.lib.pipeline_loader import load_pipeline_readonly
+
+        write_checkpoint(
+            projects_root, "film", "research", "completed",
+            artifacts={"research_brief": sample_artifact("research_brief")},
+            pipeline_type=PIPELINE,
+            human_approved=True,
+        )
+        # 确保磁盘上有规范产物，status.artifact_exists=True
+        art_dir = project_dir / "artifacts"
+        art_dir.mkdir(exist_ok=True)
+        (art_dir / "research_brief.json").write_text(
+            json.dumps(sample_artifact("research_brief")), encoding="utf-8",
+        )
+
+        manifest = load_pipeline_readonly(PIPELINE)
+        prompt = stage_runner_mod.build_stage_prompt(
+            project_dir, "proposal",
+            manifest=manifest,
+            wall_time_minutes=10, budget_usd=1.0,
+        )
+        assert "禁止 path=checkpoint_*.json" in prompt
+        section = prompt.split("前置 artifacts")[1].split("5. 上次审阅")[0]
+        assert 'om_artifact_read(artifact="research_brief"' in section
+        assert "artifacts/research_brief.json" in section
+        assert "禁止读 checkpoint_*.json" in section
+        # 清单条目本身不得再给 checkpoint 路径当可读目标
+        for line in section.splitlines():
+            if line.strip().startswith("-"):
+                assert "checkpoint_" not in line
 
 
 class TestAutoAdvance:

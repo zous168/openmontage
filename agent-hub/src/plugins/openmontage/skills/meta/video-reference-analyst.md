@@ -205,6 +205,7 @@ zero pitch/timbre discontinuity, identical noise floor`。
 | `on_screen_text` | 烧录字幕、下三分之一条、屏幕图形（可见则逐字记录） |
 | `narration_text` | 该场景中说出的对白/旁白（参考视频没有则留空） |
 | `beats[]` | 可选的秒级定时视觉/运动动作（`start_seconds`、`end_seconds`、`kind`、`description`） |
+| `beats[].kind` | **只能**用枚举：`action` / `micro_motion` / `cut` / `transition` / `overlay` / `camera` / `vfx` / `dialogue` / `speech` / `hold` / `object_interaction`。推拉摇移变焦（push/pull/pan/tilt/zoom/dolly）一律写 `kind: "camera"`，具体动作写进 `description`，**禁止**把 `push` 等动词当作 kind |
 
 当 ASR/Whisper 产出了语音时，同时在 brief 根部填充 `narration_transcript`。
 
@@ -248,7 +249,7 @@ zero pitch/timbre discontinuity, identical noise floor`。
 | `description` | 完整五要素 + 秒级节拍，以结构化散文呈现 |
 | `on_screen_text` | 该场景中可见的屏幕文字 |
 | `narration_text` | 该场景中说出的内容 |
-| `beats[]` | 定时的视觉/运动微动作 |
+| `beats[]` | 定时的视觉/运动微动作（`kind` 仅用 schema 枚举；push/pan/zoom 等 → `camera`） |
 | `shot_language` | 镜头、运动、光照、景深 |
 | `motion_type` | 来自工具，或视觉复分类结果 |
 

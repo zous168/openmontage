@@ -74,7 +74,11 @@ class ExportBundle(BaseTool):
         "properties": {
             "video_path": {
                 "type": "string",
-                "description": "Path to the final rendered video (from render_report.outputs[].path).",
+                "description": (
+                    "Final render path from render_report.outputs[].path "
+                    "(projects/<id>/renders/… or project-relative renders/…). "
+                    "Resolved against the project / DATA_ROOT — do not invent paths."
+                ),
             },
             "title": {"type": "string", "description": "Video title / SEO title."},
             "project_name": {
@@ -95,8 +99,18 @@ class ExportBundle(BaseTool):
                     "description": "Either {start_seconds, title} or {time, label}.",
                 },
             },
-            "subtitles_path": {"type": "string"},
-            "thumbnail_path": {"type": "string"},
+            "subtitles_path": {
+                "type": "string",
+                "description": (
+                    "Existing .srt under the project (e.g. assets/audio/*.srt or "
+                    "assets/subtitles.srt). Optional — omit if none exists. "
+                    "Never invent renders/subtitles.srt."
+                ),
+            },
+            "thumbnail_path": {
+                "type": "string",
+                "description": "Existing thumbnail image path under the project, if any.",
+            },
             "thumbnail_concept": {
                 "type": "object",
                 "description": "Thumbnail concept JSON when no rendered thumbnail exists.",
@@ -161,31 +175,91 @@ class ExportBundle(BaseTool):
 
     def execute(self, inputs: dict[str, Any]) -> ToolResult:
         from plugins.openmontage.lib.deliverable_spec import load_deliverable_from_project
+        from plugins.openmontage.lib.project_media import (
+            list_subtitle_candidates,
+            resolve_project_media_path,
+        )
 
-        video_path = Path(inputs["video_path"]).expanduser()
-        if not video_path.is_file():
-            return ToolResult(success=False, error=f"video_path not found: {video_path}")
+        project_id = str(inputs.get("project_id") or "").strip() or None
+        project_name_hint = str(inputs.get("project_name") or "").strip() or None
+
+        video_raw = inputs.get("video_path")
+        video_path = resolve_project_media_path(
+            video_raw,
+            project_id=project_id or project_name_hint,
+            require_exists=True,
+        )
+        if video_path is None or not video_path.is_file():
+            preferred = resolve_project_media_path(
+                video_raw,
+                project_id=project_id or project_name_hint,
+                require_exists=False,
+            )
+            return ToolResult(
+                success=False,
+                error=f"video_path not found: {preferred or video_raw}",
+            )
 
         title = inputs["title"]
         project_name = inputs.get("project_name") or self._infer_project_name(video_path)
 
         deliverable = None
         resolved_video = video_path.resolve()
-        if resolved_video.parent.name == "renders":
-            deliverable = load_deliverable_from_project(resolved_video.parent.parent)
+        project_dir = (
+            resolved_video.parent.parent
+            if resolved_video.parent.name == "renders"
+            else None
+        )
+        if project_dir is not None:
+            deliverable = load_deliverable_from_project(project_dir)
 
         # Explicitly-provided optional assets must exist — silently dropping them
         # would ship a publish package missing part of an approved deliverable.
+        resolved_optionals: dict[str, Path] = {}
         for key in ("subtitles_path", "thumbnail_path"):
             val = inputs.get(key)
-            if val and not Path(val).expanduser().is_file():
-                return ToolResult(success=False, error=f"{key} provided but not found: {val}")
+            if not val:
+                continue
+            found = resolve_project_media_path(
+                val,
+                project_id=project_id or project_name_hint or project_name,
+                project_dir=project_dir,
+                require_exists=True,
+            )
+            if found is None or not found.is_file():
+                preferred = resolve_project_media_path(
+                    val,
+                    project_id=project_id or project_name_hint or project_name,
+                    project_dir=project_dir,
+                    require_exists=False,
+                )
+                hint = ""
+                if key == "subtitles_path" and project_dir is not None:
+                    cands = list_subtitle_candidates(project_dir)
+                    if cands:
+                        hint = f"; project subtitle candidates: {', '.join(cands)}"
+                    else:
+                        hint = (
+                            "; no .srt under assets/ — omit subtitles_path "
+                            "(do not invent renders/subtitles.srt)"
+                        )
+                return ToolResult(
+                    success=False,
+                    error=f"{key} provided but not found: {preferred or val}{hint}",
+                )
+            resolved_optionals[key] = found
 
         export_root = (
-            Path(inputs["export_dir"]).expanduser()
+            resolve_project_media_path(
+                inputs["export_dir"],
+                project_id=project_id or project_name_hint or project_name,
+                project_dir=project_dir,
+                require_exists=False,
+            )
             if inputs.get("export_dir")
             else self._default_export_dir(video_path, project_name)
         )
+        assert export_root is not None
 
         video_dir = export_root / "video"
         meta_dir = export_root / "metadata"
@@ -201,13 +275,11 @@ class ExportBundle(BaseTool):
         files_written.append(str(out_video))
 
         # Subtitles (optional)
-        subs_in = inputs.get("subtitles_path")
-        if subs_in:
-            subs_in = Path(subs_in).expanduser()
-            if subs_in.is_file():
-                out_subs = video_dir / f"subtitles{subs_in.suffix or '.srt'}"
-                shutil.copy2(subs_in, out_subs)
-                files_written.append(str(out_subs))
+        subs_in = resolved_optionals.get("subtitles_path")
+        if subs_in is not None and subs_in.is_file():
+            out_subs = video_dir / f"subtitles{subs_in.suffix or '.srt'}"
+            shutil.copy2(subs_in, out_subs)
+            files_written.append(str(out_subs))
 
         description = inputs.get("description", "")
         tags = inputs.get("tags", []) or []
@@ -216,9 +288,7 @@ class ExportBundle(BaseTool):
         chapter_lines = self._chapter_lines(chapters)
 
         cover_brief = None
-        project_dir = None
-        if resolved_video.parent.name == "renders":
-            project_dir = resolved_video.parent.parent
+        if project_dir is not None:
             from plugins.openmontage.lib.publish_intake import load_cover_brief_from_project
 
             cover_brief = load_cover_brief_from_project(project_dir)
@@ -270,7 +340,7 @@ class ExportBundle(BaseTool):
             files_written.append(str(chapters_txt))
 
         # Thumbnail: explicit path > text_to_image > auto_frame > concept_only
-        thumb_in = inputs.get("thumbnail_path")
+        thumb_in = resolved_optionals.get("thumbnail_path")
         thumbnail_concept = inputs.get("thumbnail_concept")
         style_playbook = ""
         marker_path = (project_dir / "project.json") if project_dir else None
@@ -287,8 +357,7 @@ class ExportBundle(BaseTool):
         t2i_error: str | None = None
         thumbnail_written = False
 
-        if thumb_in and Path(thumb_in).expanduser().is_file():
-            thumb_in = Path(thumb_in).expanduser()
+        if thumb_in is not None and thumb_in.is_file():
             out_thumb = thumb_dir / f"thumbnail{thumb_in.suffix or '.png'}"
             shutil.copy2(thumb_in, out_thumb)
             files_written.append(str(out_thumb))

@@ -7,7 +7,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from plugins.openmontage.lib.checkpoint import get_pipeline_stages
+from plugins.openmontage.lib.checkpoint import (
+    CANONICAL_STAGE_ARTIFACTS,
+    get_pipeline_stages,
+)
 from plugins.openmontage.lib.paths import PROJECTS_DIR
 
 
@@ -19,6 +22,16 @@ class PipelineResetError(Exception):
         self.status = status
 
 
+def _archive_then_unlink(src: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if dest.exists():
+        dest = dest.with_name(
+            f"{dest.stem}_{src.stat().st_mtime_ns}{dest.suffix}"
+        )
+    shutil.copy2(src, dest)
+    src.unlink()
+
+
 def reset_from_stage(
     project_id: str,
     from_stage: str,
@@ -26,9 +39,10 @@ def reset_from_stage(
     projects_dir: Path | None = None,
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Archive checkpoint_<stage>.json from *from_stage* onward; resume starts there.
+    """Archive checkpoint + canonical artifacts from *from_stage* onward.
 
-    Does not delete artifacts — the next agent run may overwrite them.
+    Resume starts at *from_stage*. Leaving orphan artifacts on disk caused
+    ``complete_from_disk`` / agents reusing stale ``video_analysis_brief`` etc.
     """
     base = projects_dir or PROJECTS_DIR
     project_dir = base / project_id
@@ -66,32 +80,28 @@ def reset_from_stage(
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     removed: list[str] = []
+    removed_artifacts: list[str] = []
 
     for stage in to_reset:
         cp = project_dir / f"checkpoint_{stage}.json"
-        if not cp.exists():
+        if cp.exists():
+            removed.append(stage)
+            if not dry_run:
+                dest = history_dir / f"checkpoint_{stage}_reset_{stamp}.json"
+                _archive_then_unlink(cp, dest)
+
+        artifact_name = CANONICAL_STAGE_ARTIFACTS.get(stage)
+        if not artifact_name:
             continue
-        removed.append(stage)
+        art = project_dir / "artifacts" / f"{artifact_name}.json"
+        if not art.exists():
+            continue
+        if artifact_name not in removed_artifacts:
+            removed_artifacts.append(artifact_name)
         if dry_run:
             continue
-        dest = history_dir / f"checkpoint_{stage}_reset_{stamp}.json"
-        if dest.exists():
-            dest = history_dir / f"checkpoint_{stage}_reset_{stamp}_{cp.stat().st_mtime_ns}.json"
-        shutil.copy2(cp, dest)
-        cp.unlink()
-
-    if not dry_run and "proposal" in to_reset:
-        proposal_path = project_dir / "artifacts" / "proposal_packet.json"
-        if proposal_path.exists():
-            try:
-                packet = json.loads(proposal_path.read_text(encoding="utf-8"))
-                packet.setdefault("approval", {})["status"] = "pending"
-                proposal_path.write_text(
-                    json.dumps(packet, ensure_ascii=False, indent=2) + "\n",
-                    encoding="utf-8",
-                )
-            except (json.JSONDecodeError, OSError):
-                pass
+        dest = history_dir / f"artifact_{artifact_name}_reset_{stamp}.json"
+        _archive_then_unlink(art, dest)
 
     from plugins.openmontage.lib.checkpoint import get_next_stage
 
@@ -103,6 +113,7 @@ def reset_from_stage(
         "pipeline_type": pipeline_type,
         "from_stage": from_stage,
         "removed_stages": removed,
+        "removed_artifacts": removed_artifacts,
         "next_stage": next_stage,
     }
 

@@ -32,14 +32,24 @@ export function failureMessage(stage: StageState, state: BoardState): string | n
 }
 
 /** 运行日志预览：过滤掉 agent 列目录时的纯路径行 */
-export function filterRunLogLines(lines: string[]): string[] {
+export function filterRunLogLines(
+  lines: string[],
+  opts?: {mode?: "failure" | "full"},
+): string[] {
   const trimmed = lines.map((l) => l.trim()).filter(Boolean);
+  const sansPaths = trimmed.filter(
+    (l) => !/^projects[\\/][\w.-]+[\\/][\w\\/.-]+\.(json|log|mp4|md)$/i.test(l),
+  );
+  const base = sansPaths.length > 0 ? sansPaths : trimmed;
+  // 用户主动点「查看运行日志」时保留完整脉络，不只留错误行
+  if (opts?.mode === "full") {
+    return base.slice(-250);
+  }
   const interesting = trimmed.filter((l) =>
     /agent_run_summary|error|failed|provider|不可用|Exception|traceback|video_generation/i.test(l),
   );
   if (interesting.length >= 2) return interesting.slice(-40);
-  const sansPaths = trimmed.filter((l) => !/^projects[\\/][\w.-]+[\\/][\w\\/.-]+\.(json|log|mp4|md)$/i.test(l));
-  return (sansPaths.length > 0 ? sansPaths : trimmed).slice(-35);
+  return base.slice(-35);
 }
 
 export function runLogPreview(run: RunState | undefined): string | null {

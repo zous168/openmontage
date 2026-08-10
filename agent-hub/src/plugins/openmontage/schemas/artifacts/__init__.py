@@ -43,8 +43,81 @@ def load_schema(name: str) -> dict:
         return json.load(f)
 
 
+# Common LLM slips for timeline_beat.kind → canonical enum values.
+# Camera verbs (push/pull/…) are not kinds; they belong under kind=camera.
+_BEAT_KIND_ALIASES: dict[str, str] = {
+    "push": "camera",
+    "pull": "camera",
+    "pan": "camera",
+    "tilt": "camera",
+    "zoom": "camera",
+    "dolly": "camera",
+    "truck": "camera",
+    "track": "camera",
+    "tracking": "camera",
+    "crane": "camera",
+    "orbit": "camera",
+    "handheld": "camera",
+    "ken_burns": "camera",
+    "kenburns": "camera",
+    "text": "overlay",
+    "title": "overlay",
+    "subtitle": "overlay",
+    "caption": "overlay",
+    "lower_third": "overlay",
+    "sfx": "vfx",
+    "effect": "vfx",
+    "fx": "vfx",
+    "voiceover": "speech",
+    "vo": "speech",
+    "narration": "speech",
+    "talk": "dialogue",
+    "idle": "hold",
+    "still": "hold",
+    "pause": "hold",
+    "gesture": "action",
+    "movement": "action",
+}
+
+
+def normalize_artifact(name: str, data: dict[str, Any]) -> dict[str, Any]:
+    """Soft-fix common agent slips in place before schema validation.
+
+    Returns the same dict (mutated). Safe to call repeatedly.
+    """
+    if name == "video_analysis_brief" and isinstance(data, dict):
+        _normalize_video_analysis_brief_beats(data)
+    return data
+
+
+def _normalize_video_analysis_brief_beats(data: dict[str, Any]) -> None:
+    structure = data.get("structure_analysis")
+    if not isinstance(structure, dict):
+        return
+    scenes = structure.get("scenes")
+    if not isinstance(scenes, list):
+        return
+    for scene in scenes:
+        if not isinstance(scene, dict):
+            continue
+        beats = scene.get("beats")
+        if not isinstance(beats, list):
+            continue
+        for beat in beats:
+            if not isinstance(beat, dict):
+                continue
+            kind = beat.get("kind")
+            if not isinstance(kind, str):
+                continue
+            mapped = _BEAT_KIND_ALIASES.get(kind.strip().lower())
+            if mapped:
+                beat["kind"] = mapped
+
+
 def validate_artifact(name: str, data: dict[str, Any]) -> None:
     """Validate artifact data against its schema. Raises on failure."""
+    if isinstance(data, dict):
+        normalize_artifact(name, data)
     schema = load_schema(name)
     jsonschema.validate(instance=data, schema=schema)
 

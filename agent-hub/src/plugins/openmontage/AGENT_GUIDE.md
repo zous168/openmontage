@@ -345,11 +345,13 @@ projects/<project-name>/
 │   ├── video/          # 生成的视频片段 (MP4)
 │   ├── audio/          # 旁白片段 + 最终混音 (MP3/WAV)
 │   ├── music/          # 背景音乐轨道 (MP3)
-│   └── subtitles.srt   # 生成的字幕
+│   ├── audio/*.srt     # 旁白对齐字幕（若生成；常见 narration_full_srt.srt）
+│   └── subtitles.srt   # 可选：整片字幕副本
 └── renders/
-    └── final.mp4       # 最终渲染视频（交付物）
+    └── final.mp4       # 最终渲染视频（交付物；字幕若已烧录则不必另有 .srt）
 ```
 
+路径以 artifact 字段为准（如 `render_report.outputs[].path`），由工具按 `DATA_ROOT` / 项目目录解析——**不要**臆造 `renders/subtitles.srt`。
 **命名约定**：用视频标题派生 kebab-case（例如 `hidden-math-of-nature`、`how-music-rewires-brain`）。
 
 在流水线初始化时、任何 stage 运行之前：

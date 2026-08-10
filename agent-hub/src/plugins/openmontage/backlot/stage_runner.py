@@ -408,6 +408,12 @@ def _render_stream_event(obj: dict) -> Optional[str]:
         if obj.get("subtype") == "approval":
             desc = obj.get("description") or "dangerous tool"
             return f"● 自动批准 · {desc}"
+        if obj.get("subtype") == "tool_action":
+            mark = "✓" if obj.get("ok") else "✗"
+            summary = obj.get("summary") or obj.get("tool") or "tool"
+            label = obj.get("label")
+            extra = f" · {label}" if label else ""
+            return f"{mark} {summary}{extra}"
         return None
     if typ == "assistant":
         out = []
@@ -1392,6 +1398,17 @@ def build_stage_prompt(
                 f"不要用 search_files / terminal 翻仓库）"
             )
 
+    # reference_analysis 依赖 meta 技能：全文一并粘贴。
+    if stage == "reference_analysis":
+        meta_ref = CODE_ROOT / "skills" / "meta" / "video-reference-analyst.md"
+        if meta_ref.is_file():
+            skill_text = (
+                f"{skill_text}\n\n"
+                "--- 元技能 openmontage:video-reference-analyst 全文开始 ---\n"
+                f"{meta_ref.read_text(encoding='utf-8')}\n"
+                "--- 元技能全文结束 ---\n"
+            )
+
     gated = bool(get_stage_human_approval_default(manifest, stage))
     stage_block = next(
         (s for s in (manifest.get("stages") or []) if s.get("name") == stage),
@@ -1405,13 +1422,21 @@ def build_stage_prompt(
         status = build_project_status(project_id, projects_dir=PROJECTS_DIR)
     except Exception:
         status = {}
-    artifact_paths = []
+    # 写成可直接复制的 om_artifact_read 调用，避免模型去猜 checkpoint_*.json
+    artifact_lines: list[str] = []
     for st in status.get("stages") or []:
-        if st.get("status") == "completed":
-            artifact = st.get("canonical_artifact")
-            if artifact and st.get("artifact_exists"):
-                artifact_paths.append(f"projects/{project_id}/artifacts/{artifact}.json")
-    artifact_list = "\n".join(f"  - {p}" for p in artifact_paths) or "  （无）"
+        if st.get("status") != "completed":
+            continue
+        artifact = st.get("canonical_artifact")
+        if not artifact or not st.get("artifact_exists"):
+            continue
+        upstream = st.get("stage") or "?"
+        artifact_lines.append(
+            f'  - om_artifact_read(artifact="{artifact}", '
+            f'label="读{artifact}")  '
+            f"# 上游 {upstream} → artifacts/{artifact}.json"
+        )
+    artifact_list = "\n".join(artifact_lines) or "  （无）"
 
     feedback_text = f"\n{feedback}\n" if feedback else "（无）"
     parameters_text = json.dumps(parameters or {}, ensure_ascii=False)
@@ -1448,14 +1473,23 @@ def build_stage_prompt(
 - 结束时输出一行便于服务端定位: agent_run_summary: <status> — <一句话>
 
 【Hermes 工具面 — 强制】
-你只有 openmontage_stage + skills_view。禁止 terminal / execute_code / read_file /
-write_file / search_files / python -c。一律用：
+你只有 openmontage_stage + web + skills_view。禁止 terminal / execute_code / read_file /
+write_file / search_files / python -c。
+通用联网（Hermes 原生工具，已在本会话工具列表里 — 直接调用函数名）：
+  - web_search(query=..., limit=...)
+  - web_extract(urls=[...])  —— 拉取页面正文；没有 web_fetch，用本工具
+禁止：把 web_* 当成 om_registry 里的 tool 名去 execute；om_registry 只管 OpenMontage
+媒体/分析注册表，本来就没有 web/research 类。缺检索时先直接调 web_search，
+禁止因「注册表无 web」而 status=failed。
+OpenMontage 专用：
   - om_registry(action="menu"|"catalog"|"execute", tool=..., params={{...}}, label=...)
-  - om_checkpoint(status=..., artifacts={{...}}, label=...)
-  - om_artifact_read(artifact=... 或 path=..., label=...)
+  - om_checkpoint(status=..., artifacts={{...}}, label=...)  —— 写阶段状态的唯一通道
+  - om_artifact_read(artifact=<规范名> 或 path=artifacts|assets|renders|exports/..., label=...)
+    禁止 path=checkpoint_*.json / runs/ / .run.lock；不要用本工具读阶段状态账本
   - om_artifact_write(path="artifacts/....json", content={{...}}, label=...)
   - om_decision_append(decisions=[...], label=...)
-  - skill_view（必要时只读补技能）
+  - skill_view（必要时只读补技能，如
+    skill_view("openmontage:video-reference-analyst")）
 project_id 默认取自运行环境（{project_id}）；stage 默认 {stage}。
 
 【必读材料】
@@ -1468,7 +1502,7 @@ project_id 默认取自运行环境（{project_id}）；stage 默认 {stage}。
    {json.dumps(status, ensure_ascii=False, indent=1)[:12000]}
 3. 流水线 manifest 中本阶段定义:
    {json.dumps(stage_block, ensure_ascii=False, indent=1)[:6000]}
-4. 前置 artifacts（用 om_artifact_read 读取，不要 Read/search_files）:
+4. 前置 artifacts（必须用下列 om_artifact_read；禁止读 checkpoint_*.json）:
    {artifact_list}
 5. 上次审阅反馈（页面驳回时产生，必须逐条回应）:
    {feedback_text}
@@ -1481,9 +1515,10 @@ project_id 默认取自运行环境（{project_id}）；stage 默认 {stage}。
 【执行规程（强制）】
 1. 进入阶段先 om_checkpoint(status='in_progress', artifacts={{}}, label=...)，
    可带 metadata.partial_progress。
-2. 用 om_registry(action='execute', tool=..., params={{...}}) 跑注册表工具。
-   本阶段 tools_available 非空时只能调用名单内工具。禁止脚本串联、禁止直接
-   编辑 checkpoint / decision_log。
+2. 联网用 web_search / web_extract；OM 注册表工具用
+   om_registry(action='execute', tool=..., params={{...}})。
+   tools_available 非空时只约束 om_registry 名单（web_* 始终可用）。
+   禁止脚本串联、禁止直接编辑 checkpoint / decision_log。
 3. 规范产物可先 om_artifact_write 落到 artifacts/，再写入 checkpoint.artifacts。
 4. 完成后:
    - 本阶段 human_approval_default: {gated}
@@ -1802,8 +1837,35 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
     # approval_gate_drift 要抓的那种状态——阶段标着"人已批准"而决策仍是
     # user_approved=false，且无人知晓。反向失败只是"日志记了、阶段还挂着
     # awaiting"，板面照实显示，用户重按一次即自愈。
-    to_append, skipped = _approval_mirror(project_dir, stage, notes)
-    append_decisions(project_id, to_append)
+    #
+    # 另：若仍有无法镜像的待批决策，**拒绝**写 completed——过去「跳过并继续」
+    # 会制造 audit CRITICAL（真实 E2E：非法 category 被 skip 后 checkpoint 已批准）。
+    to_append, skipped, grandfather = _approval_mirror(project_dir, stage, notes)
+    if skipped:
+        log.warning(
+            "approve.rejected project=%s stage=%s reason=unmirrorable count=%d detail=%s",
+            project_id, stage, len(skipped), skipped,
+        )
+        raise StageRunError(
+            f"阶段 {stage!r} 有 {len(skipped)} 条待批决策无法镜像清账，"
+            f"拒绝批准以免 approval_gate_drift。"
+            f"详情: {'; '.join(skipped)}",
+            diagnostics={
+                "project_id": project_id,
+                "stage": stage,
+                "unmirrored_decisions": skipped,
+                "suggested_actions": [
+                    "用合法 category（见 decision_log.schema.json enum）"
+                    "经 om_decision_append 追加同 subject 的新决策后重试批准",
+                    "或修复源决策结构（options_considered / selected / reason）后重试",
+                ],
+            },
+        )
+    append_decisions(
+        project_id,
+        to_append,
+        grandfather_categories=grandfather or None,
+    )
 
     write_checkpoint(
         PROJECTS_DIR,
@@ -1819,14 +1881,10 @@ def approve_stage(project_dir: Path, stage: str, *, notes: str = "") -> dict:
 
     next_stage = get_next_stage(PROJECTS_DIR, project_id, cp.get("pipeline_type"))
     log.info(
-        "approve.done project=%s stage=%s mirrored=%d unmirrored=%d next=%s",
-        project_id, stage, len(to_append), len(skipped), next_stage,
+        "approve.done project=%s stage=%s mirrored=%d next=%s",
+        project_id, stage, len(to_append), next_stage,
     )
-    result = {"ok": True, "stage": stage, "status": "completed", "next_stage": next_stage}
-    if skipped:
-        # 不静默：镜像不了的决策仍会让 audit 报 drift，调用方必须知道。
-        result["unmirrored_decisions"] = skipped
-    return result
+    return {"ok": True, "stage": stage, "status": "completed", "next_stage": next_stage}
 
 
 def complete_stage_from_disk(project_dir: Path, stage: str) -> dict:
@@ -2013,19 +2071,25 @@ def complete_stage_from_disk(project_dir: Path, stage: str) -> dict:
     }
 
 
-def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[dict], list[str]]:
+def _approval_mirror(
+    project_dir: Path, stage: str, notes: str,
+) -> tuple[list[dict], list[str], set[str]]:
     """构造批准的镜像决策：该阶段每条 user_visible 且未批准的最新决策，
     按**同 (category, subject)** 追加一条 user_approved=true —— 这是
     ``approval_gate_drift`` 认可的唯一清账方式。
 
-    返回 (待追加, 无法镜像的决策描述)。
+    历史脏数据：非法 category 已在磁盘上时，仍用**同 category** 镜像清账
+    （经 ``grandfather_categories``），不得改名成 fallback 后留下旧键漂移。
+
+    返回 (待追加, 无法镜像的决策描述, 需祖父化的 category 集合)。
     """
     from plugins.openmontage.lib.decision_log import (
+        _DECISION_CATEGORY_ENUM,
         latest_decisions_for_stage,
         load_decision_log,
         suggest_next_decision_id,
+        validate_decision_entry,
     )
-    from plugins.openmontage.schemas.artifacts import validate_artifact
 
     project_id = project_dir.name
     log = load_decision_log(project_dir)
@@ -2038,6 +2102,7 @@ def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[di
 
     to_append: list[dict] = []
     skipped: list[str] = []
+    grandfather: set[str] = set()
     reason = notes or "用户在 Backlot 页面批准该阶段"
     default_options = [
         {
@@ -2051,10 +2116,11 @@ def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[di
     for d in pending:
         if not d.get("user_visible") or d.get("user_approved"):
             continue
+        category = str(d.get("category") or "unknown")
         entry = {
             "decision_id": f"wa-{start + len(to_append):03d}",
             "stage": stage,
-            "category": d.get("category", "unknown"),
+            "category": category,
             "subject": d.get("subject", f"{stage} decision"),
             "options_considered": d.get("options_considered") or default_options,
             "selected": d.get("selected") or "approved",
@@ -2062,18 +2128,20 @@ def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[di
             "user_visible": True,
             "user_approved": True,
         }
+        gf = {category} if category not in _DECISION_CATEGORY_ENUM else set()
         try:
-            validate_artifact("decision_log", {
-                "version": "1.0", "project_id": project_id, "decisions": [entry],
-            })
+            validate_decision_entry(
+                project_id, entry, grandfather_categories=gf or None,
+            )
         except Exception as exc:
-            # 源决策本身不合 schema（例如经 checkpoint 内嵌 decision_log 旁路
-            # 写入的自造 category）。整单批准不该因此 500 —— 跳过并上报。
-            skipped.append(f"{d.get('decision_id')}({d.get('category')}): {str(exc)[:80]}")
+            # 结构烂掉（缺 options 等）——不能静默 skip 后 completed，否则必 drift。
+            skipped.append(f"{d.get('decision_id')}({category}): {str(exc)[:120]}")
             continue
+        if gf:
+            grandfather |= gf
         to_append.append(entry)
 
-    if not to_append:
+    if not to_append and not skipped:
         to_append.append({
             "decision_id": f"wa-{start:03d}",
             "stage": stage,
@@ -2085,7 +2153,68 @@ def _approval_mirror(project_dir: Path, stage: str, notes: str) -> tuple[list[di
             "user_visible": True,
             "user_approved": True,
         })
-    return to_append, skipped
+    return to_append, skipped, grandfather
+
+
+def repair_approval_drift(project_dir: Path, stage: str, *, notes: str = "") -> dict:
+    """对已是 completed+human_approved 的阶段补写镜像决策，清掉 approval_gate_drift。
+
+    用于历史 bug（批准时 skip 非法 category 却仍 completed）的修复；不改 checkpoint。
+    """
+    from plugins.openmontage.lib.checkpoint import read_checkpoint
+    from plugins.openmontage.lib.decision_log import append_decisions
+    from plugins.openmontage.lib.production_audit import check_approval_gate_drift
+
+    project_id = project_dir.name
+    cp = read_checkpoint(PROJECTS_DIR, project_id, stage)
+    if not cp or cp.get("status") != "completed" or not cp.get("human_approved"):
+        raise StageRunError(
+            f"阶段 {stage!r} 不是 completed+human_approved，不能用 repair_approval_drift"
+        )
+
+    reason = notes or "补镜像：修复批准时未清账的 decision_log（approval_gate_drift）"
+    to_append, skipped, grandfather = _approval_mirror(project_dir, stage, reason)
+    if skipped:
+        raise StageRunError(
+            f"无法修复 stage={stage!r} 的 drift：{skipped}",
+            diagnostics={"unmirrored_decisions": skipped},
+        )
+
+    # 仅有 human_approval 占位且无待批键时不写噪音
+    real = [
+        e for e in to_append
+        if not (
+            e.get("category") == "human_approval"
+            and e.get("subject") == f"{stage} approval"
+            and len(to_append) == 1
+            and not grandfather
+        )
+    ]
+    if not real:
+        findings = check_approval_gate_drift(project_dir)
+        drift = [f for f in findings if f.get("stage") == stage]
+        return {
+            "ok": True,
+            "stage": stage,
+            "repaired": 0,
+            "message": "无需补写",
+            "drift_remaining": drift,
+        }
+
+    append_decisions(
+        project_id,
+        real,
+        grandfather_categories=grandfather or None,
+    )
+    findings = check_approval_gate_drift(project_dir)
+    drift = [f for f in findings if f.get("stage") == stage]
+    return {
+        "ok": True,
+        "stage": stage,
+        "repaired": len(real),
+        "mirrored_ids": [e.get("decision_id") for e in real],
+        "drift_remaining": drift,
+    }
 
 
 def _revision_count(project_dir: Path, stage: str) -> int:
@@ -2194,21 +2323,29 @@ def reject_stage(project_dir: Path, stage: str, *, feedback: str) -> dict:
 
 
 def run_state_for_board(project_dir: Path) -> list[dict]:
-    """BoardState 注入：最新运行摘要（含 log_tail 供 UI 预览）。"""
+    """BoardState 注入：每阶段最新一条运行摘要（含 log_tail 供 UI 预览）。"""
     _reconcile_lock(project_dir)
-    runs = [
-        {
-            "task_id": r["task_id"],
-            "stage": r["stage"],
-            "status": r["status"],
-            "started_at": r["started_at"],
-            "finished_at": r.get("finished_at"),
-            "exit_code": r.get("exit_code"),
-            "error": r.get("error"),
-            "log_tail": (r.get("log_tail") or "")[-500:],
-        }
-        for r in _list_runs(project_dir, limit=5)
-    ]
+    # 全局最近若干条里，每个 stage 只保留最新一条，便于已完成阶段也能点「查看运行日志」
+    latest_by_stage: list[dict] = []
+    seen_stages: set[str] = set()
+    for r in _list_runs(project_dir, limit=KEEP_RUNS):
+        stage = str(r.get("stage") or "").strip()
+        if not stage or stage in seen_stages:
+            continue
+        seen_stages.add(stage)
+        latest_by_stage.append(
+            {
+                "task_id": r["task_id"],
+                "stage": r["stage"],
+                "status": r["status"],
+                "started_at": r["started_at"],
+                "finished_at": r.get("finished_at"),
+                "exit_code": r.get("exit_code"),
+                "error": r.get("error"),
+                "log_tail": (r.get("log_tail") or "")[-500:],
+            }
+        )
+    runs = latest_by_stage
     lock = _read_json(_lock_path(project_dir))
     if lock and not _lock_is_stale(lock, project_dir):
         task_id = str(lock.get("task_id") or "")
@@ -2228,4 +2365,4 @@ def run_state_for_board(project_dir: Path) -> list[dict]:
                 "error": None,
                 "log_tail": _log_tail(log_path, 500) if log_path.is_file() else "",
             })
-    return runs[:5]
+    return runs

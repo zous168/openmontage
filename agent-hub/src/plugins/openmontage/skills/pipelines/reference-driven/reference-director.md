@@ -10,7 +10,7 @@
 
 | 层 | 资源 | 用途 |
 |-------|----------|---------|
-| 元技能 | `skills/meta/video-reference-analyst.md` | **完整阅读并遵循这份技能** |
+| 元技能 | `skill_view("openmontage:video-reference-analyst")` | **完整阅读并遵循这份技能** |
 | 引导数据 | `projects/<id>/meta.json` → `production_inputs` | 参考 URL/路径、题材、平台 |
 | Schema | `schemas/artifacts/video_analysis_brief.schema.json` | 输出 artifact |
 
@@ -21,7 +21,8 @@
    - `topic` —— 用户这一版讲什么
    - `target_platform`、`target_duration_seconds`、`preferred_output_pipeline`（若已设置）
 
-2. 针对该参考源，**端到端地遵循 `skills/meta/video-reference-analyst.md`**。
+2. 针对该参考源，**端到端地遵循 `openmontage:video-reference-analyst` 元技能**
+   （`skill_view("openmontage:video-reference-analyst")` 或 prompt 已粘贴的全文）。
    使用那个 URL，或 `projects/<id>/` 下磁盘上的参考文件。
 
 3. 写出一份符合 schema 的 **`video_analysis_brief`** artifact，并为 `reference_analysis`

@@ -88,8 +88,27 @@ def main() -> int:
                 c.post(f"/project/{PROJECT}/stage/run/{tid}/cancel")
                 time.sleep(3)
 
-        print("reset:", json.dumps(_reset(c), ensure_ascii=False)[:400], flush=True)
-        print("kick:", _run(c, "reference_analysis"), flush=True)
+        skip_reset = str(__import__("os").environ.get("OPENMONTAGE_E2E_SKIP_RESET") or "").strip() in (
+            "1", "true", "yes",
+        )
+        if skip_reset:
+            print("skip reset (OPENMONTAGE_E2E_SKIP_RESET)", flush=True)
+            st0 = _status_local()
+            next0 = st0.get("next_stage")
+            gate0 = st0.get("gate_blocked")
+            busy0 = _busy(c)
+            if gate0 and not busy0:
+                print("resume at gate; poller will auto-approve", flush=True)
+            elif next0 and not busy0:
+                print("kick:", _run(c, next0), flush=True)
+            else:
+                print(
+                    f"resume without kick next={next0} gate={gate0} busy={busy0 and busy0.get('stage')}",
+                    flush=True,
+                )
+        else:
+            print("reset:", json.dumps(_reset(c), ensure_ascii=False)[:400], flush=True)
+            print("kick:", _run(c, "reference_analysis"), flush=True)
 
         last_note = ""
         while True:

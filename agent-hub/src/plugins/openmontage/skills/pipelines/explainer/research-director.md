@@ -14,7 +14,7 @@
 |-------|----------|---------|
 | Schema | `om_director` → `artifact_contracts`（字段契约） | 写产物前对照；勿手翻 `*.schema.json` |
 | 用户输入 | 题材、受众线索、平台线索 | 调研范围 |
-| 工具 | 网络检索、网页抓取 | 执行调研 |
+| 工具 | `web_search` / `web_extract`（Hermes 原生，直接调用；**不要**走 `om_registry`） | 执行调研 |
 
 ## 流程
 

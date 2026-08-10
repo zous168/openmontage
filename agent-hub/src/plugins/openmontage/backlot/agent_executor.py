@@ -26,12 +26,14 @@ log = logging.getLogger("backlot.stage.agent")
 
 LogAppend = Callable[[dict[str, Any]], None]
 
-# 无头 stage 只开放专用生产工具面 + 只读 skill_view：
+# 无头 stage 开放：
 # - openmontage_stage → om_registry / om_checkpoint / om_artifact_* / om_decision_append
+# - web → Hermes 通用 web_search / web_extract（研究等阶段必需；不另造 OM 包装）
 # - skills_view → 必要时只读 skill_view（导演全文已在 prompt）
 # 故意不含：file、terminal、execute_code、编排用 openmontage(om_run/om_job)…
 _HEADLESS_STAGE_TOOLSET_ORDER: tuple[str, ...] = (
     "openmontage_stage",
+    "web",
     "skills_view",
 )
 
@@ -138,6 +140,10 @@ def _build_agent(
         GatewayRunner,
     )
     from hermes_cli.tools_config import _get_platform_tools
+    from plugins.openmontage.lib.tool_log import (
+        summarize_tool_call,
+        truncate_tool_result_body,
+    )
 
     runtime_kwargs = _resolve_runtime_agent_kwargs()
     reasoning_config = GatewayRunner._load_reasoning_config()
@@ -192,13 +198,27 @@ def _build_agent(
         lower = body[:80].lower()
         if lower.startswith("error") or "blocked:" in lower:
             is_error = True
+
+        # Skim line in the same runs/*.log (does not replace events.jsonl audit).
+        action = summarize_tool_call(name or "tool", args, body, is_error=is_error)
+        append({
+            "type": "system",
+            "subtype": "tool_action",
+            "tool": action.get("tool"),
+            "ok": action.get("ok"),
+            "label": action.get("label"),
+            "summary": action.get("summary"),
+            "detail": action.get("detail") or {},
+            "tool_use_id": tool_id,
+        })
+
         append({
             "type": "user",
             "message": {
                 "content": [{
                     "type": "tool_result",
                     "tool_use_id": tool_id,
-                    "content": body,
+                    "content": truncate_tool_result_body(body),
                     "is_error": is_error,
                 }],
             },
@@ -313,6 +333,8 @@ def run_agent_conversation(
             "model": model_name,
             "session_id": session_id,
             "cwd": str(cwd),
+            "project_id": project_id,
+            "stage": stage,
         })
 
         result = agent.run_conversation(
